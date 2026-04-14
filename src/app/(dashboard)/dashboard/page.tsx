@@ -30,10 +30,12 @@ export default async function DashboardPage() {
   }
   const { count: residentCount } = await residentsQuery;
 
-  const bedsQuery = supabase.from("beds").select("id, room:rooms!inner(house_id)", { count: "exact" }).eq("is_active", true);
+  let bedsQuery = supabase.from("beds").select("id, room:rooms!inner(house_id)", { count: "exact" }).eq("is_active", true);
+  if (houseFilter) bedsQuery = bedsQuery.in("room.house_id", houseFilter);
   const { count: totalBeds } = await bedsQuery;
 
-  const assignmentsQuery = supabase.from("bed_assignments").select("id", { count: "exact" }).is("end_date", null);
+  let assignmentsQuery = supabase.from("bed_assignments").select("id, bed:beds!inner(room:rooms!inner(house_id))", { count: "exact" }).is("end_date", null);
+  if (houseFilter) assignmentsQuery = assignmentsQuery.in("bed.room.house_id", houseFilter);
   const { count: occupiedBeds } = await assignmentsQuery;
 
   const pendingChoresQuery = supabase

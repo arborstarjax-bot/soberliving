@@ -381,8 +381,43 @@ export async function assignRotationChore(
 // --- Signoffs ---
 
 export async function markSignoffComplete(signoffId: string) {
-  await requireAuth();
+  const user = await requireAuth();
   const supabase = await createClient();
+
+  // Look up the signoff's assignment to verify authorization
+  const { data: signoff } = await supabase
+    .from("chore_signoffs")
+    .select("rotation_assignment_id, rotation_assignment:chore_rotation_assignments(resident_id, rotation:chore_rotations(house_id))")
+    .eq("id", signoffId)
+    .single();
+
+  if (!signoff) return { error: "Signoff not found" };
+
+  const assignment = signoff.rotation_assignment as unknown as {
+    resident_id: string;
+    rotation: { house_id: string } | null;
+  } | null;
+
+  const houseId = assignment?.rotation?.house_id ?? "";
+
+  if (user.role === "resident") {
+    // Residents can only complete their own signoffs
+    const { data: residentRecord } = await supabase
+      .from("residents")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("status", "active")
+      .single();
+
+    if (!residentRecord || residentRecord.id !== assignment?.resident_id) {
+      return { error: "Not authorized" };
+    }
+  } else {
+    // Staff must have access to the house
+    if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+      return { error: "Not authorized" };
+    }
+  }
 
   const { error } = await supabase
     .from("chore_signoffs")

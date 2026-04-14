@@ -66,19 +66,12 @@ export async function changeUserRole(userId: string, newRole: string) {
   const user = await requireRole("admin");
   const supabase = await createClient();
 
-  // Update existing role record
+  // Upsert role record
   const { error } = await supabase
     .from("user_roles")
-    .update({ role: newRole })
-    .eq("user_id", userId);
+    .upsert({ user_id: userId, role: newRole }, { onConflict: "user_id" });
 
-  if (error) {
-    // If no existing record, insert
-    const { error: insertError } = await supabase
-      .from("user_roles")
-      .insert({ user_id: userId, role: newRole });
-    if (insertError) return { error: insertError.message };
-  }
+  if (error) return { error: error.message };
 
   const { data: targetUser } = await supabase
     .from("users")
