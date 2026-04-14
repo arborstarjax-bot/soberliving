@@ -38,17 +38,42 @@ export default async function DashboardPage() {
   if (houseFilter) assignmentsQuery = assignmentsQuery.in("bed.room.house_id", houseFilter);
   const { count: occupiedBeds } = await assignmentsQuery;
 
-  const pendingChoresQuery = supabase
-    .from("chore_signoffs")
-    .select("id", { count: "exact" })
-    .eq("status", "completed_pending_review");
-  const { count: pendingChoreReviews } = await pendingChoresQuery;
+  // For pending counts, fetch with joins and filter in-app for managers
+  let pendingChoreReviews = 0;
+  if (houseFilter) {
+    const { data: pendingChores } = await supabase
+      .from("chore_signoffs")
+      .select("id, rotation_assignment:chore_rotation_assignments!inner(rotation:chore_rotations!inner(house_id))")
+      .eq("status", "completed_pending_review");
+    pendingChoreReviews = (pendingChores ?? []).filter((s) => {
+      const ra = s.rotation_assignment as unknown as { rotation: { house_id: string } } | null;
+      return houseFilter.includes(ra?.rotation?.house_id ?? "");
+    }).length;
+  } else {
+    const { count } = await supabase
+      .from("chore_signoffs")
+      .select("id", { count: "exact" })
+      .eq("status", "completed_pending_review");
+    pendingChoreReviews = count ?? 0;
+  }
 
-  const pendingLeaveQuery = supabase
-    .from("leave_requests")
-    .select("id", { count: "exact" })
-    .eq("status", "pending");
-  const { count: pendingLeaveRequests } = await pendingLeaveQuery;
+  let pendingLeaveRequests = 0;
+  if (houseFilter) {
+    const { data: pendingLeave } = await supabase
+      .from("leave_requests")
+      .select("id, resident:residents!inner(house_id)")
+      .eq("status", "pending");
+    pendingLeaveRequests = (pendingLeave ?? []).filter((lr) => {
+      const r = lr.resident as unknown as { house_id: string } | null;
+      return houseFilter.includes(r?.house_id ?? "");
+    }).length;
+  } else {
+    const { count } = await supabase
+      .from("leave_requests")
+      .select("id", { count: "exact" })
+      .eq("status", "pending");
+    pendingLeaveRequests = count ?? 0;
+  }
 
   // Recent activity
   let activityQuery = supabase

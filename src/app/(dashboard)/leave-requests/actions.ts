@@ -31,6 +31,10 @@ export async function createLeaveRequest(
 
   if (!resident) return { error: "Resident not found" };
 
+  if (user.role !== "admin" && !canAccessHouse(user, resident.house_id)) {
+    return { error: "Not authorized" };
+  }
+
   const { data, error } = await supabase
     .from("leave_requests")
     .insert({
@@ -127,6 +131,11 @@ export async function markLeaveReturned(requestId: string) {
 
   if (!request) return { error: "Request not found" };
 
+  const houseId = (request.resident as unknown as { house_id: string } | null)?.house_id ?? "";
+  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+    return { error: "Not authorized" };
+  }
+
   const { error } = await supabase
     .from("leave_requests")
     .update({
@@ -137,8 +146,6 @@ export async function markLeaveReturned(requestId: string) {
     .eq("id", requestId);
 
   if (error) return { error: error.message };
-
-  const houseId = (request.resident as unknown as { house_id: string } | null)?.house_id ?? "";
 
   await logActivity({
     houseId,

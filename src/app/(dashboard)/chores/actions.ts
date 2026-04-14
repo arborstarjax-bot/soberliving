@@ -444,6 +444,23 @@ export async function reviewSignoff(
 
   const supabase = await createClient();
 
+  // Verify house-scoped access before mutating
+  const { data: signoffData } = await supabase
+    .from("chore_signoffs")
+    .select("rotation_assignment:chore_rotation_assignments(rotation:chore_rotations(house_id))")
+    .eq("id", signoffId)
+    .single();
+
+  if (signoffData) {
+    const ra = signoffData.rotation_assignment as unknown as {
+      rotation: { house_id: string } | null;
+    } | null;
+    const houseId = ra?.rotation?.house_id ?? "";
+    if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+      return { error: "Not authorized" };
+    }
+  }
+
   const updateData: Record<string, unknown> = {
     status: action === "approve" ? "approved" : "rejected",
     reviewed_by: user.id,
