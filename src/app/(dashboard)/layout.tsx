@@ -1,0 +1,21 @@
+import { requireAuth } from "@/lib/auth";
+import { Sidebar } from "@/components/sidebar";
+
+export default async function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const user = await requireAuth();
+
+  return (
+    <div className="flex h-screen overflow-hidden">
+      <Sidebar role={user.role} userName={user.full_name} />
+      <main className="flex-1 overflow-y-auto">
+        <div className="container mx-auto p-4 lg:p-6 max-w-7xl">
+          {children}
+        </div>
+      </main>
+    </div>
+  );
+}
