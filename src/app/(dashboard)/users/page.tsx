@@ -14,12 +14,6 @@ export default async function UsersPage() {
     .select("*, user_roles(role), manager_house_assignments(house_id, houses(name), unassigned_at)")
     .order("full_name");
 
-  const { data: houses } = await supabase
-    .from("houses")
-    .select("id, name")
-    .eq("is_active", true)
-    .order("name");
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -29,7 +23,7 @@ export default async function UsersPage() {
             Manage staff and resident accounts
           </p>
         </div>
-        <CreateUserDialog houses={houses ?? []} />
+        <CreateUserDialog />
       </div>
 
       <div className="space-y-2">

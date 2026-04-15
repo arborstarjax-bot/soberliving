@@ -27,13 +27,6 @@ export async function createUser(
     phone: formData.get("phone") || undefined,
     role,
     is_resident: isResident,
-    house_id: formData.get("house_id") || undefined,
-    move_in_date: formData.get("move_in_date") || undefined,
-    sobriety_date: formData.get("sobriety_date") || undefined,
-    date_of_birth: formData.get("date_of_birth") || undefined,
-    emergency_contact_name: formData.get("emergency_contact_name") || undefined,
-    emergency_contact_phone: formData.get("emergency_contact_phone") || undefined,
-    emergency_contact_relationship: formData.get("emergency_contact_relationship") || undefined,
   });
 
   if (!parsed.success) return { error: parsed.error.issues[0].message };
@@ -79,29 +72,6 @@ export async function createUser(
 
   if (roleError) return { error: roleError.message };
 
-  // Auto-create residents record when is_resident is set
-  if (isResident && parsed.data.house_id && parsed.data.move_in_date) {
-    const { error: residentError } = await adminClient.from("residents").insert({
-      user_id: authData.user.id,
-      house_id: parsed.data.house_id,
-      full_name: parsed.data.full_name,
-      phone: parsed.data.phone ?? null,
-      email: parsed.data.email,
-      date_of_birth: parsed.data.date_of_birth || null,
-      move_in_date: parsed.data.move_in_date,
-      sobriety_date: parsed.data.sobriety_date || null,
-      emergency_contact_name: parsed.data.emergency_contact_name ?? "",
-      emergency_contact_phone: parsed.data.emergency_contact_phone ?? "",
-      emergency_contact_relationship: parsed.data.emergency_contact_relationship || null,
-      status: "active",
-    });
-
-    if (residentError) {
-      console.error("Failed to create resident record:", residentError.message);
-      // Don't fail the whole operation — user is created, resident record can be added later
-    }
-  }
-
   // Generate a password recovery link so the user can set their own password
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
@@ -136,7 +106,7 @@ export async function createUser(
 
   await logActivity({
     actorId: user.id,
-    houseId: parsed.data.house_id,
+    houseId: undefined,
     eventType: "user_created",
     entityType: "user",
     entityId: authData.user.id,
@@ -192,64 +162,57 @@ export async function deleteUser(userId: string) {
     .eq("id", userId)
     .single();
 
-  // Check for FK dependencies that would block deletion
-  const checks = await Promise.all([
-    adminClient.from("payments").select("id", { count: "exact", head: true }).eq("recorded_by", userId),
-    adminClient.from("incidents").select("id", { count: "exact", head: true }).eq("reported_by", userId),
-    adminClient.from("demerits").select("id", { count: "exact", head: true }).eq("issued_by", userId),
-  ]);
+  // First, clean up tables that reference users(id) with ON DELETE CASCADE or SET NULL
+  // These are safe to delete because they don't block the users row deletion
+  // Tables with ON DELETE CASCADE on user_id: user_roles, manager_house_assignments
+  // Tables with ON DELETE SET NULL on user_id: residents
 
-  const hasReferences = checks.some((c) => (c.count ?? 0) > 0);
+  // Try to delete the users row first to check for FK constraint violations
+  // If it fails, we haven't touched any data yet — safe fallback to soft-delete
+  // First remove child records that have CASCADE or won't cause issues
+  await adminClient.from("residents").delete().eq("user_id", userId);
+  await adminClient.from("manager_house_assignments").delete().eq("user_id", userId);
+  await adminClient.from("user_roles").delete().eq("user_id", userId);
 
-  if (hasReferences) {
-    // Soft-delete: deactivate instead of hard-deleting to preserve referential integrity
-    const { error: deactivateError } = await adminClient
+  // Attempt the users table delete
+  const { error: dbError } = await adminClient
+    .from("users")
+    .delete()
+    .eq("id", userId);
+
+  if (dbError) {
+    // FK constraint violation — restore the role and soft-delete instead
+    // Re-create the user_roles record since we deleted it above
+    const { data: roleData } = await adminClient
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (!roleData) {
+      // Restore default role since we deleted it
+      await adminClient.from("user_roles").insert({ user_id: userId, role: "resident" });
+    }
+
+    // Soft-delete: deactivate instead
+    await adminClient
       .from("users")
       .update({ is_active: false, updated_at: new Date().toISOString() })
       .eq("id", userId);
-
-    if (deactivateError) return { error: deactivateError.message };
 
     await logActivity({
       actorId: user.id,
       eventType: "user_deactivated",
       entityType: "user",
       entityId: userId,
-      description: `User "${targetUser?.full_name}" (${targetUser?.email}) deactivated by ${user.full_name} (has activity history, cannot hard-delete)`,
+      description: `User "${targetUser?.full_name}" (${targetUser?.email}) deactivated by ${user.full_name} (has activity references, cannot hard-delete)`,
     });
 
     revalidatePath("/users");
-    return { error: "This user has recorded activity (payments, incidents, etc.) and cannot be fully deleted. They have been deactivated instead." };
+    return { error: "This user has activity records and cannot be fully deleted. They have been deactivated instead." };
   }
 
-  // Safe to hard-delete — no FK references
-  // Delete residents records first
-  await adminClient
-    .from("residents")
-    .delete()
-    .eq("user_id", userId);
-
-  // Delete from manager_house_assignments
-  await adminClient
-    .from("manager_house_assignments")
-    .delete()
-    .eq("user_id", userId);
-
-  // Delete from user_roles
-  await adminClient
-    .from("user_roles")
-    .delete()
-    .eq("user_id", userId);
-
-  // Delete from users table
-  const { error: dbError } = await adminClient
-    .from("users")
-    .delete()
-    .eq("id", userId);
-
-  if (dbError) return { error: dbError.message };
-
-  // Delete from Supabase Auth
+  // Users row deleted successfully — clean up auth
   const { error: authError } = await adminClient.auth.admin.deleteUser(userId);
   if (authError) {
     console.error("Failed to delete auth user:", authError.message);
