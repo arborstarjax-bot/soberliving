@@ -69,6 +69,7 @@ export async function createPayment(
 
   revalidatePath("/payments");
   revalidatePath("/dashboard");
+  revalidatePath("/admin");
   revalidatePath(`/residents/${parsed.data.resident_id}`);
   return {};
 }

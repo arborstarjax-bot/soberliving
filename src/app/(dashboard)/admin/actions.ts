@@ -80,11 +80,13 @@ export async function resolveDemerit(
 
   const { data: demerit } = await supabase
     .from("demerits")
-    .select("house_id, resident_id, resident:residents(full_name)")
+    .select("house_id, resident_id, status, resident:residents(full_name)")
     .eq("id", parsed.data.demerit_id)
     .single();
 
   if (!demerit) return { error: "Demerit not found" };
+
+  if (demerit.status !== "active") return { error: "Demerit is not active" };
 
   if (user.role !== "admin" && !canAccessHouse(user, demerit.house_id)) {
     return { error: "Not authorized" };
