@@ -296,6 +296,46 @@ end;
 $$ language plpgsql security definer;
 
 -- ============================================================
+-- RLS helper functions (SECURITY DEFINER to avoid recursion)
+-- ============================================================
+
+create or replace function public.is_admin()
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1 from public.user_roles
+    where user_id = auth.uid() and role = 'admin'
+  );
+$$;
+
+create or replace function public.is_staff()
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1 from public.user_roles
+    where user_id = auth.uid() and role in ('admin', 'manager')
+  );
+$$;
+
+create or replace function public.is_manager()
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1 from public.user_roles
+    where user_id = auth.uid() and role = 'manager'
+  );
+$$;
+
+-- ============================================================
 -- Row Level Security (RLS) Policies
 -- ============================================================
 
@@ -333,9 +373,7 @@ create policy "Users can update own profile"
 
 create policy "Admins can insert users"
   on public.users for insert to authenticated
-  with check (
-    exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin')
-  );
+  with check (public.is_admin());
 
 -- User roles: viewable by authenticated, modifiable by admins
 create policy "User roles are viewable by authenticated users"
@@ -344,9 +382,7 @@ create policy "User roles are viewable by authenticated users"
 
 create policy "Admins can manage user roles"
   on public.user_roles for all to authenticated
-  using (
-    exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin')
-  );
+  using (public.is_admin());
 
 -- Houses: viewable by all authenticated, modifiable by admins
 create policy "Houses are viewable by authenticated users"
@@ -355,9 +391,7 @@ create policy "Houses are viewable by authenticated users"
 
 create policy "Admins can manage houses"
   on public.houses for all to authenticated
-  using (
-    exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin')
-  );
+  using (public.is_admin());
 
 -- Manager assignments: viewable by authenticated
 create policy "Manager assignments viewable by authenticated"
@@ -366,9 +400,7 @@ create policy "Manager assignments viewable by authenticated"
 
 create policy "Admins can manage manager assignments"
   on public.manager_house_assignments for all to authenticated
-  using (
-    exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin')
-  );
+  using (public.is_admin());
 
 -- Rooms, Beds: viewable by authenticated, managed by admin/managers
 create policy "Rooms viewable by authenticated"
@@ -376,44 +408,23 @@ create policy "Rooms viewable by authenticated"
 
 create policy "Staff can manage rooms"
   on public.rooms for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 create policy "Beds viewable by authenticated"
   on public.beds for select to authenticated using (true);
 
 create policy "Staff can manage beds"
   on public.beds for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 -- Residents: viewable by staff, own data for residents
 create policy "Staff can view all residents"
   on public.residents for select to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-    or user_id = auth.uid()
-  );
+  using (public.is_staff() or user_id = auth.uid());
 
 create policy "Staff can manage residents"
   on public.residents for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 -- Bed assignments
 create policy "Bed assignments viewable by authenticated"
@@ -421,12 +432,7 @@ create policy "Bed assignments viewable by authenticated"
 
 create policy "Staff can manage bed assignments"
   on public.bed_assignments for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 -- Chores and related tables
 create policy "Chores viewable by authenticated"
@@ -434,48 +440,28 @@ create policy "Chores viewable by authenticated"
 
 create policy "Staff can manage chores"
   on public.chores for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 create policy "Chore tasks viewable by authenticated"
   on public.chore_tasks for select to authenticated using (true);
 
 create policy "Staff can manage chore tasks"
   on public.chore_tasks for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 create policy "Chore rotations viewable by authenticated"
   on public.chore_rotations for select to authenticated using (true);
 
 create policy "Staff can manage chore rotations"
   on public.chore_rotations for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 create policy "Rotation assignments viewable by authenticated"
   on public.chore_rotation_assignments for select to authenticated using (true);
 
 create policy "Staff can manage rotation assignments"
   on public.chore_rotation_assignments for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 create policy "Signoffs viewable by authenticated"
   on public.chore_signoffs for select to authenticated using (true);
@@ -485,42 +471,21 @@ create policy "Authenticated users can update signoffs"
 
 create policy "Staff can insert signoffs"
   on public.chore_signoffs for insert to authenticated
-  with check (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  with check (public.is_staff());
 
 -- Incidents
 create policy "Incidents viewable by staff"
   on public.incidents for select to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 create policy "Staff can manage incidents"
   on public.incidents for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 -- Leave requests
 create policy "Leave requests viewable by staff or own"
   on public.leave_requests for select to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-    or requested_by = auth.uid()
-  );
+  using (public.is_staff() or requested_by = auth.uid());
 
 create policy "Authenticated can create leave requests"
   on public.leave_requests for insert to authenticated
@@ -528,40 +493,22 @@ create policy "Authenticated can create leave requests"
 
 create policy "Staff can update leave requests"
   on public.leave_requests for update to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 -- Resident notes (staff only)
 create policy "Notes viewable by staff"
   on public.resident_notes for select to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 create policy "Staff can manage notes"
   on public.resident_notes for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 -- Activity log
 create policy "Activity log viewable by staff"
   on public.activity_log for select to authenticated
   using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
+    public.is_staff()
     or resident_id in (
       select id from public.residents where user_id = auth.uid()
     )
@@ -625,16 +572,12 @@ create policy "Rent configs viewable by authenticated"
 
 create policy "Admins can manage rent configs"
   on public.rent_configs for all to authenticated
-  using (
-    exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin')
-  );
+  using (public.is_admin());
 
 create policy "Managers can manage rent configs for their houses"
   on public.rent_configs for all to authenticated
   using (
-    exists (
-      select 1 from public.user_roles where user_id = auth.uid() and role = 'manager'
-    )
+    public.is_manager()
     and house_id in (
       select house_id from public.manager_house_assignments
       where user_id = auth.uid() and unassigned_at is null
@@ -649,12 +592,7 @@ alter table public.payments enable row level security;
 
 create policy "Payments viewable by staff"
   on public.payments for select to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 create policy "Residents can view own payments"
   on public.payments for select to authenticated
@@ -666,12 +604,7 @@ create policy "Residents can view own payments"
 
 create policy "Staff can manage payments"
   on public.payments for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 -- ============================================================
 -- 18. Demerits
@@ -701,21 +634,11 @@ create policy "Demerits viewable by authenticated" on public.demerits
 
 drop policy if exists "Demerits insertable by staff" on public.demerits;
 create policy "Demerits insertable by staff" on public.demerits
-  for insert with check (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  for insert with check (public.is_staff());
 
 drop policy if exists "Demerits updatable by staff" on public.demerits;
 create policy "Demerits updatable by staff" on public.demerits
-  for update using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  for update using (public.is_staff());
 
 -- ============================================================
 -- Session user lookup (bypasses RLS via SECURITY DEFINER)
