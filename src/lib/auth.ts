@@ -27,6 +27,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     role: string;
     intake_completed: boolean;
     is_resident: boolean;
+    commitment_signed: boolean;
   };
 
   const role: UserRole = (
@@ -53,6 +54,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     assigned_house_ids: assignedHouseIds,
     intake_completed: profile.intake_completed ?? false,
     is_resident: profile.is_resident ?? false,
+    commitment_signed: profile.commitment_signed ?? false,
   };
 });
 

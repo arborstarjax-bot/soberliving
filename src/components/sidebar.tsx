@@ -20,6 +20,7 @@ import {
   X,
   ShieldCheck,
   MessageSquareText,
+  ClipboardList,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,12 @@ const NAV_ITEMS: NavItem[] = [
     label: "Admin Panel",
     href: "/admin",
     icon: ShieldCheck,
+    roles: ["admin", "manager"],
+  },
+  {
+    label: "Intake Review",
+    href: "/intake-review",
+    icon: ClipboardList,
     roles: ["admin", "manager"],
   },
   {

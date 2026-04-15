@@ -78,10 +78,19 @@ export async function submitIntakeForm(
     });
   }
 
-  // Mark intake as completed on user record
+  // Mark intake as completed and auto-populate user profile from intake data
+  const fullName = [formData.first_name, formData.last_name].filter(Boolean).join(" ") || user.full_name;
+  const phone = (formData.phone as string) || null;
+
   await adminClient
     .from("users")
-    .update({ intake_completed: true, updated_at: new Date().toISOString() })
+    .update({
+      intake_completed: true,
+      is_resident: true,
+      full_name: fullName,
+      phone,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", user.id);
 
   await logActivity({
@@ -89,10 +98,11 @@ export async function submitIntakeForm(
     eventType: "intake_completed",
     entityType: "user",
     entityId: user.id,
-    description: `${user.full_name} completed the intake packet`,
+    description: `${fullName} completed the intake packet`,
   });
 
   revalidatePath("/dashboard");
+  revalidatePath("/intake-review");
   return {};
 }
 

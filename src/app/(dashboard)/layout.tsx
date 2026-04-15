@@ -15,6 +15,11 @@ export default async function DashboardLayout({
     redirect("/intake");
   }
 
+  // Redirect residents who completed intake but haven't signed their commitment agreement
+  if (user.role === "resident" && user.intake_completed && !user.commitment_signed) {
+    redirect("/sign-commitment");
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar role={user.role} userName={user.full_name} />

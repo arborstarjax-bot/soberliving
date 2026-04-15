@@ -310,4 +310,5 @@ export interface SessionUser {
   assigned_house_ids: string[];
   intake_completed: boolean;
   is_resident: boolean;
+  commitment_signed: boolean;
 }

@@ -19,6 +19,7 @@ create table if not exists public.users (
   is_active boolean not null default true,
   is_resident boolean not null default false,
   intake_completed boolean not null default false,
+  commitment_signed boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -292,6 +293,36 @@ create table if not exists public.activity_log (
 create index if not exists idx_activity_log_resident on public.activity_log(resident_id, created_at desc);
 create index if not exists idx_activity_log_house on public.activity_log(house_id, created_at desc);
 create index if not exists idx_activity_log_created on public.activity_log(created_at desc);
+
+-- ============================================================
+-- 18. House Commitments
+-- ============================================================
+
+create table if not exists public.house_commitments (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  resident_id uuid references public.residents(id) on delete set null,
+  house_id uuid not null references public.houses(id) on delete cascade,
+  room_id uuid references public.rooms(id) on delete set null,
+  bed_id uuid references public.beds(id) on delete set null,
+  payment_frequency text not null default 'monthly' check (payment_frequency in ('weekly', 'monthly')),
+  rent_amount numeric not null default 800,
+  admin_fee numeric not null default 200,
+  rent_due_date text not null default '1st of each month',
+  commitment_start_date date not null default current_date,
+  commitment_term text not null default '181 days',
+  property_location text,
+  notes text,
+  staff_signature text,
+  staff_signed_at timestamptz,
+  staff_signer_id uuid references public.users(id),
+  resident_signature text,
+  resident_signed_at timestamptz,
+  status text not null default 'pending_resident_signature' check (status in ('pending_resident_signature', 'active', 'terminated')),
+  pdf_storage_path text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
 
 -- ============================================================
 -- Helper function: update house capacity when beds change
@@ -682,7 +713,8 @@ as $$
     'full_name', u.full_name,
     'role', coalesce(ur.role, 'resident'),
     'intake_completed', coalesce(u.intake_completed, false),
-    'is_resident', coalesce(u.is_resident, false)
+    'is_resident', coalesce(u.is_resident, false),
+    'commitment_signed', coalesce(u.commitment_signed, false)
   )
   from public.users u
   left join public.user_roles ur on ur.user_id = u.id
