@@ -16,6 +16,7 @@ export const createRoomSchema = z.object({
   house_id: z.string().uuid(),
   name: z.string().min(1, "Room name is required").max(100),
   floor: z.coerce.number().int().optional(),
+  bed_count: z.coerce.number().int().min(0).max(20).optional(),
 });
 
 // --- Beds ---

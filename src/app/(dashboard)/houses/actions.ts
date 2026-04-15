@@ -120,6 +120,7 @@ export async function createRoom(
     house_id: formData.get("house_id"),
     name: formData.get("name"),
     floor: formData.get("floor") || undefined,
+    bed_count: formData.get("bed_count") || undefined,
   });
 
   if (!parsed.success) {
@@ -131,13 +132,24 @@ export async function createRoom(
   }
 
   const supabase = await createClient();
+  const { bed_count, ...roomData } = parsed.data;
   const { data, error } = await supabase
     .from("rooms")
-    .insert(parsed.data)
+    .insert(roomData)
     .select("id")
     .single();
 
   if (error) return { error: error.message };
+
+  // Auto-create beds if bed_count was specified
+  if (bed_count && bed_count > 0) {
+    const beds = Array.from({ length: bed_count }, (_, i) => ({
+      room_id: data.id,
+      label: `Bed ${i + 1}`,
+    }));
+    await supabase.from("beds").insert(beds);
+    await supabase.rpc("update_house_capacity", { p_house_id: parsed.data.house_id });
+  }
 
   await logActivity({
     houseId: parsed.data.house_id,
@@ -149,6 +161,7 @@ export async function createRoom(
   });
 
   revalidatePath(`/houses/${parsed.data.house_id}`);
+  revalidatePath("/admin");
   return {};
 }
 
