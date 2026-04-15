@@ -494,6 +494,15 @@ create policy "Staff can insert signoffs"
     )
   );
 
+create policy "Staff can delete signoffs"
+  on public.chore_signoffs for delete to authenticated
+  using (
+    exists (
+      select 1 from public.user_roles
+      where user_id = auth.uid() and role in ('admin', 'manager')
+    )
+  );
+
 -- Incidents
 create policy "Incidents viewable by staff"
   on public.incidents for select to authenticated

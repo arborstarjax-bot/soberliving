@@ -65,12 +65,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: CalendarClock,
     roles: ["admin", "manager", "resident"],
   },
-  {
-    label: "Users & Roles",
-    href: "/users",
-    icon: UserCog,
-    roles: ["admin"],
-  },
+  // Users & Roles folded into Residents page — /users route still works for direct access
   {
     label: "Activity Log",
     href: "/activity",

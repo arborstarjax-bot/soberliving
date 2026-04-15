@@ -910,10 +910,7 @@ export async function completeChore(
 
   if (!resident) return { error: "Resident not found" };
 
-  if (resident.force_photo && !photoUrl) {
-    return { error: "Photo is required — force photo is enabled for this resident" };
-  }
-
+  // Authorization check must come before force_photo check
   if (user.role === "resident") {
     const { data: myResident } = await supabase
       .from("residents")
@@ -926,6 +923,10 @@ export async function completeChore(
     }
   } else if (user.role !== "admin" && !canAccessHouse(user, chore.house_id)) {
     return { error: "Not authorized" };
+  }
+
+  if (resident.force_photo && !photoUrl) {
+    return { error: "Photo is required — force photo is enabled for this resident" };
   }
 
   const { error } = await supabase

@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CreateUserDialog } from "./create-user-dialog";
 import { UserActions } from "./user-actions";
+import Link from "next/link";
 
 export default async function UsersPage() {
   await requireRole("admin");
@@ -26,7 +27,7 @@ export default async function UsersPage() {
         <div>
           <h1 className="text-2xl font-bold">Users & Roles</h1>
           <p className="text-muted-foreground">
-            Manage staff and resident accounts
+            Manage staff and resident accounts. Click a user to edit their profile.
           </p>
         </div>
         <CreateUserDialog />
@@ -45,7 +46,8 @@ export default async function UsersPage() {
           )?.filter((a) => !a.unassigned_at);
 
           return (
-            <Card key={u.id} className={!u.is_active ? "opacity-50" : ""}>
+            <Link key={u.id} href={`/users/${u.id}`}>
+            <Card className={`hover:bg-muted/50 transition-colors ${!u.is_active ? "opacity-50" : ""}`}>
               <CardContent className="flex items-center justify-between py-3">
                 <div>
                   <div className="flex items-center gap-2">
@@ -88,6 +90,7 @@ export default async function UsersPage() {
                 )}
               </CardContent>
             </Card>
+            </Link>
           );
         })}
       </div>

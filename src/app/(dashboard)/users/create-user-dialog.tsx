@@ -22,7 +22,7 @@ export function CreateUserDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button />}>
           <Plus className="mr-2 h-4 w-4" />
-          Add User
+          New Resident
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

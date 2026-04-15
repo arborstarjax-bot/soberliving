@@ -4,10 +4,11 @@ import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getDaysSober } from "@/lib/milestones";
-import { Users } from "lucide-react";
+import { Users, UserCog } from "lucide-react";
 import Link from "next/link";
 import { CreateResidentDialog } from "./create-resident-dialog";
 import { DeleteResidentButton } from "./delete-resident-button";
+import { CreateUserDialog } from "../users/create-user-dialog";
 
 export default async function ResidentsPage() {
   const user = await requireAuth();
@@ -45,6 +46,23 @@ export default async function ResidentsPage() {
   const otherResidents = (residents ?? []).filter(
     (r) => r.status !== "active"
   );
+
+  // Admin: fetch all users for staff section
+  let staffUsers: Array<{
+    id: string;
+    full_name: string;
+    email: string;
+    is_active: boolean;
+    user_roles: Array<{ role: string }>;
+    manager_house_assignments: Array<{ house_id: string; houses: { name: string } | null; unassigned_at: string | null }>;
+  }> | null = null;
+  if (isAdmin) {
+    const { data } = await supabase
+      .from("users")
+      .select("id, full_name, email, is_active, user_roles(role), manager_house_assignments(house_id, houses(name), unassigned_at)")
+      .order("full_name");
+    staffUsers = data as typeof staffUsers;
+  }
 
   return (
     <div className="space-y-6">
@@ -147,6 +165,48 @@ export default async function ResidentsPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+      {/* Staff / Users section — admin only */}
+      {isAdmin && staffUsers && (
+        <div className="space-y-2 pt-4 border-t">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <UserCog className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-lg font-semibold">Users & Roles</h2>
+            </div>
+            <CreateUserDialog />
+          </div>
+          {staffUsers.map((u) => {
+            const role = (u.user_roles)?.[0]?.role ?? "resident";
+            const activeAssignments = (u.manager_house_assignments)?.filter((a) => !a.unassigned_at);
+            return (
+              <Link key={u.id} href={`/users/${u.id}`}>
+                <Card className={`hover:bg-muted/50 transition-colors ${!u.is_active ? "opacity-50" : ""}`}>
+                  <CardContent className="flex items-center justify-between py-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{u.full_name}</span>
+                        <Badge
+                          variant={role === "admin" ? "default" : role === "manager" ? "secondary" : "outline"}
+                          className="capitalize"
+                        >
+                          {role}
+                        </Badge>
+                        {!u.is_active && <Badge variant="destructive">Inactive</Badge>}
+                      </div>
+                      <p className="text-xs text-muted-foreground">{u.email}</p>
+                      {role === "manager" && activeAssignments && activeAssignments.length > 0 && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Houses: {activeAssignments.map((a) => a.houses?.name).join(", ")}
+                        </p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>

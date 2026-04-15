@@ -145,6 +145,50 @@ export async function assignManagerToHouses(
   return {};
 }
 
+export async function updateUserProfile(
+  _prevState: { error?: string } | undefined,
+  formData: FormData
+) {
+  const user = await requireRole("admin");
+  const userId = formData.get("user_id") as string;
+  const fullName = formData.get("full_name") as string;
+  const phone = (formData.get("phone") as string) || null;
+  const role = formData.get("role") as string;
+
+  if (!userId || !fullName) return { error: "Name is required" };
+
+  const supabase = await createClient();
+
+  // Update user record
+  const { error: userError } = await supabase
+    .from("users")
+    .update({ full_name: fullName, phone, updated_at: new Date().toISOString() })
+    .eq("id", userId);
+
+  if (userError) return { error: userError.message };
+
+  // Update role if provided
+  if (role) {
+    const { error: roleError } = await supabase
+      .from("user_roles")
+      .upsert({ user_id: userId, role }, { onConflict: "user_id" });
+
+    if (roleError) return { error: roleError.message };
+  }
+
+  await logActivity({
+    actorId: user.id,
+    eventType: "user_updated",
+    entityType: "user",
+    entityId: userId,
+    description: `${fullName}'s profile updated by ${user.full_name}`,
+  });
+
+  revalidatePath(`/users/${userId}`);
+  revalidatePath("/users");
+  return {};
+}
+
 export async function deactivateUser(userId: string) {
   const user = await requireRole("admin");
   if (userId === user.id) return { error: "Cannot deactivate yourself" };
