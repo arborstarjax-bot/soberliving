@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { createUserSchema, assignManagerSchema } from "@/lib/validations";
@@ -25,11 +25,11 @@ export async function createUser(
 
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
-  const supabase = await createClient();
+  const adminClient = createAdminClient();
   const tempPassword = generateTempPassword();
 
-  // Create auth user with auto-generated password
-  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+  // Create auth user with auto-generated password (requires service role)
+  const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
     email: parsed.data.email,
     password: tempPassword,
     email_confirm: true,
@@ -37,8 +37,8 @@ export async function createUser(
 
   if (authError) return { error: authError.message };
 
-  // Create user record
-  const { error: userError } = await supabase.from("users").insert({
+  // Create user record (use admin client to bypass RLS)
+  const { error: userError } = await adminClient.from("users").insert({
     id: authData.user.id,
     email: parsed.data.email,
     full_name: parsed.data.full_name,
@@ -48,7 +48,7 @@ export async function createUser(
   if (userError) return { error: userError.message };
 
   // Create role record
-  const { error: roleError } = await supabase.from("user_roles").insert({
+  const { error: roleError } = await adminClient.from("user_roles").insert({
     user_id: authData.user.id,
     role: parsed.data.role,
   });
@@ -56,7 +56,7 @@ export async function createUser(
   if (roleError) return { error: roleError.message };
 
   // Generate a password recovery link so the user can set their own password
-  const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+  const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
     type: "recovery",
     email: parsed.data.email,
   });
