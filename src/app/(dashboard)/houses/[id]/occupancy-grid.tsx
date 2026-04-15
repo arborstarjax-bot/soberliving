@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import type { UserRole } from "@/lib/types";
 import { AddBedDialog } from "./add-bed-dialog";
 import { AssignBedDialog } from "./assign-bed-dialog";
+import { EditRoomDialog } from "./edit-room-dialog";
 
 interface BedAssignment {
   id: string;
@@ -72,7 +73,20 @@ export function OccupancyGrid({
                   </span>
                 )}
               </CardTitle>
-              {canManage && <AddBedDialog roomId={room.id} houseId={houseId} />}
+              <div className="flex items-center gap-1">
+                {canManage && (
+                  <EditRoomDialog
+                    roomId={room.id}
+                    roomName={room.name}
+                    floor={room.floor}
+                    bedCount={room.beds.length}
+                    hasOccupiedBeds={room.beds.some((bed) =>
+                      bed.bed_assignments.some((ba) => !ba.end_date)
+                    )}
+                  />
+                )}
+                {canManage && <AddBedDialog roomId={room.id} houseId={houseId} />}
+              </div>
             </div>
           </CardHeader>
           <CardContent>

@@ -10,6 +10,7 @@ import {
   createHouseSchema,
   updateHouseSchema,
   createRoomSchema,
+  updateRoomSchema,
   createBedSchema,
 } from "@/lib/validations";
 
@@ -149,6 +150,104 @@ export async function createRoom(
   });
 
   revalidatePath(`/houses/${parsed.data.house_id}`);
+  return {};
+}
+
+export async function updateRoom(roomId: string, formData: FormData) {
+  const user = await requireAuth();
+  const parsed = updateRoomSchema.safeParse({
+    name: formData.get("name") || undefined,
+    floor: formData.get("floor") || undefined,
+  });
+
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0].message };
+  }
+
+  const supabase = await createClient();
+
+  // Get room to check house access
+  const { data: room } = await supabase
+    .from("rooms")
+    .select("house_id, name")
+    .eq("id", roomId)
+    .single();
+
+  if (!room) return { error: "Room not found" };
+
+  if (user.role !== "admin" && !canAccessHouse(user, room.house_id)) {
+    return { error: "Not authorized" };
+  }
+
+  const { error } = await supabase
+    .from("rooms")
+    .update({ ...parsed.data, updated_at: new Date().toISOString() })
+    .eq("id", roomId);
+
+  if (error) return { error: error.message };
+
+  await logActivity({
+    houseId: room.house_id,
+    actorId: user.id,
+    eventType: "room_updated",
+    entityType: "room",
+    entityId: roomId,
+    description: `Room "${parsed.data.name ?? room.name}" updated by ${user.full_name}`,
+  });
+
+  revalidatePath(`/houses/${room.house_id}`);
+  return {};
+}
+
+export async function deleteRoom(roomId: string) {
+  const user = await requireAuth();
+  const supabase = await createClient();
+
+  // Get room to check house access and check for occupied beds
+  const { data: room } = await supabase
+    .from("rooms")
+    .select("house_id, name, beds(id, bed_assignments(id, end_date))")
+    .eq("id", roomId)
+    .single();
+
+  if (!room) return { error: "Room not found" };
+
+  if (user.role !== "admin" && !canAccessHouse(user, room.house_id)) {
+    return { error: "Not authorized" };
+  }
+
+  // Check for active bed assignments
+  const hasActiveAssignments = (room.beds ?? []).some((bed: { bed_assignments: { end_date: string | null }[] }) =>
+    (bed.bed_assignments ?? []).some((ba: { end_date: string | null }) => !ba.end_date)
+  );
+
+  if (hasActiveAssignments) {
+    return { error: "Cannot delete room with occupied beds. Unassign all residents first." };
+  }
+
+  // Delete beds first, then the room
+  const bedIds = (room.beds ?? []).map((b: { id: string }) => b.id);
+  if (bedIds.length > 0) {
+    await supabase.from("beds").delete().in("id", bedIds);
+  }
+
+  const { error } = await supabase.from("rooms").delete().eq("id", roomId);
+
+  if (error) return { error: error.message };
+
+  // Update house capacity
+  await supabase.rpc("update_house_capacity", { p_house_id: room.house_id });
+
+  await logActivity({
+    houseId: room.house_id,
+    actorId: user.id,
+    eventType: "room_deleted",
+    entityType: "room",
+    entityId: roomId,
+    description: `Room "${room.name}" deleted by ${user.full_name}`,
+  });
+
+  revalidatePath(`/houses/${room.house_id}`);
   return {};
 }
 
