@@ -35,6 +35,7 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
     )
     .eq("house_id", id)
     .eq("is_active", true)
+    .order("sort_order")
     .order("name");
 
   // Residents in this house

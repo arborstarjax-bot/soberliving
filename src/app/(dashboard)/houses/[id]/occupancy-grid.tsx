@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,8 +16,8 @@ import {
 import type { UserRole } from "@/lib/types";
 import { AddBedDialog } from "./add-bed-dialog";
 import { AssignBedDialog } from "./assign-bed-dialog";
-import { updateRoom, deleteRoom, updateBed, deleteBed } from "../actions";
-import { Pencil, Trash2 } from "lucide-react";
+import { updateRoom, deleteRoom, updateBed, deleteBed, reorderRooms } from "../actions";
+import { Pencil, Trash2, ArrowUp, ArrowDown } from "lucide-react";
 
 interface BedAssignment {
   id: string;
@@ -36,6 +36,7 @@ interface RoomData {
   id: string;
   name: string;
   floor: number | null;
+  sort_order?: number;
   beds: BedData[];
 }
 
@@ -58,6 +59,18 @@ export function OccupancyGrid({
   userRole,
 }: OccupancyGridProps) {
   const canManage = userRole === "admin" || userRole === "manager";
+  const [isPending, startTransition] = useTransition();
+
+  function moveRoom(index: number, direction: "up" | "down") {
+    const newIndex = direction === "up" ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= rooms.length) return;
+    const reordered = [...rooms];
+    [reordered[index], reordered[newIndex]] = [reordered[newIndex], reordered[index]];
+    const roomIds = reordered.map((r) => r.id);
+    startTransition(() => {
+      reorderRooms(houseId, roomIds);
+    });
+  }
 
   if (rooms.length === 0) {
     return (
@@ -73,11 +86,31 @@ export function OccupancyGrid({
 
   return (
     <div className="space-y-4">
-      {rooms.map((room) => (
-        <Card key={room.id}>
+      {rooms.map((room, index) => (
+        <Card key={room.id} className={isPending ? "opacity-70" : ""}>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base flex items-center gap-2">
+                {canManage && rooms.length > 1 && (
+                  <span className="flex flex-col gap-0.5 mr-1">
+                    <button
+                      onClick={() => moveRoom(index, "up")}
+                      disabled={index === 0 || isPending}
+                      className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Move up"
+                    >
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => moveRoom(index, "down")}
+                      disabled={index === rooms.length - 1 || isPending}
+                      className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Move down"
+                    >
+                      <ArrowDown className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
+                )}
                 {room.name}
                 {room.floor != null && (
                   <span className="text-muted-foreground font-normal ml-2">

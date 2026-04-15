@@ -418,3 +418,27 @@ export async function deleteBed(
   revalidatePath("/admin");
   return {};
 }
+
+// --- Reorder Rooms ---
+
+export async function reorderRooms(houseId: string, roomIds: string[]) {
+  const user = await requireAuth();
+
+  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+    return { error: "Not authorized" };
+  }
+
+  const supabase = await createClient();
+
+  for (let i = 0; i < roomIds.length; i++) {
+    await supabase
+      .from("rooms")
+      .update({ sort_order: i })
+      .eq("id", roomIds[i])
+      .eq("house_id", houseId);
+  }
+
+  revalidatePath(`/houses/${houseId}`);
+  revalidatePath("/admin");
+  return {};
+}

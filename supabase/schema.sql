@@ -69,6 +69,7 @@ create table if not exists public.rooms (
   house_id uuid not null references public.houses(id) on delete cascade,
   name text not null,
   floor integer,
+  sort_order integer not null default 0,
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
