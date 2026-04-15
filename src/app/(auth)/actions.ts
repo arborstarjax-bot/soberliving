@@ -60,7 +60,7 @@ export async function signup(
     password,
     options: {
       data: {
-        full_name: fullName,
+        full_name: fullName.trim(),
       },
     },
   });
@@ -104,8 +104,8 @@ export async function signup(
     console.error("Failed to assign default role:", roleError.message);
   }
 
-  // If email confirmation is required, show success message
-  if (data.user.identities?.length === 0) {
+  // If email confirmation is required (no session), show success message
+  if (!data.session) {
     return { success: "Check your email for a confirmation link" };
   }
 
