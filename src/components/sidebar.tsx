@@ -19,6 +19,7 @@ import {
   Menu,
   X,
   ShieldCheck,
+  MessageSquareText,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -71,6 +72,12 @@ const NAV_ITEMS: NavItem[] = [
     label: "Payments",
     href: "/payments",
     icon: DollarSign,
+    roles: ["admin", "manager", "resident"],
+  },
+  {
+    label: "Bulletin Board",
+    href: "/bulletin",
+    icon: MessageSquareText,
     roles: ["admin", "manager", "resident"],
   },
   {
