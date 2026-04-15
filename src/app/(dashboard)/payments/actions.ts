@@ -88,7 +88,7 @@ export async function voidPayment(
 
   const { data: payment } = await supabase
     .from("payments")
-    .select("id, house_id, resident_id, amount, payment_type, resident:residents(full_name)")
+    .select("id, house_id, resident_id, amount, payment_type, status, resident:residents(full_name)")
     .eq("id", parsed.data.payment_id)
     .single();
 
