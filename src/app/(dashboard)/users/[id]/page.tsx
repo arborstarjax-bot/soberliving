@@ -34,8 +34,10 @@ export default async function UserProfilePage(
     .order("created_at", { ascending: false })
     .limit(20);
 
-  const roleRecord = (user.user_roles as Array<{ role: string }>)?.[0];
-  const role = roleRecord?.role ?? "resident";
+  const roleRaw = user.user_roles;
+  const role = Array.isArray(roleRaw)
+    ? (roleRaw as Array<{ role: string }>)[0]?.role ?? "resident"
+    : (roleRaw as { role: string } | null)?.role ?? "resident";
   const activeAssignments = (
     user.manager_house_assignments as Array<{
       house_id: string;

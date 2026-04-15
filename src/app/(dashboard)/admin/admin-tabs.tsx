@@ -1172,7 +1172,10 @@ function UsersTab({ users, houses }: { users: any[]; houses: HouseItem[] }) {
     <div className="space-y-3">
       <h3 className="font-semibold text-sm">All Users ({users.length})</h3>
       {users.map((u) => {
-        const role = (u.user_roles as Array<{ role: string }>)?.[0]?.role ?? "resident";
+        const roleRaw = u.user_roles;
+        const role = Array.isArray(roleRaw)
+          ? (roleRaw as Array<{ role: string }>)[0]?.role ?? "resident"
+          : (roleRaw as { role: string } | null)?.role ?? "resident";
         const activeAssignments = (
           u.manager_house_assignments as Array<{
             house_id: string;
