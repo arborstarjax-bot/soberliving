@@ -17,6 +17,8 @@ create table if not exists public.users (
   phone text,
   avatar_url text,
   is_active boolean not null default true,
+  is_resident boolean not null default false,
+  intake_completed boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -678,7 +680,9 @@ as $$
     'id', u.id,
     'email', u.email,
     'full_name', u.full_name,
-    'role', coalesce(ur.role, 'resident')
+    'role', coalesce(ur.role, 'resident'),
+    'intake_completed', coalesce(u.intake_completed, false),
+    'is_resident', coalesce(u.is_resident, false)
   )
   from public.users u
   left join public.user_roles ur on ur.user_id = u.id
