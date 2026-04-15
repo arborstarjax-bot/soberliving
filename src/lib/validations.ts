@@ -19,10 +19,19 @@ export const createRoomSchema = z.object({
   bed_count: z.coerce.number().int().min(0).max(20).optional(),
 });
 
+export const updateRoomSchema = z.object({
+  name: z.string().min(1, "Room name is required").max(100).optional(),
+  floor: z.coerce.number().int().optional(),
+});
+
 // --- Beds ---
 
 export const createBedSchema = z.object({
   room_id: z.string().uuid(),
+  label: z.string().min(1, "Bed label is required").max(50),
+});
+
+export const updateBedSchema = z.object({
   label: z.string().min(1, "Bed label is required").max(50),
 });
 

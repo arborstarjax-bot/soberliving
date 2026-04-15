@@ -10,7 +10,9 @@ import {
   createHouseSchema,
   updateHouseSchema,
   createRoomSchema,
+  updateRoomSchema,
   createBedSchema,
+  updateBedSchema,
 } from "@/lib/validations";
 
 // --- Houses ---
@@ -217,5 +219,202 @@ export async function createBed(
   });
 
   revalidatePath(`/houses/${room.house_id}`);
+  return {};
+}
+
+// --- Update Room ---
+
+export async function updateRoom(
+  _prevState: { error?: string } | undefined,
+  formData: FormData
+) {
+  const user = await requireAuth();
+  const roomId = formData.get("room_id") as string;
+  if (!roomId) return { error: "Room ID is required" };
+
+  const parsed = updateRoomSchema.safeParse({
+    name: formData.get("name") || undefined,
+    floor: formData.get("floor") || undefined,
+  });
+
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const supabase = await createClient();
+  const { data: room } = await supabase
+    .from("rooms")
+    .select("house_id, name")
+    .eq("id", roomId)
+    .single();
+
+  if (!room) return { error: "Room not found" };
+
+  if (user.role !== "admin" && !canAccessHouse(user, room.house_id)) {
+    return { error: "Not authorized" };
+  }
+
+  const { error } = await supabase
+    .from("rooms")
+    .update({ ...parsed.data, updated_at: new Date().toISOString() })
+    .eq("id", roomId);
+
+  if (error) return { error: error.message };
+
+  await logActivity({
+    houseId: room.house_id,
+    actorId: user.id,
+    eventType: "room_updated",
+    entityType: "room",
+    entityId: roomId,
+    description: `Room "${parsed.data.name ?? room.name}" updated by ${user.full_name}`,
+  });
+
+  revalidatePath(`/houses/${room.house_id}`);
+  revalidatePath("/admin");
+  return {};
+}
+
+// --- Delete Room ---
+
+export async function deleteRoom(
+  _prevState: { error?: string } | undefined,
+  formData: FormData
+) {
+  const user = await requireAuth();
+  const roomId = formData.get("room_id") as string;
+  if (!roomId) return { error: "Room ID is required" };
+
+  const supabase = await createClient();
+  const { data: room } = await supabase
+    .from("rooms")
+    .select("house_id, name")
+    .eq("id", roomId)
+    .single();
+
+  if (!room) return { error: "Room not found" };
+
+  if (user.role !== "admin" && !canAccessHouse(user, room.house_id)) {
+    return { error: "Not authorized" };
+  }
+
+  // Soft-delete by setting is_active = false
+  const { error } = await supabase
+    .from("rooms")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq("id", roomId);
+
+  if (error) return { error: error.message };
+
+  await supabase.rpc("update_house_capacity", { p_house_id: room.house_id });
+
+  await logActivity({
+    houseId: room.house_id,
+    actorId: user.id,
+    eventType: "room_deleted",
+    entityType: "room",
+    entityId: roomId,
+    description: `Room "${room.name}" deleted by ${user.full_name}`,
+  });
+
+  revalidatePath(`/houses/${room.house_id}`);
+  revalidatePath("/admin");
+  return {};
+}
+
+// --- Update Bed ---
+
+export async function updateBed(
+  _prevState: { error?: string } | undefined,
+  formData: FormData
+) {
+  const user = await requireAuth();
+  const bedId = formData.get("bed_id") as string;
+  if (!bedId) return { error: "Bed ID is required" };
+
+  const parsed = updateBedSchema.safeParse({
+    label: formData.get("label"),
+  });
+
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const supabase = await createClient();
+  const { data: bed } = await supabase
+    .from("beds")
+    .select("room_id, label, rooms(house_id)")
+    .eq("id", bedId)
+    .single();
+
+  if (!bed) return { error: "Bed not found" };
+  const houseId = (bed.rooms as unknown as { house_id: string })?.house_id;
+
+  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+    return { error: "Not authorized" };
+  }
+
+  const { error } = await supabase
+    .from("beds")
+    .update({ ...parsed.data, updated_at: new Date().toISOString() })
+    .eq("id", bedId);
+
+  if (error) return { error: error.message };
+
+  await logActivity({
+    houseId,
+    actorId: user.id,
+    eventType: "bed_updated",
+    entityType: "bed",
+    entityId: bedId,
+    description: `Bed renamed from "${bed.label}" to "${parsed.data.label}" by ${user.full_name}`,
+  });
+
+  revalidatePath(`/houses/${houseId}`);
+  revalidatePath("/admin");
+  return {};
+}
+
+// --- Delete Bed ---
+
+export async function deleteBed(
+  _prevState: { error?: string } | undefined,
+  formData: FormData
+) {
+  const user = await requireAuth();
+  const bedId = formData.get("bed_id") as string;
+  if (!bedId) return { error: "Bed ID is required" };
+
+  const supabase = await createClient();
+  const { data: bed } = await supabase
+    .from("beds")
+    .select("room_id, label, rooms(house_id)")
+    .eq("id", bedId)
+    .single();
+
+  if (!bed) return { error: "Bed not found" };
+  const houseId = (bed.rooms as unknown as { house_id: string })?.house_id;
+
+  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+    return { error: "Not authorized" };
+  }
+
+  // Soft-delete by setting is_active = false
+  const { error } = await supabase
+    .from("beds")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq("id", bedId);
+
+  if (error) return { error: error.message };
+
+  await supabase.rpc("update_house_capacity", { p_house_id: houseId });
+
+  await logActivity({
+    houseId,
+    actorId: user.id,
+    eventType: "bed_deleted",
+    entityType: "bed",
+    entityId: bedId,
+    description: `Bed "${bed.label}" deleted by ${user.full_name}`,
+  });
+
+  revalidatePath(`/houses/${houseId}`);
+  revalidatePath("/admin");
   return {};
 }

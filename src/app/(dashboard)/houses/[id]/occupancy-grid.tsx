@@ -1,10 +1,23 @@
 "use client";
 
+import { useActionState, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import type { UserRole } from "@/lib/types";
 import { AddBedDialog } from "./add-bed-dialog";
 import { AssignBedDialog } from "./assign-bed-dialog";
+import { updateRoom, deleteRoom, updateBed, deleteBed } from "../actions";
+import { Pencil, Trash2 } from "lucide-react";
 
 interface BedAssignment {
   id: string;
@@ -64,11 +77,21 @@ export function OccupancyGrid({
         <Card key={room.id}>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">
+              <CardTitle className="text-base flex items-center gap-2">
                 {room.name}
                 {room.floor != null && (
                   <span className="text-muted-foreground font-normal ml-2">
                     Floor {room.floor}
+                  </span>
+                )}
+                {canManage && (
+                  <span className="flex items-center gap-1 ml-2">
+                    <EditRoomDialog
+                      roomId={room.id}
+                      currentName={room.name}
+                      currentFloor={room.floor}
+                    />
+                    <DeleteRoomButton roomId={room.id} roomName={room.name} />
                   </span>
                 )}
               </CardTitle>
@@ -100,8 +123,20 @@ export function OccupancyGrid({
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium">
+                          <span className="text-sm font-medium flex items-center gap-1">
                             {bed.label}
+                            {canManage && (
+                              <span className="flex items-center gap-0.5 ml-1">
+                                <EditBedDialog
+                                  bedId={bed.id}
+                                  currentLabel={bed.label}
+                                />
+                                <DeleteBedButton
+                                  bedId={bed.id}
+                                  bedLabel={bed.label}
+                                />
+                              </span>
+                            )}
                           </span>
                           <Badge
                             variant={isOccupied ? "default" : "secondary"}
@@ -132,5 +167,221 @@ export function OccupancyGrid({
         </Card>
       ))}
     </div>
+  );
+}
+
+// ─── Edit Room Dialog ────────────────────────────────────────
+
+function EditRoomDialog({
+  roomId,
+  currentName,
+  currentFloor,
+}: {
+  roomId: string;
+  currentName: string;
+  currentFloor: number | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const [state, action, pending] = useActionState(updateRoom, undefined);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={
+        <button
+          className="inline-flex items-center justify-center rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          title="Edit room"
+        />
+      }>
+        <Pencil className="h-3.5 w-3.5" />
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit Room</DialogTitle>
+        </DialogHeader>
+        <form action={action} className="space-y-4">
+          <input type="hidden" name="room_id" value={roomId} />
+          <div className="space-y-2">
+            <Label htmlFor={`edit-room-name-${roomId}`}>Room Name *</Label>
+            <Input
+              id={`edit-room-name-${roomId}`}
+              name="name"
+              defaultValue={currentName}
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`edit-room-floor-${roomId}`}>Floor</Label>
+            <Input
+              id={`edit-room-floor-${roomId}`}
+              name="floor"
+              type="number"
+              defaultValue={currentFloor ?? ""}
+              placeholder="Optional"
+            />
+          </div>
+          {state?.error && (
+            <p className="text-sm text-destructive">{state.error}</p>
+          )}
+          <Button type="submit" className="w-full" disabled={pending}>
+            {pending ? "Saving…" : "Save Changes"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Delete Room Button ──────────────────────────────────────
+
+function DeleteRoomButton({
+  roomId,
+  roomName,
+}: {
+  roomId: string;
+  roomName: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [state, action, pending] = useActionState(deleteRoom, undefined);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={
+        <button
+          className="inline-flex items-center justify-center rounded p-1 text-muted-foreground hover:text-destructive hover:bg-muted transition-colors"
+          title="Delete room"
+        />
+      }>
+        <Trash2 className="h-3.5 w-3.5" />
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete Room</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Are you sure you want to delete <strong>{roomName}</strong> and all its
+          beds? This action cannot be undone.
+        </p>
+        {state?.error && (
+          <p className="text-sm text-destructive">{state.error}</p>
+        )}
+        <form action={action}>
+          <input type="hidden" name="room_id" value={roomId} />
+          <div className="flex gap-2 justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" variant="destructive" disabled={pending}>
+              {pending ? "Deleting…" : "Delete"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Edit Bed Dialog ─────────────────────────────────────────
+
+function EditBedDialog({
+  bedId,
+  currentLabel,
+}: {
+  bedId: string;
+  currentLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [state, action, pending] = useActionState(updateBed, undefined);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={
+        <button
+          className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          title="Edit bed"
+        />
+      }>
+        <Pencil className="h-3 w-3" />
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit Bed</DialogTitle>
+        </DialogHeader>
+        <form action={action} className="space-y-4">
+          <input type="hidden" name="bed_id" value={bedId} />
+          <div className="space-y-2">
+            <Label htmlFor={`edit-bed-label-${bedId}`}>Bed Label *</Label>
+            <Input
+              id={`edit-bed-label-${bedId}`}
+              name="label"
+              defaultValue={currentLabel}
+              required
+            />
+          </div>
+          {state?.error && (
+            <p className="text-sm text-destructive">{state.error}</p>
+          )}
+          <Button type="submit" className="w-full" disabled={pending}>
+            {pending ? "Saving…" : "Save Changes"}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Delete Bed Button ───────────────────────────────────────
+
+function DeleteBedButton({
+  bedId,
+  bedLabel,
+}: {
+  bedId: string;
+  bedLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [state, action, pending] = useActionState(deleteBed, undefined);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={
+        <button
+          className="inline-flex items-center justify-center rounded p-0.5 text-muted-foreground hover:text-destructive hover:bg-muted transition-colors"
+          title="Delete bed"
+        />
+      }>
+        <Trash2 className="h-3 w-3" />
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete Bed</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Are you sure you want to delete bed <strong>{bedLabel}</strong>? This
+          action cannot be undone.
+        </p>
+        {state?.error && (
+          <p className="text-sm text-destructive">{state.error}</p>
+        )}
+        <form action={action}>
+          <input type="hidden" name="bed_id" value={bedId} />
+          <div className="flex gap-2 justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" variant="destructive" disabled={pending}>
+              {pending ? "Deleting…" : "Delete"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
