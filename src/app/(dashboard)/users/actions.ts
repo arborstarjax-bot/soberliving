@@ -17,6 +17,7 @@ export async function createUser(
     full_name: formData.get("full_name"),
     phone: formData.get("phone") || undefined,
   });
+  const houseId = (formData.get("house_id") as string) || null;
 
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
@@ -50,6 +51,7 @@ export async function createUser(
       email: parsed.data.email,
       full_name: parsed.data.full_name,
       phone: parsed.data.phone ?? null,
+      ...(houseId ? { pending_house_id: houseId } : {}),
     });
 
     if (userError) return { error: userError.message };

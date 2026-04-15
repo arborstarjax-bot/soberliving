@@ -147,7 +147,12 @@ export function CommitmentSigningForm({
     drawText(`Date: ${new Date().toLocaleDateString()}`, 250, y - 40, 9);
 
     const pdfBytes = await pdf.save();
-    return Buffer.from(pdfBytes).toString("base64");
+    const bytes = new Uint8Array(pdfBytes);
+    let binary = "";
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
   }, [residentName, houseName, propertyLocation, rentAmount, adminFee, paymentFrequency, rentDueDate, commitmentStartDate, commitmentTerm, notes, staffSignature, staffSignedAt, residentSignature]);
 
   function handleSubmit() {

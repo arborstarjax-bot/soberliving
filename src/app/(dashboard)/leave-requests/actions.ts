@@ -196,12 +196,18 @@ export async function denyCoverRequest(requestId: string, note?: string) {
 
   const { data: request } = await supabase
     .from("leave_requests")
-    .select("*, resident:residents!leave_requests_resident_id_fkey(full_name, house_id, user_id)")
+    .select("*, resident:residents!leave_requests_resident_id_fkey(full_name, house_id, user_id), covering_resident:residents!leave_requests_covering_resident_id_fkey(user_id)")
     .eq("id", requestId)
     .single();
 
   if (!request) return { error: "Request not found" };
   if (request.status !== "pending_cover") return { error: "Request is not pending cover approval" };
+
+  // Verify the current user is the covering resident or staff
+  const coverResident = request.covering_resident as unknown as { user_id: string } | null;
+  if (coverResident?.user_id !== user.id && user.role === "resident") {
+    return { error: "Only the covering resident can deny this" };
+  }
 
   const { error } = await supabase
     .from("leave_requests")

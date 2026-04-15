@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { getDaysSober } from "@/lib/milestones";
 import { CreateUserDialog } from "../users/create-user-dialog";
@@ -26,10 +26,10 @@ export default async function ResidentsPage() {
 
   const { data: residents } = await query;
 
-  // Fetch houses
+  // Fetch houses (with address for intake review form)
   let housesQuery = supabase
     .from("houses")
-    .select("id, name")
+    .select("id, name, address")
     .eq("is_active", true)
     .order("name");
   if (houseFilter) {
@@ -105,6 +105,82 @@ export default async function ResidentsPage() {
       };
     });
 
+  // Fetch intake data for staff (pending reviews + awaiting signatures)
+  let intakePending: Array<{
+    id: string;
+    full_name: string;
+    email: string;
+    phone: string | null;
+    created_at: string;
+    intakeFormData: Record<string, unknown>;
+    completedAt: string | null;
+  }> = [];
+  let intakeAwaiting: Array<{
+    id: string;
+    full_name: string;
+    email: string;
+  }> = [];
+
+  if (isStaff) {
+    const adminClient = createAdminClient();
+
+    // Get users who completed intake but don't have commitment_signed
+    const { data: intakeUsers } = await adminClient
+      .from("users")
+      .select("id, full_name, email, phone, intake_completed, commitment_signed, is_active, created_at")
+      .eq("intake_completed", true)
+      .eq("commitment_signed", false)
+      .eq("is_active", true)
+      .order("created_at", { ascending: false });
+
+    const intakeUserIds = (intakeUsers ?? []).map((u) => u.id);
+    const { data: existingCommitments } = await adminClient
+      .from("house_commitments")
+      .select("user_id, status")
+      .in("user_id", intakeUserIds.length > 0 ? intakeUserIds : ["none"]);
+
+    const usersWithCommitments = new Set(
+      (existingCommitments ?? []).map((c) => c.user_id)
+    );
+
+    const pendingUsers = (intakeUsers ?? []).filter((u) => !usersWithCommitments.has(u.id));
+    const awaitingSignature = (existingCommitments ?? [])
+      .filter((c) => c.status === "pending_resident_signature")
+      .map((c) => c.user_id);
+    const awaitingUsers = (intakeUsers ?? []).filter((u) => awaitingSignature.includes(u.id));
+
+    // Get intake form data for pending users
+    const pendingIds = pendingUsers.map((u) => u.id);
+    const { data: intakeForms } = await adminClient
+      .from("intake_forms")
+      .select("user_id, form_data, completed_at")
+      .in("user_id", pendingIds.length > 0 ? pendingIds : ["none"])
+      .eq("status", "completed");
+
+    const intakeMap = new Map(
+      (intakeForms ?? []).map((f) => [f.user_id, f])
+    );
+
+    intakePending = pendingUsers.map((u) => {
+      const intake = intakeMap.get(u.id);
+      return {
+        id: u.id,
+        full_name: u.full_name,
+        email: u.email,
+        phone: u.phone ?? null,
+        created_at: u.created_at,
+        intakeFormData: (intake?.form_data ?? {}) as Record<string, unknown>,
+        completedAt: intake?.completed_at ?? null,
+      };
+    });
+
+    intakeAwaiting = awaitingUsers.map((u) => ({
+      id: u.id,
+      full_name: u.full_name,
+      email: u.email,
+    }));
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -115,7 +191,7 @@ export default async function ResidentsPage() {
             active residents
           </p>
         </div>
-        {isStaff && <CreateUserDialog />}
+        {isStaff && <CreateUserDialog houses={houses ?? []} />}
       </div>
 
       <ResidentsTabs
@@ -124,6 +200,8 @@ export default async function ResidentsPage() {
         staffUsers={normalizedStaff}
         isAdmin={isAdmin}
         isStaff={isStaff}
+        intakePending={intakePending}
+        intakeAwaiting={intakeAwaiting}
       />
     </div>
   );

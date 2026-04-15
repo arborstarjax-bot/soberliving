@@ -20,6 +20,7 @@ import {
   ShieldAlert,
   MessageSquare,
   Bell,
+  FileText,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -86,6 +87,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: Bell,
     roles: ["admin", "manager", "resident"],
   },
+  // Intake Review is now a tab inside the Residents page
   // Users & Roles folded into Residents page — /users route still works for direct access
   {
     label: "Activity Log",

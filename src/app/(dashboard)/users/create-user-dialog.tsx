@@ -14,7 +14,12 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, Copy, Check, Mail } from "lucide-react";
 
-export function CreateUserDialog() {
+interface House {
+  id: string;
+  name: string;
+}
+
+export function CreateUserDialog({ houses = [] }: { houses?: House[] }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState(createUser, undefined);
   const [copied, setCopied] = useState(false);
@@ -102,6 +107,25 @@ export function CreateUserDialog() {
               <Label>Phone</Label>
               <Input name="phone" />
             </div>
+            {houses.length > 0 && (
+              <div className="space-y-2">
+                <Label>House (optional)</Label>
+                <select
+                  name="house_id"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                >
+                  <option value="">No house assigned</option>
+                  {houses.map((h) => (
+                    <option key={h.id} value={h.id}>
+                      {h.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  Pre-assign a house so the intake goes to the right manager.
+                </p>
+              </div>
+            )}
             {state?.error && (
               <p className="text-sm text-destructive">{state.error}</p>
             )}
