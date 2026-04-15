@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createBrowserClient } from "@supabase/ssr";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +20,8 @@ export default function ResetPasswordPage() {
   const [success, setSuccess] = useState(false);
   const [pending, setPending] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
+  const [linkExpired, setLinkExpired] = useState(false);
+  const initialized = useRef(false);
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -27,23 +29,47 @@ export default function ResetPasswordPage() {
   );
 
   useEffect(() => {
-    // Check if we have a valid session (from the callback redirect)
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    if (initialized.current) return;
+    initialized.current = true;
+
+    async function handleTokens() {
+      // Parse hash fragment for access_token and refresh_token
+      const hash = window.location.hash.substring(1);
+      const params = new URLSearchParams(hash);
+      const accessToken = params.get("access_token");
+      const refreshToken = params.get("refresh_token");
+
+      if (accessToken && refreshToken) {
+        // Set the session from the URL hash tokens
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+
+        if (sessionError) {
+          console.error("Failed to set session:", sessionError.message);
+          setLinkExpired(true);
+          return;
+        }
+
+        // Clear the hash from the URL for cleanliness
+        window.history.replaceState(null, "", "/reset-password");
+        setSessionReady(true);
+        return;
+      }
+
+      // No hash tokens — check if we already have a session (e.g. from callback)
+      const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         setSessionReady(true);
+        return;
       }
-    });
 
-    // Also listen for auth state changes (handles hash-based token exchange)
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
-        setSessionReady(true);
-      }
-    });
+      // No session and no tokens — link is invalid/expired
+      setLinkExpired(true);
+    }
 
-    return () => subscription.unsubscribe();
+    handleTokens();
   }, [supabase.auth]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -70,6 +96,8 @@ export default function ResetPasswordPage() {
       return;
     }
 
+    // Sign out so the user logs in fresh with their new password
+    await supabase.auth.signOut();
     setSuccess(true);
   }
 
@@ -82,7 +110,7 @@ export default function ResetPasswordPage() {
               Password Updated
             </CardTitle>
             <CardDescription>
-              Your password has been set successfully.
+              Your password has been set successfully. You can now sign in.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -106,7 +134,9 @@ export default function ResetPasswordPage() {
           <CardDescription>
             {sessionReady
               ? "Choose a password for your account."
-              : "Verifying your invite link…"}
+              : linkExpired
+                ? "This invite link has expired or is invalid."
+                : "Verifying your invite link\u2026"}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -140,13 +170,25 @@ export default function ResetPasswordPage() {
                 <p className="text-sm text-destructive">{error}</p>
               )}
               <Button type="submit" className="w-full" disabled={pending}>
-                {pending ? "Setting password…" : "Set Password"}
+                {pending ? "Setting password\u2026" : "Set Password"}
               </Button>
             </form>
+          ) : linkExpired ? (
+            <div className="space-y-3 text-center">
+              <p className="text-sm text-muted-foreground">
+                Please ask your admin to generate a new invite link.
+              </p>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => (window.location.href = "/login")}
+              >
+                Back to Login
+              </Button>
+            </div>
           ) : (
             <p className="text-sm text-center text-muted-foreground">
-              If this page doesn&apos;t update, your invite link may have
-              expired. Please ask your admin for a new one.
+              Please wait while we verify your link&hellip;
             </p>
           )}
         </CardContent>
