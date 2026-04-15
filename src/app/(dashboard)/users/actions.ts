@@ -43,34 +43,34 @@ export async function createUser(
     .eq("id", authUserId)
     .maybeSingle();
 
-  if (existingUser) {
-    return { error: "A user with this email already exists" };
+  if (!existingUser) {
+    // Create user record
+    const { error: userError } = await supabase.from("users").insert({
+      id: authUserId,
+      email: parsed.data.email,
+      full_name: parsed.data.full_name,
+      phone: parsed.data.phone ?? null,
+    });
+
+    if (userError) return { error: userError.message };
+
+    // Default role is resident
+    const { error: roleError } = await supabase.from("user_roles").insert({
+      user_id: authUserId,
+      role: "resident",
+    });
+
+    if (roleError) return { error: roleError.message };
   }
-
-  // Create user record
-  const { error: userError } = await supabase.from("users").insert({
-    id: authUserId,
-    email: parsed.data.email,
-    full_name: parsed.data.full_name,
-    phone: parsed.data.phone ?? null,
-  });
-
-  if (userError) return { error: userError.message };
-
-  // Default role is resident
-  const { error: roleError } = await supabase.from("user_roles").insert({
-    user_id: authUserId,
-    role: "resident",
-  });
-
-  if (roleError) return { error: roleError.message };
 
   await logActivity({
     actorId: user.id,
-    eventType: "user_created",
+    eventType: existingUser ? "user_reinvited" : "user_created",
     entityType: "user",
     entityId: authUserId,
-    description: `Resident "${parsed.data.full_name}" invited by ${user.full_name}`,
+    description: existingUser
+      ? `Resident "${parsed.data.full_name}" re-invited by ${user.full_name}`
+      : `Resident "${parsed.data.full_name}" invited by ${user.full_name}`,
   });
 
   revalidatePath("/users");
