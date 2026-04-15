@@ -124,6 +124,7 @@ export async function voidPayment(
 
   revalidatePath("/payments");
   revalidatePath("/dashboard");
+  revalidatePath(`/residents/${payment.resident_id}`);
   return {};
 }
 

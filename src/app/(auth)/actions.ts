@@ -16,7 +16,7 @@ export async function login(
   const password = formData.get("password") as string;
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({
+  const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,
   });
@@ -31,6 +31,17 @@ export async function login(
     return { error: error.message };
   }
 
+  // Redirect based on role
+  const { data: roleRecord } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", data.user?.id ?? "")
+    .single();
+
+  const role = roleRecord?.role ?? "resident";
+  if (role === "admin" || role === "manager") {
+    redirect("/admin");
+  }
   redirect("/dashboard");
 }
 

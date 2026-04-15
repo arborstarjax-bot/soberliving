@@ -18,6 +18,7 @@ import {
   LogOut,
   Menu,
   X,
+  ShieldCheck,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -31,10 +32,16 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   {
+    label: "Admin Panel",
+    href: "/admin",
+    icon: ShieldCheck,
+    roles: ["admin", "manager"],
+  },
+  {
     label: "Dashboard",
     href: "/dashboard",
     icon: LayoutDashboard,
-    roles: ["admin", "manager", "resident"],
+    roles: ["resident"],
   },
   {
     label: "Houses",
@@ -109,7 +116,7 @@ export function Sidebar({ role, userName }: SidebarProps) {
     <>
       <div className="flex h-14 items-center border-b px-4">
         <Link
-          href="/dashboard"
+          href={role === "resident" ? "/dashboard" : "/admin"}
           className="flex items-center gap-2 font-semibold"
           onClick={() => setMobileOpen(false)}
         >

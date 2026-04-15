@@ -143,6 +143,21 @@ export const voidPaymentSchema = z.object({
 
 // --- Rent Config ---
 
+// --- Demerits ---
+
+export const createDemeritSchema = z.object({
+  resident_id: z.string().uuid("Resident is required"),
+  house_id: z.string().uuid("House is required"),
+  points: z.coerce.number().int().min(1).max(10).default(1),
+  reason: z.string().min(1, "Reason is required"),
+  category: z.string().optional(),
+});
+
+export const resolveDemeritSchema = z.object({
+  demerit_id: z.string().uuid(),
+  resolution_note: z.string().optional(),
+});
+
 export const upsertRentConfigSchema = z.object({
   house_id: z.string().uuid(),
   monthly_amount: z.coerce.number().positive("Monthly amount must be greater than 0"),

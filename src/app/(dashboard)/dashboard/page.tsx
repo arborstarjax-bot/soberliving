@@ -6,18 +6,24 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Home, Users, ClipboardCheck, AlertTriangle, CalendarClock, Bed, Activity, DollarSign } from "lucide-react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 export default async function DashboardPage() {
   const user = await requireAuth();
   const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
 
+  // Admin and Manager go to admin panel
+  if (user.role === "admin" || user.role === "manager") {
+    redirect("/admin");
+  }
+
   // Resident dashboard
   if (user.role === "resident") {
     return <ResidentDashboard userId={user.id} />;
   }
 
-  // Admin / Manager dashboard
+  // Fallback dashboard (should not normally reach here)
   let housesQuery = supabase.from("houses").select("id", { count: "exact" }).eq("is_active", true);
   if (houseFilter) {
     housesQuery = housesQuery.in("id", houseFilter);

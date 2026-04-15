@@ -95,9 +95,7 @@ export default async function PaymentsPage() {
       .from("payments")
       .select("amount")
       .eq("status", "completed");
-    if (user.role === "resident" && residentRecord) {
-      completedStatsQuery = completedStatsQuery.eq("resident_id", residentRecord.id);
-    } else if (houseFilter) {
+    if (houseFilter) {
       completedStatsQuery = completedStatsQuery.in("house_id", houseFilter);
     }
     const { data: completedData } = await completedStatsQuery;
@@ -109,9 +107,7 @@ export default async function PaymentsPage() {
       .from("payments")
       .select("amount")
       .eq("status", "pending");
-    if (user.role === "resident" && residentRecord) {
-      pendingStatsQuery = pendingStatsQuery.eq("resident_id", residentRecord.id);
-    } else if (houseFilter) {
+    if (houseFilter) {
       pendingStatsQuery = pendingStatsQuery.in("house_id", houseFilter);
     }
     const { data: pendingData } = await pendingStatsQuery;

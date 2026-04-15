@@ -27,6 +27,8 @@ export type PaymentMethod = "cash" | "check" | "money_order" | "venmo" | "zelle"
 
 export type PaymentStatus = "completed" | "pending" | "refunded" | "void";
 
+export type DemeritStatus = "active" | "resolved" | "appealed";
+
 // --- Database Row Types ---
 
 export interface User {
@@ -229,6 +231,22 @@ export interface Payment {
   paid_at: string;
   note: string | null;
   recorded_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Demerit {
+  id: string;
+  resident_id: string;
+  house_id: string;
+  issued_by: string;
+  points: number;
+  reason: string;
+  category: string | null;
+  status: DemeritStatus;
+  resolved_by: string | null;
+  resolved_at: string | null;
+  resolution_note: string | null;
   created_at: string;
   updated_at: string;
 }

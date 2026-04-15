@@ -674,6 +674,50 @@ create policy "Staff can manage payments"
   );
 
 -- ============================================================
+-- 18. Demerits
+-- ============================================================
+
+create table if not exists public.demerits (
+  id uuid primary key default uuid_generate_v4(),
+  resident_id uuid not null references public.residents(id) on delete cascade,
+  house_id uuid not null references public.houses(id) on delete cascade,
+  issued_by uuid not null references public.users(id),
+  points integer not null default 1,
+  reason text not null,
+  category text,
+  status text not null default 'active' check (status in ('active', 'resolved', 'appealed')),
+  resolved_by uuid references public.users(id),
+  resolved_at timestamptz,
+  resolution_note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.demerits enable row level security;
+
+drop policy if exists "Demerits viewable by authenticated" on public.demerits;
+create policy "Demerits viewable by authenticated" on public.demerits
+  for select using (auth.role() = 'authenticated');
+
+drop policy if exists "Demerits insertable by staff" on public.demerits;
+create policy "Demerits insertable by staff" on public.demerits
+  for insert with check (
+    exists (
+      select 1 from public.user_roles
+      where user_id = auth.uid() and role in ('admin', 'manager')
+    )
+  );
+
+drop policy if exists "Demerits updatable by staff" on public.demerits;
+create policy "Demerits updatable by staff" on public.demerits
+  for update using (
+    exists (
+      select 1 from public.user_roles
+      where user_id = auth.uid() and role in ('admin', 'manager')
+    )
+  );
+
+-- ============================================================
 -- Auto-create user profile on signup
 -- ============================================================
 
