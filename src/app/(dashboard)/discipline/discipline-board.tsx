@@ -53,7 +53,7 @@ export function DisciplineBoard({
   );
 
   // Show up to 12 columns or max demerits, whichever is larger
-  const columns = Math.max(maxDemerits, 6);
+  const columns = Math.max(maxDemerits, 10);
 
   return (
     <Card>
