@@ -8,7 +8,11 @@ export const createHouseSchema = z.object({
   phone: z.string().max(20).optional(),
 });
 
-export const updateHouseSchema = createHouseSchema.partial();
+export const updateHouseSchema = z.object({
+  name: z.string().min(1, "House name is required").max(100).optional(),
+  address: z.string().max(500).nullish(),
+  phone: z.string().max(20).nullish(),
+});
 
 // --- Rooms ---
 

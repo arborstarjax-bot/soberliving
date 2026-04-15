@@ -12,6 +12,8 @@ export async function createPayment(
   formData: FormData
 ) {
   const user = await requireAuth();
+  if (user.role === "resident") return { error: "Not authorized" };
+
   const parsed = createPaymentSchema.safeParse({
     resident_id: formData.get("resident_id"),
     house_id: formData.get("house_id"),
@@ -79,6 +81,8 @@ export async function voidPayment(
   formData: FormData
 ) {
   const user = await requireAuth();
+  if (user.role === "resident") return { error: "Not authorized" };
+
   const parsed = voidPaymentSchema.safeParse({
     payment_id: formData.get("payment_id"),
   });
@@ -134,6 +138,8 @@ export async function upsertRentConfig(
   formData: FormData
 ) {
   const user = await requireAuth();
+  if (user.role === "resident") return { error: "Not authorized" };
+
   const parsed = upsertRentConfigSchema.safeParse({
     house_id: formData.get("house_id"),
     monthly_amount: formData.get("monthly_amount"),

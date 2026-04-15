@@ -58,8 +58,8 @@ export async function updateHouse(houseId: string, formData: FormData) {
   const user = await requireRole("admin");
   const parsed = updateHouseSchema.safeParse({
     name: formData.get("name") || undefined,
-    address: formData.get("address") || undefined,
-    phone: formData.get("phone") || undefined,
+    address: formData.has("address") ? (formData.get("address") || null) : undefined,
+    phone: formData.has("phone") ? (formData.get("phone") || null) : undefined,
   });
 
   if (!parsed.success) {

@@ -2,11 +2,11 @@ import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// Resend requires a verified domain. Use RESEND_FROM_EMAIL for a verified
+// Resend requires a verified domain. Use FROM_EMAIL for a verified
 // sender, or fall back to Resend's default sandbox address.
 const fromEmail =
+  process.env.FROM_EMAIL ||
   process.env.RESEND_FROM_EMAIL ||
-  process.env.PROPOSAL_FROM_EMAIL ||
   "Sober Living <onboarding@resend.dev>";
 
 export async function sendInviteEmail({

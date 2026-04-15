@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { createUserSchema, assignManagerSchema } from "@/lib/validations";
@@ -112,16 +112,18 @@ export async function createUser(
 
 export async function changeUserRole(userId: string, newRole: string) {
   const user = await requireRole("admin");
-  const supabase = await createClient();
+  if (userId === user.id) return { error: "Cannot change your own role" };
+
+  const adminClient = createAdminClient();
 
   // Upsert role record
-  const { error } = await supabase
+  const { error } = await adminClient
     .from("user_roles")
     .upsert({ user_id: userId, role: newRole }, { onConflict: "user_id" });
 
   if (error) return { error: error.message };
 
-  const { data: targetUser } = await supabase
+  const { data: targetUser } = await adminClient
     .from("users")
     .select("full_name")
     .eq("id", userId)
@@ -139,6 +141,121 @@ export async function changeUserRole(userId: string, newRole: string) {
   return {};
 }
 
+export async function deleteUser(userId: string) {
+  const user = await requireRole("admin");
+  if (userId === user.id) return { error: "Cannot delete yourself" };
+
+  const adminClient = createAdminClient();
+
+  // Get user info for logging before deletion
+  const { data: targetUser } = await adminClient
+    .from("users")
+    .select("full_name, email")
+    .eq("id", userId)
+    .single();
+
+  // Delete from manager_house_assignments
+  await adminClient
+    .from("manager_house_assignments")
+    .delete()
+    .eq("user_id", userId);
+
+  // Delete from user_roles
+  await adminClient
+    .from("user_roles")
+    .delete()
+    .eq("user_id", userId);
+
+  // Delete from users table
+  const { error: dbError } = await adminClient
+    .from("users")
+    .delete()
+    .eq("id", userId);
+
+  if (dbError) return { error: dbError.message };
+
+  // Delete from Supabase Auth
+  const { error: authError } = await adminClient.auth.admin.deleteUser(userId);
+  if (authError) {
+    console.error("Failed to delete auth user:", authError.message);
+    // Don't return error since DB records are already deleted
+  }
+
+  await logActivity({
+    actorId: user.id,
+    eventType: "user_deleted",
+    entityType: "user",
+    entityId: userId,
+    description: `User "${targetUser?.full_name}" (${targetUser?.email}) permanently deleted by ${user.full_name}`,
+  });
+
+  revalidatePath("/users");
+  return {};
+}
+
+export async function resendInviteLink(userId: string) {
+  const user = await requireRole("admin");
+  const adminClient = createAdminClient();
+
+  // Get user email and name
+  const { data: targetUser, error: fetchError } = await adminClient
+    .from("users")
+    .select("email, full_name")
+    .eq("id", userId)
+    .single();
+
+  if (fetchError || !targetUser) return { error: "User not found" };
+
+  // Get user role
+  const { data: roleData } = await adminClient
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .single();
+
+  const role = roleData?.role ?? "resident";
+
+  // Generate a new password recovery link
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
+    type: "recovery",
+    email: targetUser.email,
+    options: {
+      redirectTo: `${appUrl}/api/auth/callback?type=recovery`,
+    },
+  });
+
+  if (linkError) return { error: linkError.message };
+
+  const inviteLink = linkData?.properties?.action_link ?? "";
+  if (!inviteLink) return { error: "Failed to generate invite link" };
+
+  // Send invite email via Resend
+  let emailSent = false;
+  let emailError: string | null = null;
+  if (process.env.RESEND_API_KEY) {
+    const result = await sendInviteEmail({
+      to: targetUser.email,
+      fullName: targetUser.full_name,
+      role,
+      inviteLink,
+    });
+    emailSent = !result.error;
+    emailError = result.error;
+  }
+
+  await logActivity({
+    actorId: user.id,
+    eventType: "invite_resent",
+    entityType: "user",
+    entityId: userId,
+    description: `Invite link resent to ${targetUser.full_name} by ${user.full_name}`,
+  });
+
+  revalidatePath("/users");
+  return { inviteLink, emailSent, emailError };
+}
+
 export async function assignManagerToHouses(
   _prevState: { error?: string } | undefined,
   formData: FormData
@@ -154,28 +271,30 @@ export async function assignManagerToHouses(
 
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
-  const supabase = await createClient();
+  const adminClient = createAdminClient();
 
   // Remove existing assignments
-  await supabase
+  await adminClient
     .from("manager_house_assignments")
     .update({ unassigned_at: new Date().toISOString() })
     .eq("user_id", userId)
     .is("unassigned_at", null);
 
-  // Create new assignments
-  const assignments = houseIds.map((houseId) => ({
-    user_id: userId,
-    house_id: houseId,
-  }));
+  // Create new assignments (only if houses selected)
+  if (houseIds.length > 0) {
+    const assignments = houseIds.map((houseId) => ({
+      user_id: userId,
+      house_id: houseId,
+    }));
 
-  const { error } = await supabase
-    .from("manager_house_assignments")
-    .insert(assignments);
+    const { error } = await adminClient
+      .from("manager_house_assignments")
+      .insert(assignments);
 
-  if (error) return { error: error.message };
+    if (error) return { error: error.message };
+  }
 
-  const { data: targetUser } = await supabase
+  const { data: targetUser } = await adminClient
     .from("users")
     .select("full_name")
     .eq("id", userId)
@@ -197,16 +316,16 @@ export async function deactivateUser(userId: string) {
   const user = await requireRole("admin");
   if (userId === user.id) return { error: "Cannot deactivate yourself" };
 
-  const supabase = await createClient();
+  const adminClient = createAdminClient();
 
-  const { error } = await supabase
+  const { error } = await adminClient
     .from("users")
     .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq("id", userId);
 
   if (error) return { error: error.message };
 
-  const { data: targetUser } = await supabase
+  const { data: targetUser } = await adminClient
     .from("users")
     .select("full_name")
     .eq("id", userId)
