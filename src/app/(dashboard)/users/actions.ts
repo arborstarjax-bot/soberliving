@@ -5,6 +5,7 @@ import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { createUserSchema, assignManagerSchema } from "@/lib/validations";
+import { sendInviteEmail } from "@/lib/email";
 import crypto from "crypto";
 
 function generateTempPassword(): string {
@@ -12,7 +13,7 @@ function generateTempPassword(): string {
 }
 
 export async function createUser(
-  _prevState: { error?: string; inviteLink?: string } | undefined,
+  _prevState: { error?: string; inviteLink?: string; emailSent?: boolean } | undefined,
   formData: FormData
 ) {
   const user = await requireRole("admin");
@@ -66,6 +67,21 @@ export async function createUser(
     inviteLink = linkData.properties.action_link;
   }
 
+  // Send invite email via Resend
+  let emailSent = false;
+  if (inviteLink && process.env.RESEND_API_KEY) {
+    const { error: emailError } = await sendInviteEmail({
+      to: parsed.data.email,
+      fullName: parsed.data.full_name,
+      role: parsed.data.role,
+      inviteLink,
+    });
+    emailSent = !emailError;
+    if (emailError) {
+      console.error("Failed to send invite email:", emailError);
+    }
+  }
+
   await logActivity({
     actorId: user.id,
     eventType: "user_created",
@@ -75,7 +91,7 @@ export async function createUser(
   });
 
   revalidatePath("/users");
-  return { inviteLink };
+  return { inviteLink, emailSent };
 }
 
 export async function changeUserRole(userId: string, newRole: string) {
