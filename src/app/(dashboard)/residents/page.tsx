@@ -48,20 +48,21 @@ export default async function ResidentsPage() {
   );
 
   // Admin: fetch all users for staff section
-  let staffUsers: Array<{
+  type StaffUser = {
     id: string;
     full_name: string;
     email: string;
     is_active: boolean;
     user_roles: Array<{ role: string }>;
     manager_house_assignments: Array<{ house_id: string; houses: { name: string } | null; unassigned_at: string | null }>;
-  }> | null = null;
+  };
+  let staffUsers: StaffUser[] | null = null;
   if (isAdmin) {
     const { data } = await supabase
       .from("users")
       .select("id, full_name, email, is_active, user_roles(role), manager_house_assignments(house_id, houses(name), unassigned_at)")
       .order("full_name");
-    staffUsers = data as typeof staffUsers;
+    staffUsers = data as StaffUser[] | null;
   }
 
   return (
