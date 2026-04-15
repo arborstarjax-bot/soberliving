@@ -136,7 +136,7 @@ export default async function AdminPage() {
       .from("users")
       .select("id, full_name, email, is_active, user_roles(role), manager_house_assignments(house_id, houses(name), unassigned_at)")
       .order("full_name");
-    users = (data ?? []) as typeof users;
+    users = (data ?? []) as unknown as typeof users;
   }
 
   // --- Pending payments ---
