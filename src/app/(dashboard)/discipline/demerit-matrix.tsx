@@ -458,38 +458,54 @@ function AddDemeritDialog({
           <DialogTitle>Issue Demerit</DialogTitle>
         </DialogHeader>
         <form action={handleSubmit} className="space-y-4">
-          {/* House selector */}
-          <div className="space-y-2">
-            <Label>House *</Label>
-            <select
-              name="house_id"
-              required
-              value={selectedHouse}
-              onChange={(e) => setSelectedHouse(e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-            >
-              <option value="">Select house</option>
-              {houses.map((h) => (
-                <option key={h.id} value={h.id}>{h.name}</option>
-              ))}
-            </select>
-          </div>
+          {preselectedResident ? (
+            <>
+              {/* Auto-filled from matrix click — no dropdowns */}
+              <input type="hidden" name="house_id" value={preselectedResident.house_id} />
+              <input type="hidden" name="resident_id" value={preselectedResident.id} />
+              <div className="rounded-md bg-muted/50 px-3 py-2 text-sm">
+                <span className="font-medium">{preselectedResident.full_name}</span>
+                <span className="text-muted-foreground ml-2">
+                  — {houses.find((h) => h.id === preselectedResident.house_id)?.name ?? ""}
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* House selector */}
+              <div className="space-y-2">
+                <Label>House *</Label>
+                <select
+                  name="house_id"
+                  required
+                  value={selectedHouse}
+                  onChange={(e) => setSelectedHouse(e.target.value)}
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                >
+                  <option value="">Select house</option>
+                  {houses.map((h) => (
+                    <option key={h.id} value={h.id}>{h.name}</option>
+                  ))}
+                </select>
+              </div>
 
-          {/* Resident selector */}
-          <div className="space-y-2">
-            <Label>Resident *</Label>
-            <select
-              name="resident_id"
-              required
-              defaultValue={preselectedResident?.id ?? ""}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-            >
-              <option value="">Select resident</option>
-              {filteredResidents.map((r) => (
-                <option key={r.id} value={r.id}>{r.full_name}</option>
-              ))}
-            </select>
-          </div>
+              {/* Resident selector */}
+              <div className="space-y-2">
+                <Label>Resident *</Label>
+                <select
+                  name="resident_id"
+                  required
+                  defaultValue=""
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                >
+                  <option value="">Select resident</option>
+                  {filteredResidents.map((r) => (
+                    <option key={r.id} value={r.id}>{r.full_name}</option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
 
           {/* Category */}
           <div className="space-y-2">
