@@ -388,8 +388,12 @@ function EventIcon({ eventType }: { eventType: string }) {
       return <CalendarClock className={iconClass} />;
     case "payment_recorded":
     case "payment_voided":
+    case "payment_received":
     case "rent_config_updated":
       return <DollarSign className={iconClass} />;
+    case "demerit_issued":
+    case "demerit_resolved":
+      return <AlertTriangle className={iconClass} />;
     default:
       return <Activity className={iconClass} />;
   }

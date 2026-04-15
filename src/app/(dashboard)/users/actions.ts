@@ -429,6 +429,7 @@ export async function updateUserProfile(
       .from("residents")
       .select("id")
       .eq("user_id", userId)
+      .eq("status", "active")
       .maybeSingle();
 
     const residentData = {
