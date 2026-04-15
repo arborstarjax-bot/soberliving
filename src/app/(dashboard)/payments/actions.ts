@@ -98,6 +98,10 @@ export async function voidPayment(
     return { error: "Not authorized" };
   }
 
+  if (payment.status === "void" || payment.status === "refunded") {
+    return { error: "Payment cannot be voided" };
+  }
+
   const { error } = await supabase
     .from("payments")
     .update({ status: "void", updated_at: new Date().toISOString() })

@@ -52,6 +52,19 @@ export default async function PaymentsPage() {
   const user = await requireAuth();
   const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
+  const isStaff = user.role === "admin" || user.role === "manager";
+
+  // For residents, look up their resident record to filter payments
+  let residentRecord: { id: string } | null = null;
+  if (user.role === "resident") {
+    const { data } = await supabase
+      .from("residents")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("status", "active")
+      .single();
+    residentRecord = data;
+  }
 
   // Payments list
   let paymentsQuery = supabase
@@ -62,36 +75,52 @@ export default async function PaymentsPage() {
     .order("paid_at", { ascending: false })
     .limit(100);
 
-  if (houseFilter) {
+  if (user.role === "resident" && residentRecord) {
+    paymentsQuery = paymentsQuery.eq("resident_id", residentRecord.id);
+  } else if (houseFilter) {
     paymentsQuery = paymentsQuery.in("house_id", houseFilter);
   }
 
   const { data: payments } = await paymentsQuery;
 
-  // Houses and residents for dialogs
-  let housesQuery = supabase
-    .from("houses")
-    .select("id, name")
-    .eq("is_active", true)
-    .order("name");
-  if (houseFilter) housesQuery = housesQuery.in("id", houseFilter);
-  const { data: houses } = await housesQuery;
+  // Houses, residents, and rent configs only needed for staff dialogs
+  let houses: { id: string; name: string }[] = [];
+  let residents: { id: string; full_name: string; house_id: string }[] = [];
+  let rentConfigs: {
+    house_id: string;
+    monthly_amount: number;
+    due_day_of_month: number;
+    late_fee: number;
+    grace_period_days: number;
+  }[] = [];
 
-  let residentsQuery = supabase
-    .from("residents")
-    .select("id, full_name, house_id")
-    .eq("status", "active")
-    .order("full_name");
-  if (houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
-  const { data: residents } = await residentsQuery;
+  if (isStaff) {
+    let housesQuery = supabase
+      .from("houses")
+      .select("id, name")
+      .eq("is_active", true)
+      .order("name");
+    if (houseFilter) housesQuery = housesQuery.in("id", houseFilter);
+    const { data: housesData } = await housesQuery;
+    houses = housesData ?? [];
 
-  // Rent configs for config dialog
-  let rentConfigsQuery = supabase
-    .from("rent_configs")
-    .select("house_id, monthly_amount, due_day_of_month, late_fee, grace_period_days")
-    .eq("is_active", true);
-  if (houseFilter) rentConfigsQuery = rentConfigsQuery.in("house_id", houseFilter);
-  const { data: rentConfigs } = await rentConfigsQuery;
+    let residentsQuery = supabase
+      .from("residents")
+      .select("id, full_name, house_id")
+      .eq("status", "active")
+      .order("full_name");
+    if (houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
+    const { data: residentsData } = await residentsQuery;
+    residents = residentsData ?? [];
+
+    let rentConfigsQuery = supabase
+      .from("rent_configs")
+      .select("house_id, monthly_amount, due_day_of_month, late_fee, grace_period_days")
+      .eq("is_active", true);
+    if (houseFilter) rentConfigsQuery = rentConfigsQuery.in("house_id", houseFilter);
+    const { data: rentConfigsData } = await rentConfigsQuery;
+    rentConfigs = rentConfigsData ?? [];
+  }
 
   const configMap: Record<
     string,
@@ -103,7 +132,7 @@ export default async function PaymentsPage() {
       grace_period_days: number;
     }
   > = {};
-  for (const rc of rentConfigs ?? []) {
+  for (const rc of rentConfigs) {
     configMap[rc.house_id] = rc;
   }
 
@@ -119,8 +148,6 @@ export default async function PaymentsPage() {
     0
   );
 
-  const isStaff = user.role === "admin" || user.role === "manager";
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -133,12 +160,12 @@ export default async function PaymentsPage() {
         {isStaff && (
           <div className="flex gap-2">
             <RentConfigDialog
-              houses={houses ?? []}
+              houses={houses}
               existingConfigs={configMap}
             />
             <CreatePaymentDialog
-              houses={houses ?? []}
-              residents={residents ?? []}
+              houses={houses}
+              residents={residents}
             />
           </div>
         )}
