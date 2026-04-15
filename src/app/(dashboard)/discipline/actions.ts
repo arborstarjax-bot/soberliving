@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
-import { createDemeritSchema, resolveDemeritSchema } from "@/lib/validations";
+import { createDemeritSchema } from "@/lib/validations";
 
 export async function createDemerit(
   _prevState: { error?: string } | undefined,
@@ -67,13 +67,13 @@ export async function createDemerit(
 }
 
 export async function editDemerit(
-  _prevState: { error?: string } | undefined,
-  formData: FormData
+  demeritId: string,
+  reason?: string,
+  notes?: string
 ) {
   const user = await requireAuth();
   if (user.role === "resident") return { error: "Not authorized" };
 
-  const demeritId = formData.get("demerit_id") as string;
   if (!demeritId) return { error: "Demerit ID is required" };
 
   const supabase = await createClient();
@@ -90,15 +90,8 @@ export async function editDemerit(
   }
 
   const updates: Record<string, unknown> = {};
-  const points = formData.get("points");
-  const reason = formData.get("reason");
-  const category = formData.get("category");
-  const notes = formData.get("notes");
-
-  if (points) updates.points = Number(points);
-  if (reason) updates.reason = reason;
-  if (category !== null) updates.category = category || null;
-  if (notes !== null) updates.notes = notes || null;
+  if (reason !== undefined) updates.reason = reason;
+  if (notes !== undefined) updates.notes = notes || null;
   updates.updated_at = new Date().toISOString();
 
   const { error } = await supabase
@@ -151,25 +144,20 @@ export async function deleteDemerit(demeritId: string) {
 }
 
 export async function markDemeritWorkedOff(
-  _prevState: { error?: string } | undefined,
-  formData: FormData
+  demeritId: string,
+  resolutionNote?: string
 ) {
   const user = await requireAuth();
   if (user.role === "resident") return { error: "Not authorized" };
 
-  const parsed = resolveDemeritSchema.safeParse({
-    demerit_id: formData.get("demerit_id"),
-    resolution_note: formData.get("resolution_note") || undefined,
-  });
-
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!demeritId) return { error: "Demerit ID is required" };
 
   const supabase = await createClient();
 
   const { data: demerit } = await supabase
     .from("demerits")
     .select("house_id, resident_id")
-    .eq("id", parsed.data.demerit_id)
+    .eq("id", demeritId)
     .single();
 
   if (!demerit) return { error: "Demerit not found" };
@@ -183,10 +171,10 @@ export async function markDemeritWorkedOff(
       status: "worked_off",
       resolved_by: user.id,
       resolved_at: new Date().toISOString(),
-      resolution_note: parsed.data.resolution_note ?? null,
+      resolution_note: resolutionNote ?? null,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", parsed.data.demerit_id);
+    .eq("id", demeritId);
 
   if (error) return { error: error.message };
 
@@ -196,7 +184,7 @@ export async function markDemeritWorkedOff(
     actorId: user.id,
     eventType: "demerit_resolved",
     entityType: "demerit",
-    entityId: parsed.data.demerit_id,
+    entityId: demeritId,
     description: `Demerit marked as worked off by ${user.full_name}`,
   });
 
