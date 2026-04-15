@@ -160,9 +160,6 @@ export const createUserSchema = z.object({
   email: z.string().email("Valid email is required"),
   full_name: z.string().min(1, "Full name is required").max(200),
   phone: z.string().max(20).optional(),
-  role: z.enum(["admin", "manager", "resident"]),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-  is_resident: z.boolean().optional(),
 });
 
 export const updateUserProfileSchema = z.object({

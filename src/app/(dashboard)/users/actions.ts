@@ -5,9 +5,10 @@ import { createClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { createUserSchema, assignManagerSchema, updateUserProfileSchema } from "@/lib/validations";
+import { sendInviteEmail } from "@/lib/email";
 
 export async function createUser(
-  _prevState: { error?: string } | undefined,
+  _prevState: { error?: string; inviteLink?: string } | undefined,
   formData: FormData
 ) {
   const user = await requireRole("admin");
@@ -15,26 +16,28 @@ export async function createUser(
     email: formData.get("email"),
     full_name: formData.get("full_name"),
     phone: formData.get("phone") || undefined,
-    role: formData.get("role"),
-    password: formData.get("password"),
   });
 
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
   const supabase = await createClient();
 
-  // Create auth user via Supabase
-  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+  // Generate an invite link (also sends email) via Supabase admin API
+  const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+    type: "invite",
     email: parsed.data.email,
-    password: parsed.data.password,
-    email_confirm: true,
+    options: {
+      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/auth/callback`,
+    },
   });
 
-  if (authError) return { error: authError.message };
+  if (linkError) return { error: linkError.message };
+
+  const authUserId = linkData.user.id;
 
   // Create user record
   const { error: userError } = await supabase.from("users").insert({
-    id: authData.user.id,
+    id: authUserId,
     email: parsed.data.email,
     full_name: parsed.data.full_name,
     phone: parsed.data.phone ?? null,
@@ -42,10 +45,10 @@ export async function createUser(
 
   if (userError) return { error: userError.message };
 
-  // Create role record
+  // Default role is resident
   const { error: roleError } = await supabase.from("user_roles").insert({
-    user_id: authData.user.id,
-    role: parsed.data.role,
+    user_id: authUserId,
+    role: "resident",
   });
 
   if (roleError) return { error: roleError.message };
@@ -54,12 +57,33 @@ export async function createUser(
     actorId: user.id,
     eventType: "user_created",
     entityType: "user",
-    entityId: authData.user.id,
-    description: `User "${parsed.data.full_name}" (${parsed.data.role}) created by ${user.full_name}`,
+    entityId: authUserId,
+    description: `Resident "${parsed.data.full_name}" invited by ${user.full_name}`,
   });
 
   revalidatePath("/users");
-  return {};
+  revalidatePath("/residents");
+
+  // Build the invite link from the token properties
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  const token = linkData.properties?.hashed_token;
+  const inviteLink = token
+    ? `${baseUrl}/auth/confirm?token_hash=${token}&type=invite`
+    : `${baseUrl}/login`;
+
+  // Send invite email via Resend (best-effort — don't fail the whole action if email fails)
+  try {
+    await sendInviteEmail({
+      to: parsed.data.email,
+      fullName: parsed.data.full_name,
+      role: "resident",
+      inviteLink,
+    });
+  } catch {
+    // Email send failed — admin can still share the link manually
+  }
+
+  return { inviteLink };
 }
 
 export async function changeUserRole(userId: string, newRole: string) {

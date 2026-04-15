@@ -2,7 +2,6 @@ import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { getDaysSober } from "@/lib/milestones";
-import { CreateResidentDialog } from "./create-resident-dialog";
 import { CreateUserDialog } from "../users/create-user-dialog";
 import { ResidentsTabs } from "./residents-tabs";
 
@@ -116,10 +115,7 @@ export default async function ResidentsPage() {
             active residents
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {isAdmin && <CreateUserDialog />}
-          {isStaff && <CreateResidentDialog houses={houses ?? []} />}
-        </div>
+        {isStaff && <CreateUserDialog />}
       </div>
 
       <ResidentsTabs
