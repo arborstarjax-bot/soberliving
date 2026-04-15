@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CreateUserDialog } from "./create-user-dialog";
-import { UserActions } from "./user-actions";
+import Link from "next/link";
 
 export default async function UsersPage() {
   await requireRole("admin");
@@ -13,12 +13,6 @@ export default async function UsersPage() {
     .from("users")
     .select("*, user_roles(role), manager_house_assignments(house_id, houses(name), unassigned_at)")
     .order("full_name");
-
-  const { data: houses } = await supabase
-    .from("houses")
-    .select("id, name")
-    .eq("is_active", true)
-    .order("name");
 
   return (
     <div className="space-y-6">
@@ -45,49 +39,45 @@ export default async function UsersPage() {
           )?.filter((a) => !a.unassigned_at);
 
           return (
-            <Card key={u.id} className={!u.is_active ? "opacity-50" : ""}>
-              <CardContent className="flex items-center justify-between py-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{u.full_name}</span>
-                    <Badge
-                      variant={
-                        role === "admin"
-                          ? "default"
-                          : role === "manager"
-                            ? "secondary"
-                            : "outline"
-                      }
-                      className="capitalize"
-                    >
-                      {role}
-                    </Badge>
-                    {!u.is_active && (
-                      <Badge variant="destructive">Inactive</Badge>
+            <Link key={u.id} href={`/users/${u.id}`} className="block">
+              <Card className={`hover:bg-accent/50 transition-colors cursor-pointer ${!u.is_active ? "opacity-50" : ""}`}>
+                <CardContent className="flex items-center justify-between py-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{u.full_name}</span>
+                      <Badge
+                        variant={
+                          role === "admin"
+                            ? "default"
+                            : role === "manager"
+                              ? "secondary"
+                              : "outline"
+                        }
+                        className="capitalize"
+                      >
+                        {role}
+                      </Badge>
+                      {u.is_resident && role !== "resident" && (
+                        <Badge variant="outline">Resident</Badge>
+                      )}
+                      {!u.is_active && (
+                        <Badge variant="destructive">Inactive</Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{u.email}</p>
+                    {(role === "manager" || role === "admin") && activeAssignments?.length > 0 && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Houses:{" "}
+                        {activeAssignments
+                          .map((a) => a.houses?.name)
+                          .join(", ")}
+                      </p>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground">{u.email}</p>
-                  {role === "manager" && activeAssignments?.length > 0 && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Houses:{" "}
-                      {activeAssignments
-                        .map((a) => a.houses?.name)
-                        .join(", ")}
-                    </p>
-                  )}
-                </div>
-                {u.is_active && (
-                  <UserActions
-                    userId={u.id}
-                    currentRole={role}
-                    houses={houses ?? []}
-                    assignedHouseIds={
-                      activeAssignments?.map((a) => a.house_id) ?? []
-                    }
-                  />
-                )}
-              </CardContent>
-            </Card>
+                  <span className="text-muted-foreground text-sm">→</span>
+                </CardContent>
+              </Card>
+            </Link>
           );
         })}
       </div>

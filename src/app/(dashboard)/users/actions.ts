@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
-import { createUserSchema, assignManagerSchema } from "@/lib/validations";
+import { createUserSchema, assignManagerSchema, updateUserProfileSchema } from "@/lib/validations";
 import { sendInviteEmail } from "@/lib/email";
 import crypto from "crypto";
 
@@ -339,6 +339,67 @@ export async function deactivateUser(userId: string) {
     description: `${targetUser?.full_name} deactivated by ${user.full_name}`,
   });
 
+  revalidatePath("/users");
+  return {};
+}
+
+export async function updateUserProfile(
+  userId: string,
+  _prevState: { error?: string } | undefined,
+  formData: FormData
+) {
+  const user = await requireRole("admin");
+
+  const parsed = updateUserProfileSchema.safeParse({
+    full_name: formData.get("full_name") || undefined,
+    phone: formData.has("phone") ? (formData.get("phone") || null) : undefined,
+    role: formData.get("role") || undefined,
+    is_resident: formData.get("is_resident") === "on",
+  });
+
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const adminClient = createAdminClient();
+
+  // Update user record
+  const updateData: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+  };
+  if (parsed.data.full_name) updateData.full_name = parsed.data.full_name;
+  if (parsed.data.phone !== undefined) updateData.phone = parsed.data.phone;
+  if (parsed.data.is_resident !== undefined) updateData.is_resident = parsed.data.is_resident;
+
+  const { error: userError } = await adminClient
+    .from("users")
+    .update(updateData)
+    .eq("id", userId);
+
+  if (userError) return { error: userError.message };
+
+  // Update role if changed and not self
+  if (parsed.data.role && userId !== user.id) {
+    const { error: roleError } = await adminClient
+      .from("user_roles")
+      .upsert({ user_id: userId, role: parsed.data.role }, { onConflict: "user_id" });
+
+    if (roleError) return { error: roleError.message };
+  }
+
+  const { data: targetUser } = await adminClient
+    .from("users")
+    .select("full_name")
+    .eq("id", userId)
+    .single();
+
+  await logActivity({
+    actorId: user.id,
+    eventType: "user_updated",
+    entityType: "user",
+    entityId: userId,
+    description: `${targetUser?.full_name}'s profile updated by ${user.full_name}`,
+  });
+
+  revalidatePath(`/users/${userId}`);
   revalidatePath("/users");
   return {};
 }

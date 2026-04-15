@@ -129,9 +129,16 @@ export const createUserSchema = z.object({
   role: z.enum(["admin", "manager", "resident"]),
 });
 
+export const updateUserProfileSchema = z.object({
+  full_name: z.string().min(1, "Full name is required").max(200).optional(),
+  phone: z.string().max(20).nullish(),
+  role: z.enum(["admin", "manager", "resident"]).optional(),
+  is_resident: z.boolean().optional(),
+});
+
 export const assignManagerSchema = z.object({
   user_id: z.string().uuid(),
-  house_ids: z.array(z.string().uuid()).min(1, "Select at least one house"),
+  house_ids: z.array(z.string().uuid()),
 });
 
 // --- Payments ---
