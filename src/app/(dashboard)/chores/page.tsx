@@ -56,6 +56,17 @@ export default async function ChoresPage() {
   if (houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
   const { data: residents } = await residentsQuery;
 
+  // Get chore exclusions
+  const { data: exclusions } = await supabase
+    .from("chore_exclusions")
+    .select("id, chore_id, resident_id, reason, resident:residents(full_name)");
+
+  // Normalize exclusions: Supabase returns joined resident as array, flatten to object
+  const normalizedExclusions = (exclusions ?? []).map((e) => ({
+    ...e,
+    resident: Array.isArray(e.resident) ? e.resident[0] ?? null : e.resident,
+  }));
+
   // Get signoffs needing review
   const pendingSignoffsQuery = supabase
     .from("chore_signoffs")
@@ -188,6 +199,8 @@ export default async function ChoresPage() {
                       a.sort_order - b.sort_order
                   ),
               }))}
+              residents={residents ?? []}
+              exclusions={normalizedExclusions}
             />
           </TabsContent>
         </Tabs>
