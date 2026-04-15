@@ -1,8 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { createIncident } from "./actions";
-import { uploadIncidentPhoto } from "./actions";
+import { createDemerit, uploadDemeritPhoto } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,10 +20,10 @@ interface Props {
   residents: { id: string; full_name: string; house_id: string }[];
 }
 
-export function CreateIncidentDialog({ houses, residents }: Props) {
+export function CreateDemeritDialog({ houses, residents }: Props) {
   const [open, setOpen] = useState(false);
   const [selectedHouse, setSelectedHouse] = useState("");
-  const [state, action, pending] = useActionState(createIncident, undefined);
+  const [state, action, pending] = useActionState(createDemerit, undefined);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -39,7 +38,7 @@ export function CreateIncidentDialog({ houses, residents }: Props) {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const result = await uploadIncidentPhoto(fd);
+      const result = await uploadDemeritPhoto(fd);
       if (result.error) {
         setUploadError(result.error);
         setPhotoUrl(null);
@@ -59,11 +58,11 @@ export function CreateIncidentDialog({ houses, residents }: Props) {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button />}>
           <Plus className="mr-2 h-4 w-4" />
-          Log Incident
+          Issue Demerit
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Log Incident</DialogTitle>
+          <DialogTitle>Issue Demerit</DialogTitle>
         </DialogHeader>
         <form action={action} className="space-y-4">
           <div className="space-y-2">
@@ -100,47 +99,34 @@ export function CreateIncidentDialog({ houses, residents }: Props) {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>Severity *</Label>
-              <select
-                name="severity"
-                required
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-              >
-                <option value="minor">Minor</option>
-                <option value="major">Major</option>
-                <option value="critical">Critical</option>
-              </select>
+              <Label>Points *</Label>
+              <Input name="points" type="number" min={1} max={10} defaultValue={1} required />
             </div>
             <div className="space-y-2">
               <Label>Category</Label>
-              <Input name="category" placeholder="e.g., Curfew, Behavior" />
+              <Input name="category" placeholder="e.g., Chores, Behavior" />
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Date *</Label>
-            <Input
-              name="occurred_at"
-              type="date"
-              required
-              defaultValue={new Date().toISOString().split("T")[0]}
-            />
+            <Label>Reason *</Label>
+            <Textarea name="reason" required rows={2} placeholder="Describe the infraction..." />
           </div>
           <div className="space-y-2">
-            <Label>Description *</Label>
-            <Textarea name="description" required rows={3} />
+            <Label>Notes</Label>
+            <Textarea name="notes" rows={2} placeholder="Additional notes (optional)..." />
           </div>
           <div className="space-y-2">
             <Label>Photo (optional)</Label>
             <div className="flex items-center gap-2">
               <label
-                htmlFor="incident-photo"
+                htmlFor="demerit-photo"
                 className="inline-flex items-center gap-1.5 cursor-pointer rounded-md border border-input px-3 py-1.5 text-sm hover:bg-accent transition-colors"
               >
                 <Camera className="h-4 w-4" />
                 {photoFile ? photoFile.name : "Choose photo"}
               </label>
               <input
-                id="incident-photo"
+                id="demerit-photo"
                 type="file"
                 accept="image/*"
                 className="hidden"
@@ -155,8 +141,8 @@ export function CreateIncidentDialog({ houses, residents }: Props) {
           {state?.error && (
             <p className="text-sm text-destructive">{state.error}</p>
           )}
-          <Button type="submit" className="w-full" disabled={pending}>
-            {pending ? "Logging…" : "Log Incident"}
+          <Button type="submit" className="w-full" disabled={pending || uploading}>
+            {pending ? "Issuing…" : "Issue Demerit"}
           </Button>
         </form>
       </DialogContent>

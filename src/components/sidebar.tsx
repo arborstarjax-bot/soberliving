@@ -17,6 +17,7 @@ import {
   LogOut,
   Menu,
   X,
+  ShieldAlert,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,12 @@ const NAV_ITEMS: NavItem[] = [
     label: "Incidents",
     href: "/incidents",
     icon: AlertTriangle,
+    roles: ["admin", "manager"],
+  },
+  {
+    label: "Discipline",
+    href: "/discipline",
+    icon: ShieldAlert,
     roles: ["admin", "manager"],
   },
   {

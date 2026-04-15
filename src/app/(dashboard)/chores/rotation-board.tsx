@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useTransition, useActionState } from "react";
-import { assignRotationChore, unassignRotationChore, rotateSchedule, markSignoffComplete } from "./actions";
+import { assignRotationChore, unassignRotationChore, rotateSchedule, markSignoffComplete, reviewSignoff } from "./actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ALL_DAYS, DAY_LABELS } from "@/lib/validations";
-import { X, RefreshCw } from "lucide-react";
+import { X, RefreshCw, Check, XCircle } from "lucide-react";
 
 interface RotationAssignment {
   id: string;
@@ -20,6 +20,7 @@ interface RotationAssignment {
     week_number: number;
     status: string;
     sign_off_date: string;
+    rejection_note?: string | null;
   }>;
 }
 
@@ -167,15 +168,19 @@ export function RotationBoard({
                         isStaff || (userRole === "resident" && isOwnChore && isToday)
                       );
 
+                      const canVerify = signoff && signoff.status === "completed_pending_review" && isStaff;
+
                       return (
                         <td
                           key={`${chore.id}-${day}`}
                           className={`border p-2 text-center ${day === todayDay ? "bg-primary/5" : ""}`}
                         >
-                          {canCheckOff ? (
+                          {canVerify ? (
+                            <VerifyButtons signoffId={signoff.id} />
+                          ) : canCheckOff ? (
                             <SignoffButton signoffId={signoff.id} />
                           ) : (
-                            <SignoffBadge status={signoff?.status} />
+                            <SignoffBadge status={signoff?.status} rejectionNote={signoff?.rejection_note} />
                           )}
                         </td>
                       );
@@ -261,6 +266,82 @@ function SignoffButton({ signoffId }: { signoffId: string }) {
   );
 }
 
+function VerifyButtons({ signoffId }: { signoffId: string }) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [showRejectNote, setShowRejectNote] = useState(false);
+  const [rejectNote, setRejectNote] = useState("");
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      {showRejectNote ? (
+        <div className="flex flex-col gap-1 w-full">
+          <input
+            type="text"
+            placeholder="Rejection reason…"
+            value={rejectNote}
+            onChange={(e) => setRejectNote(e.target.value)}
+            className="h-7 rounded border border-input bg-transparent px-2 text-xs w-full"
+            autoFocus
+          />
+          <div className="flex gap-1 justify-end">
+            <button
+              type="button"
+              disabled={pending}
+              className="text-xs px-2 py-0.5 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
+              onClick={() => {
+                setError(null);
+                startTransition(async () => {
+                  const result = await reviewSignoff(signoffId, "reject", rejectNote || undefined);
+                  if (result?.error) setError(result.error);
+                  else { setShowRejectNote(false); setRejectNote(""); }
+                });
+              }}
+            >
+              {pending ? "…" : "Reject"}
+            </button>
+            <button
+              type="button"
+              className="text-xs px-2 py-0.5 rounded border border-input hover:bg-muted transition-colors"
+              onClick={() => { setShowRejectNote(false); setRejectNote(""); }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            disabled={pending}
+            className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-green-100 text-green-700 hover:bg-green-200 transition-colors"
+            title="Approve"
+            onClick={() => {
+              setError(null);
+              startTransition(async () => {
+                const result = await reviewSignoff(signoffId, "approve");
+                if (result?.error) setError(result.error);
+              });
+            }}
+          >
+            {pending ? "…" : <Check className="h-3 w-3" />}
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
+            title="Reject"
+            onClick={() => setShowRejectNote(true)}
+          >
+            <XCircle className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+      {error && <p className="text-[10px] text-destructive">{error}</p>}
+    </div>
+  );
+}
+
 function AssignResidentInline({
   rotationId,
   choreId,
@@ -298,7 +379,7 @@ function AssignResidentInline({
   );
 }
 
-function SignoffBadge({ status }: { status?: string }) {
+function SignoffBadge({ status, rejectionNote }: { status?: string; rejectionNote?: string | null }) {
   if (!status) return <span className="text-muted-foreground">—</span>;
   switch (status) {
     case "approved":
@@ -315,9 +396,16 @@ function SignoffBadge({ status }: { status?: string }) {
       );
     case "rejected":
       return (
-        <span className="inline-block h-5 w-5 rounded-full bg-red-500 text-white text-xs leading-5">
-          ✗
-        </span>
+        <div className="flex flex-col items-center gap-0.5">
+          <span className="inline-block h-5 w-5 rounded-full bg-red-500 text-white text-xs leading-5">
+            ✗
+          </span>
+          {rejectionNote && (
+            <span className="text-[10px] text-red-600 max-w-[80px] truncate" title={rejectionNote}>
+              {rejectionNote}
+            </span>
+          )}
+        </div>
       );
     case "missed":
       return (

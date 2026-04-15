@@ -5,20 +5,19 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
-import { createIncidentSchema } from "@/lib/validations";
+import { createDemeritSchema } from "@/lib/validations";
 
-export async function createIncident(
+export async function createDemerit(
   _prevState: { error?: string } | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
-  const parsed = createIncidentSchema.safeParse({
+  const parsed = createDemeritSchema.safeParse({
     resident_id: formData.get("resident_id"),
     house_id: formData.get("house_id"),
-    severity: formData.get("severity"),
+    points: formData.get("points"),
+    reason: formData.get("reason"),
     category: formData.get("category") || undefined,
-    description: formData.get("description"),
-    occurred_at: formData.get("occurred_at"),
   });
 
   if (!parsed.success) return { error: parsed.error.issues[0].message };
@@ -35,11 +34,17 @@ export async function createIncident(
     .eq("id", parsed.data.resident_id)
     .single();
 
+  const notes = formData.get("notes") as string | null;
   const photoUrl = formData.get("photo_url") as string | null;
 
   const { data, error } = await supabase
-    .from("incidents")
-    .insert({ ...parsed.data, reported_by: user.id, ...(photoUrl ? { photo_url: photoUrl } : {}) })
+    .from("demerits")
+    .insert({
+      ...parsed.data,
+      issued_by: user.id,
+      ...(notes ? { notes } : {}),
+      ...(photoUrl ? { photo_url: photoUrl } : {}),
+    })
     .select("id")
     .single();
 
@@ -49,19 +54,19 @@ export async function createIncident(
     houseId: parsed.data.house_id,
     residentId: parsed.data.resident_id,
     actorId: user.id,
-    eventType: "incident_logged",
-    entityType: "incident",
+    eventType: "demerit_issued",
+    entityType: "demerit",
     entityId: data.id,
-    description: `${parsed.data.severity} incident logged for ${resident?.full_name} by ${user.full_name}`,
-    metadata: { severity: parsed.data.severity, category: parsed.data.category },
+    description: `${parsed.data.points}-point demerit issued to ${resident?.full_name} by ${user.full_name}: ${parsed.data.reason}`,
+    metadata: { points: parsed.data.points, reason: parsed.data.reason },
   });
 
-  revalidatePath("/incidents");
+  revalidatePath("/discipline");
   revalidatePath(`/residents/${parsed.data.resident_id}`);
   return {};
 }
 
-export async function uploadIncidentPhoto(formData: FormData): Promise<{ url?: string; error?: string }> {
+export async function uploadDemeritPhoto(formData: FormData): Promise<{ url?: string; error?: string }> {
   const user = await requireAuth();
   const supabase = await createClient();
 
@@ -69,7 +74,7 @@ export async function uploadIncidentPhoto(formData: FormData): Promise<{ url?: s
   if (!file) return { error: "No file provided" };
 
   const ext = file.name.split(".").pop();
-  const path = `incidents/${user.id}/${Date.now()}.${ext}`;
+  const path = `demerits/${user.id}/${Date.now()}.${ext}`;
 
   const { error } = await supabase.storage
     .from("chore-photos")

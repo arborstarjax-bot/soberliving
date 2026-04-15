@@ -8,9 +8,15 @@ ALTER TABLE public.chores
 ALTER TABLE public.chores
   ADD COLUMN IF NOT EXISTS cycle_weeks integer NOT NULL DEFAULT 2;
 
--- Add check constraint for cycle_weeks
-ALTER TABLE public.chores
-  ADD CONSTRAINT chores_cycle_weeks_check CHECK (cycle_weeks BETWEEN 1 AND 4);
+-- Add check constraint for cycle_weeks (idempotent)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'chores_cycle_weeks_check'
+  ) THEN
+    ALTER TABLE public.chores
+      ADD CONSTRAINT chores_cycle_weeks_check CHECK (cycle_weeks BETWEEN 1 AND 4);
+  END IF;
+END $$;
 
 -- Update day_of_week constraint on chore_signoffs to allow all 7 days
 ALTER TABLE public.chore_signoffs

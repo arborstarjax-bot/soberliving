@@ -2,8 +2,6 @@
 
 import { useState, useTransition } from "react";
 import { updateResidentForcePhoto } from "../actions";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Camera } from "lucide-react";
 
 interface ForcePhotoToggleProps {
@@ -22,17 +20,20 @@ export function ForcePhotoToggle({
   return (
     <div className="flex items-center gap-3">
       <Camera className="h-4 w-4 text-muted-foreground" />
-      <Label
+      <label
         htmlFor="force-photo"
-        className="text-sm font-medium cursor-pointer"
+        className="text-sm font-medium cursor-pointer select-none"
       >
         Require photo for chore sign-off
-      </Label>
-      <Switch
+      </label>
+      <input
         id="force-photo"
+        type="checkbox"
         checked={enabled}
         disabled={pending}
-        onCheckedChange={(checked) => {
+        className="h-4 w-4 rounded border-input"
+        onChange={(e) => {
+          const checked = e.target.checked;
           setError(null);
           setEnabled(checked);
           startTransition(async () => {
