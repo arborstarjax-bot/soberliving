@@ -211,8 +211,6 @@ export default async function ChoresPage() {
                       a.sort_order - b.sort_order
                   ),
               }))}
-              residents={residents ?? []}
-              exclusions={normalizedExclusions}
             />
           </TabsContent>
         </Tabs>
