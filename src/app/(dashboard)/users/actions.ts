@@ -36,17 +36,27 @@ export async function createUser(
     email_confirm: true,
   });
 
-  if (authError) return { error: authError.message };
+  if (authError) {
+    if (authError.message.includes("already been registered")) {
+      return { error: "A user with this email already exists" };
+    }
+    return { error: authError.message };
+  }
 
-  // Create user record (use admin client to bypass RLS)
-  const { error: userError } = await adminClient.from("users").insert({
+  // Create user record (upsert to handle handle_new_user trigger race)
+  const { error: userError } = await adminClient.from("users").upsert({
     id: authData.user.id,
     email: parsed.data.email,
     full_name: parsed.data.full_name,
     phone: parsed.data.phone ?? null,
-  });
+  }, { onConflict: "id" });
 
-  if (userError) return { error: userError.message };
+  if (userError) {
+    if (userError.code === "23505") {
+      return { error: "A user with this email already exists" };
+    }
+    return { error: userError.message };
+  }
 
   // Create role record
   const { error: roleError } = await adminClient.from("user_roles").insert({
