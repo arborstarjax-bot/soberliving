@@ -83,6 +83,42 @@ export default async function PaymentsPage() {
 
   const { data: payments } = await paymentsQuery;
 
+  // Separate aggregation queries for accurate summary stats (not subject to .limit(100))
+  let completedCount = 0;
+  let totalCollected = 0;
+  let pendingCount = 0;
+  let totalPending = 0;
+
+  if (isStaff) {
+    // Completed payments stats
+    let completedStatsQuery = supabase
+      .from("payments")
+      .select("amount")
+      .eq("status", "completed");
+    if (user.role === "resident" && residentRecord) {
+      completedStatsQuery = completedStatsQuery.eq("resident_id", residentRecord.id);
+    } else if (houseFilter) {
+      completedStatsQuery = completedStatsQuery.in("house_id", houseFilter);
+    }
+    const { data: completedData } = await completedStatsQuery;
+    completedCount = (completedData ?? []).length;
+    totalCollected = (completedData ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
+
+    // Pending payments stats
+    let pendingStatsQuery = supabase
+      .from("payments")
+      .select("amount")
+      .eq("status", "pending");
+    if (user.role === "resident" && residentRecord) {
+      pendingStatsQuery = pendingStatsQuery.eq("resident_id", residentRecord.id);
+    } else if (houseFilter) {
+      pendingStatsQuery = pendingStatsQuery.in("house_id", houseFilter);
+    }
+    const { data: pendingData } = await pendingStatsQuery;
+    pendingCount = (pendingData ?? []).length;
+    totalPending = (pendingData ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
+  }
+
   // Houses, residents, and rent configs only needed for staff dialogs
   let houses: { id: string; name: string }[] = [];
   let residents: { id: string; full_name: string; house_id: string }[] = [];
@@ -136,18 +172,6 @@ export default async function PaymentsPage() {
     configMap[rc.house_id] = rc;
   }
 
-  // Summary stats
-  const completedPayments = (payments ?? []).filter((p) => p.status === "completed");
-  const totalCollected = completedPayments.reduce(
-    (sum, p) => sum + Number(p.amount),
-    0
-  );
-  const pendingPayments = (payments ?? []).filter((p) => p.status === "pending");
-  const totalPending = pendingPayments.reduce(
-    (sum, p) => sum + Number(p.amount),
-    0
-  );
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -185,7 +209,7 @@ export default async function PaymentsPage() {
                 {formatCurrency(totalCollected)}
               </div>
               <p className="text-xs text-muted-foreground">
-                {completedPayments.length} payments
+                {completedCount} payments
               </p>
             </CardContent>
           </Card>
@@ -201,7 +225,7 @@ export default async function PaymentsPage() {
                 {formatCurrency(totalPending)}
               </div>
               <p className="text-xs text-muted-foreground">
-                {pendingPayments.length} payments
+                {pendingCount} payments
               </p>
             </CardContent>
           </Card>
