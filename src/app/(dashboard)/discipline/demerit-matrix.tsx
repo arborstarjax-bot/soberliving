@@ -216,12 +216,12 @@ export function DemeritMatrix({ houses, residents, demerits, userRole }: Props) 
         );
       })}
 
-      {/* View/Edit Demerit Dialog */}
+      {/* View/Edit Demerit Dialog — matches Issue Demerit style */}
       <Dialog open={!!editingDemerit} onOpenChange={(open) => { if (!open) { setEditingDemerit(null); setWorkOffDemerit(null); } }}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              Demerit Details
+              {isStaff ? "Edit Demerit" : "Demerit Details"}
               {editingDemerit?.auto_generated && (
                 <Badge variant="outline" className="ml-2 text-[10px]">Auto-Generated</Badge>
               )}
@@ -229,62 +229,71 @@ export function DemeritMatrix({ houses, residents, demerits, userRole }: Props) 
           </DialogHeader>
           {editingDemerit && (
             <div className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="font-medium">
-                    {residents.find((r) => r.id === editingDemerit.resident_id)?.full_name ?? "Unknown"}
-                  </span>
-                  <Badge variant="outline" className="text-xs">
-                    {houses.find((h) => h.id === editingDemerit.house_id)?.name ?? ""}
-                  </Badge>
-                  {editingDemerit.category && (
-                    <Badge variant="secondary" className="text-xs">{editingDemerit.category}</Badge>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Issued: {new Date(editingDemerit.created_at).toLocaleDateString()}
-                </p>
+              {/* Resident info — same style as Issue Demerit */}
+              <div className="rounded-md bg-muted/50 px-3 py-2 text-sm">
+                <span className="font-medium">
+                  {residents.find((r) => r.id === editingDemerit.resident_id)?.full_name ?? "Unknown"}
+                </span>
+                <span className="text-muted-foreground ml-2">
+                  — {houses.find((h) => h.id === editingDemerit.house_id)?.name ?? ""}
+                </span>
+                {editingDemerit.category && (
+                  <Badge variant="secondary" className="ml-2 text-xs">{editingDemerit.category}</Badge>
+                )}
               </div>
+              <p className="text-xs text-muted-foreground">
+                Issued: {new Date(editingDemerit.created_at).toLocaleDateString()}
+              </p>
 
-              {/* Editable fields */}
               {isStaff ? (
-                <div className="space-y-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Reason</Label>
-                    <Input
+                <div className="space-y-4">
+                  {/* Reason — full textarea like Issue Demerit */}
+                  <div className="space-y-2">
+                    <Label>Reason *</Label>
+                    <Textarea
                       value={editReason}
                       onChange={(e) => setEditReason(e.target.value)}
-                      className="h-8 text-sm"
+                      rows={2}
+                      placeholder="Describe the infraction..."
                     />
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Notes</Label>
-                    <Input
+
+                  {/* Notes — full textarea like Issue Demerit */}
+                  <div className="space-y-2">
+                    <Label>Notes</Label>
+                    <Textarea
                       value={editNotes}
                       onChange={(e) => setEditNotes(e.target.value)}
-                      className="h-8 text-sm"
-                      placeholder="Additional notes"
+                      rows={2}
+                      placeholder="Additional notes (optional)..."
                     />
                   </div>
+
+                  {/* Photo */}
                   {editingDemerit.photo_url && (
-                    <a href={editingDemerit.photo_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">
-                      View photo
-                    </a>
+                    <div className="space-y-2">
+                      <Label>Photo</Label>
+                      <a href={editingDemerit.photo_url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline block">
+                        View attached photo
+                      </a>
+                    </div>
                   )}
 
                   {/* Work off section */}
                   {workOffDemerit?.id === editingDemerit.id ? (
-                    <div className="border-t pt-3 space-y-2">
-                      <Label className="text-xs">Resolution Note</Label>
-                      <Input
-                        value={workOffNote}
-                        onChange={(e) => setWorkOffNote(e.target.value)}
-                        className="h-8 text-sm"
-                        placeholder="What did they do to work it off?"
-                      />
+                    <div className="border-t pt-4 space-y-4">
+                      <div className="space-y-2">
+                        <Label>Resolution Note</Label>
+                        <Textarea
+                          value={workOffNote}
+                          onChange={(e) => setWorkOffNote(e.target.value)}
+                          rows={2}
+                          placeholder="What did they do to work it off?"
+                        />
+                      </div>
                       <div className="flex gap-2">
                         <Button
-                          size="sm"
+                          className="flex-1"
                           disabled={isPending}
                           onClick={() =>
                             startTransition(async () => {
@@ -297,15 +306,15 @@ export function DemeritMatrix({ houses, residents, demerits, userRole }: Props) 
                         >
                           Confirm Worked Off
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => { setWorkOffDemerit(null); setWorkOffNote(""); }}>
+                        <Button variant="outline" onClick={() => { setWorkOffDemerit(null); setWorkOffNote(""); }}>
                           Cancel
                         </Button>
                       </div>
                     </div>
                   ) : (
-                    <div className="flex gap-2 border-t pt-3">
+                    <div className="flex gap-2 border-t pt-4">
                       <Button
-                        size="sm"
+                        className="flex-1"
                         disabled={isPending}
                         onClick={() =>
                           startTransition(async () => {
@@ -314,10 +323,9 @@ export function DemeritMatrix({ houses, residents, demerits, userRole }: Props) 
                           })
                         }
                       >
-                        <Pencil className="h-3 w-3 mr-1" /> Save
+                        Save Changes
                       </Button>
                       <Button
-                        size="sm"
                         variant="outline"
                         disabled={isPending}
                         onClick={() => {
@@ -325,11 +333,10 @@ export function DemeritMatrix({ houses, residents, demerits, userRole }: Props) 
                           setWorkOffNote("");
                         }}
                       >
-                        <CheckCircle className="h-3 w-3 mr-1" /> Mark Worked Off
+                        <CheckCircle className="h-4 w-4 mr-1" /> Mark Worked Off
                       </Button>
                       {userRole === "admin" && (
                         <Button
-                          size="sm"
                           variant="destructive"
                           disabled={isPending}
                           onClick={() =>
@@ -341,17 +348,31 @@ export function DemeritMatrix({ houses, residents, demerits, userRole }: Props) 
                             })
                           }
                         >
-                          <Trash2 className="h-3 w-3 mr-1" /> Delete
+                          <Trash2 className="h-4 w-4 mr-1" /> Delete
                         </Button>
                       )}
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="space-y-2">
-                  <p className="text-sm">{editingDemerit.reason}</p>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Reason</Label>
+                    <p className="text-sm rounded-md border px-3 py-2 bg-muted/30">{editingDemerit.reason}</p>
+                  </div>
                   {editingDemerit.notes && (
-                    <p className="text-sm text-muted-foreground italic">Note: {editingDemerit.notes}</p>
+                    <div className="space-y-2">
+                      <Label>Notes</Label>
+                      <p className="text-sm rounded-md border px-3 py-2 bg-muted/30">{editingDemerit.notes}</p>
+                    </div>
+                  )}
+                  {editingDemerit.photo_url && (
+                    <div className="space-y-2">
+                      <Label>Photo</Label>
+                      <a href={editingDemerit.photo_url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline block">
+                        View attached photo
+                      </a>
+                    </div>
                   )}
                 </div>
               )}
@@ -387,22 +408,37 @@ function AddDemeritDialog({
   preselectedResident: Resident | null;
 }) {
   const [createState, createAction, createPending] = useActionState(createDemerit, undefined);
-  const [restrictionState, restrictionAction, restrictionPending] = useActionState(createRestriction, undefined);
-  const [selectedHouse, setSelectedHouse] = useState(preselectedResident?.house_id ?? "");
+  const [restrictionState, restrictionAction] = useActionState(createRestriction, undefined);
+  const [selectedResident, setSelectedResident] = useState("");
   const [addRestriction, setAddRestriction] = useState(false);
   const [restrictionType, setRestrictionType] = useState("custom");
+  const [demeritCount, setDemeritCount] = useState(1);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  // Reset state when dialog opens with preselected resident
-  const [prevResident, setPrevResident] = useState(preselectedResident?.id);
-  if (preselectedResident && preselectedResident.id !== prevResident) {
-    setPrevResident(preselectedResident.id);
-    setSelectedHouse(preselectedResident.house_id);
+  // Reset ALL form state when dialog opens (prevent stale data)
+  const [prevOpen, setPrevOpen] = useState(false);
+  if (open && !prevOpen) {
+    setPrevOpen(true);
+    setSelectedResident(preselectedResident?.id ?? "");
+    setAddRestriction(false);
+    setRestrictionType("custom");
+    setDemeritCount(1);
+    setPhotoFile(null);
+    setPhotoUrl(null);
+    setUploadError(null);
   }
+  if (!open && prevOpen) {
+    setPrevOpen(false);
+  }
+
+  // Derive house from selected resident automatically
+  const resolvedResident = preselectedResident ?? residents.find((r) => r.id === selectedResident) ?? null;
+  const resolvedHouseId = resolvedResident?.house_id ?? "";
+  const resolvedHouseName = houses.find((h) => h.id === resolvedHouseId)?.name ?? "";
 
   async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const raw = e.target.files?.[0];
@@ -426,15 +462,13 @@ function AddDemeritDialog({
     }
   }
 
-  const filteredResidents = selectedHouse
-    ? residents.filter((r) => r.house_id === selectedHouse)
-    : residents;
-
   function handleSubmit(formData: FormData) {
-    // Use startTransition so useActionState dispatches work correctly in React 19
     startTransition(async () => {
-      // Submit demerit first
-      await createAction(formData);
+      // Submit demerit(s) — if count > 1, submit multiple for same incident
+      const count = Math.max(1, Math.min(10, demeritCount));
+      for (let i = 0; i < count; i++) {
+        await createAction(formData);
+      }
 
       // If restriction checkbox is checked, also submit the restriction
       if (addRestriction) {
@@ -475,40 +509,49 @@ function AddDemeritDialog({
             </>
           ) : (
             <>
-              {/* House selector */}
-              <div className="space-y-2">
-                <Label>House *</Label>
-                <select
-                  name="house_id"
-                  required
-                  value={selectedHouse}
-                  onChange={(e) => setSelectedHouse(e.target.value)}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                >
-                  <option value="">Select house</option>
-                  {houses.map((h) => (
-                    <option key={h.id} value={h.id}>{h.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Resident selector */}
+              {/* Resident selector — house auto-assigned from resident */}
               <div className="space-y-2">
                 <Label>Resident *</Label>
                 <select
                   name="resident_id"
                   required
-                  defaultValue=""
+                  value={selectedResident}
+                  onChange={(e) => setSelectedResident(e.target.value)}
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                 >
                   <option value="">Select resident</option>
-                  {filteredResidents.map((r) => (
-                    <option key={r.id} value={r.id}>{r.full_name}</option>
+                  {residents.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.full_name} — {houses.find((h) => h.id === r.house_id)?.name ?? ""}
+                    </option>
                   ))}
                 </select>
               </div>
+              {/* Hidden house_id — auto-derived from selected resident */}
+              <input type="hidden" name="house_id" value={resolvedHouseId} />
+              {resolvedHouseName && (
+                <p className="text-xs text-muted-foreground -mt-2">House: {resolvedHouseName}</p>
+              )}
             </>
           )}
+
+          {/* Demerit Count */}
+          <div className="space-y-2">
+            <Label>Count</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                min={1}
+                max={10}
+                value={demeritCount}
+                onChange={(e) => setDemeritCount(Math.max(1, Math.min(10, parseInt(e.target.value) || 1)))}
+                className="w-20"
+              />
+              <span className="text-xs text-muted-foreground">
+                {demeritCount > 1 ? `Will create ${demeritCount} demerits for this incident` : "1 demerit"}
+              </span>
+            </div>
+          </div>
 
           {/* Category */}
           <div className="space-y-2">
@@ -613,8 +656,12 @@ function AddDemeritDialog({
           {restrictionState?.error && (
             <p className="text-sm text-destructive">Restriction: {restrictionState.error}</p>
           )}
-          <Button type="submit" className="w-full" disabled={createPending || uploading}>
-            {createPending ? "Issuing..." : addRestriction ? "Issue Demerit + Restriction" : "Issue Demerit"}
+          <Button type="submit" className="w-full" disabled={createPending || isPending || uploading}>
+            {createPending || isPending
+              ? "Issuing..."
+              : addRestriction
+                ? `Issue ${demeritCount > 1 ? `${demeritCount} Demerits` : "Demerit"} + Restriction`
+                : `Issue ${demeritCount > 1 ? `${demeritCount} Demerits` : "Demerit"}`}
           </Button>
         </form>
       </DialogContent>
