@@ -245,46 +245,58 @@ export async function generateMissedChoreDemerits() {
   const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
   const dayOfWeek = dayNames[yesterday.getDay()];
 
-  // Get all chores scheduled for yesterday's day-of-week
+  // 1. Get all chores scheduled for yesterday's day-of-week
   const { data: chores } = await adminClient
     .from("chores")
-    .select("id, name, house_id, scheduled_days, assigned_resident_id")
+    .select("id, name, house_id, scheduled_days")
     .eq("is_active", true)
-    .not("assigned_resident_id", "is", null)
     .contains("scheduled_days", [dayOfWeek]);
 
   if (!chores || chores.length === 0) return { count: 0 };
 
+  // 2. Get current rotation assignments for these chores
+  const choreIds = chores.map((c) => c.id);
+  const { data: assignments } = await adminClient
+    .from("chore_rotation_assignments")
+    .select("id, chore_id, resident_id, rotation:chore_rotations!inner(id, is_current)")
+    .in("chore_id", choreIds)
+    .eq("chore_rotations.is_current", true);
+
+  if (!assignments || assignments.length === 0) return { count: 0 };
+
   let demeritCount = 0;
 
-  for (const chore of chores) {
-    // Check if this chore was completed yesterday
+  for (const assignment of assignments) {
+    const chore = chores.find((c) => c.id === assignment.chore_id);
+    if (!chore) continue;
+
+    // 3. Check if this resident completed the chore yesterday
     const { data: completion } = await adminClient
       .from("chore_completions")
       .select("id")
-      .eq("chore_id", chore.id)
-      .eq("resident_id", chore.assigned_resident_id)
+      .eq("chore_id", assignment.chore_id)
+      .eq("resident_id", assignment.resident_id)
       .eq("completion_date", yesterdayStr)
       .single();
 
     if (completion) continue; // Completed, skip
 
-    // Check if demerit already exists for this chore+date
+    // 4. Check if demerit already exists for this chore+date+resident
     const { data: existingDemerit } = await adminClient
       .from("demerits")
       .select("id")
-      .eq("source_chore_id", chore.id)
+      .eq("source_chore_id", assignment.chore_id)
       .eq("source_date", yesterdayStr)
-      .eq("resident_id", chore.assigned_resident_id)
+      .eq("resident_id", assignment.resident_id)
       .single();
 
     if (existingDemerit) continue; // Already issued
 
-    // Create auto-demerit
+    // 5. Create auto-demerit
     const { data: demerit } = await adminClient
       .from("demerits")
       .insert({
-        resident_id: chore.assigned_resident_id,
+        resident_id: assignment.resident_id,
         house_id: chore.house_id,
         reason: `Missed chore: ${chore.name} on ${yesterdayStr}`,
         status: "active",
@@ -303,7 +315,7 @@ export async function generateMissedChoreDemerits() {
       const { data: resident } = await adminClient
         .from("residents")
         .select("user_id, full_name")
-        .eq("id", chore.assigned_resident_id)
+        .eq("id", assignment.resident_id)
         .single();
 
       if (resident?.user_id) {
@@ -320,7 +332,7 @@ export async function generateMissedChoreDemerits() {
 
       await logActivity({
         houseId: chore.house_id,
-        residentId: chore.assigned_resident_id,
+        residentId: assignment.resident_id,
         actorId: user.id,
         eventType: "demerit_auto_issued",
         entityType: "demerit",

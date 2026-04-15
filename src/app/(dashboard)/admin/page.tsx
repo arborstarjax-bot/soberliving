@@ -89,7 +89,7 @@ export default async function AdminPage() {
   const leaveQuery = supabase
     .from("leave_requests")
     .select("*, resident:residents(id, full_name, house_id, houses(name))")
-    .eq("status", "pending")
+    .in("status", ["pending_cover", "pending_manager", "pending_admin"])
     .order("created_at", { ascending: false });
   const { data: allPendingLeave } = await leaveQuery;
   let pendingLeave = allPendingLeave ?? [];
