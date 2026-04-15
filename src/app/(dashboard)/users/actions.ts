@@ -115,17 +115,19 @@ export async function assignManagerToHouses(
     .eq("user_id", userId)
     .is("unassigned_at", null);
 
-  // Create new assignments
+  // Create new assignments (skip insert if no houses selected — "unassign all" case)
   const assignments = houseIds.map((houseId) => ({
     user_id: userId,
     house_id: houseId,
   }));
 
-  const { error } = await supabase
-    .from("manager_house_assignments")
-    .insert(assignments);
+  if (assignments.length > 0) {
+    const { error } = await supabase
+      .from("manager_house_assignments")
+      .insert(assignments);
 
-  if (error) return { error: error.message };
+    if (error) return { error: error.message };
+  }
 
   const { data: targetUser } = await supabase
     .from("users")
