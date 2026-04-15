@@ -470,7 +470,7 @@ function AddDemeritDialog({
         await createAction(formData);
       }
 
-      // If restriction checkbox is checked, also submit the restriction
+      // If restriction checkbox is checked, also submit the restriction (after all demerits)
       if (addRestriction) {
         const restrictionData = new FormData();
         restrictionData.set("house_id", formData.get("house_id") as string);

@@ -48,6 +48,17 @@ export function AddRoomDialog({ houseId }: { houseId: string }) {
               placeholder="Optional"
             />
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="bed-count">Number of Beds</Label>
+            <Input
+              id="bed-count"
+              name="bed_count"
+              type="number"
+              min={0}
+              max={20}
+              placeholder="e.g., 2"
+            />
+          </div>
           {state?.error && (
             <p className="text-sm text-destructive">{state.error}</p>
           )}

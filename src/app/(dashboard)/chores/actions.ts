@@ -316,6 +316,12 @@ export async function assignRotationChore(
     .single();
 
   if (existingAssignment) {
+    // Clean up stale signoffs from the previous resident before reassigning
+    await supabase
+      .from("chore_signoffs")
+      .delete()
+      .eq("rotation_assignment_id", existingAssignment.id);
+
     // Update existing assignment
     const { error } = await supabase
       .from("chore_rotation_assignments")
@@ -326,6 +332,43 @@ export async function assignRotationChore(
       .eq("id", existingAssignment.id);
 
     if (error) return { error: error.message };
+
+    // Re-create signoff records for the new resident
+    const { data: choreData } = await supabase
+      .from("chores")
+      .select("days_of_week, cycle_weeks")
+      .eq("id", parsed.data.chore_id)
+      .single();
+
+    const choreDays: string[] = choreData?.days_of_week ?? ["monday", "wednesday", "friday"];
+    const choreCycleWeeks: number = choreData?.cycle_weeks ?? 2;
+
+    const dayToOffset: Record<string, number> = {
+      monday: 0, tuesday: 1, wednesday: 2, thursday: 3,
+      friday: 4, saturday: 5, sunday: 6,
+    };
+
+    const signoffs = [];
+    const startDate = new Date(rotation.cycle_start_date);
+    for (let weekNum = 1; weekNum <= choreCycleWeeks; weekNum++) {
+      const weekOffset = (weekNum - 1) * 7;
+      for (const day of choreDays) {
+        const offset = dayToOffset[day];
+        if (offset === undefined) continue;
+        const signoffDate = addDays(startDate, weekOffset + offset);
+        signoffs.push({
+          rotation_assignment_id: existingAssignment.id,
+          sign_off_date: format(signoffDate, "yyyy-MM-dd"),
+          day_of_week: day,
+          week_number: weekNum,
+          status: "pending",
+        });
+      }
+    }
+
+    if (signoffs.length > 0) {
+      await supabase.from("chore_signoffs").insert(signoffs);
+    }
   } else {
     // Create new assignment
     const { data, error } = await supabase
@@ -777,8 +820,10 @@ export async function overrideSignoffStatus(
     updated_at: new Date().toISOString(),
   };
 
-  if (newStatus === "rejected" && note) {
-    updateData.rejection_note = note;
+  if (newStatus === "rejected") {
+    updateData.reviewed_by = user.id;
+    updateData.reviewed_at = new Date().toISOString();
+    if (note) updateData.rejection_note = note;
   }
   if (newStatus === "approved") {
     updateData.reviewed_by = user.id;

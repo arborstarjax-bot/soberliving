@@ -4,20 +4,27 @@ import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { getDaysSober } from "@/lib/milestones";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Home, Users, ClipboardCheck, AlertTriangle, CalendarClock, Bed, Activity } from "lucide-react";
+import { Home, Users, ClipboardCheck, AlertTriangle, CalendarClock, Bed, Activity, DollarSign } from "lucide-react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { SobrietyDateSetter } from "./sobriety-date-setter";
 
 export default async function DashboardPage() {
   const user = await requireAuth();
   const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
 
+  // Admin and Manager go to admin panel
+  if (user.role === "admin" || user.role === "manager") {
+    redirect("/admin");
+  }
+
   // Resident dashboard
   if (user.role === "resident") {
     return <ResidentDashboard userId={user.id} />;
   }
 
-  // Admin / Manager dashboard
+  // Fallback dashboard (should not normally reach here)
   let housesQuery = supabase.from("houses").select("id", { count: "exact" }).eq("is_active", true);
   if (houseFilter) {
     housesQuery = housesQuery.in("id", houseFilter);
@@ -75,6 +82,24 @@ export default async function DashboardPage() {
     pendingLeaveRequests = count ?? 0;
   }
 
+  // Pending payments count
+  let pendingPaymentsCount = 0;
+  if (houseFilter) {
+    const { data: pendingPay } = await supabase
+      .from("payments")
+      .select("id, house_id")
+      .eq("status", "pending");
+    pendingPaymentsCount = (pendingPay ?? []).filter((p) =>
+      houseFilter.includes(p.house_id)
+    ).length;
+  } else {
+    const { count } = await supabase
+      .from("payments")
+      .select("id", { count: "exact" })
+      .eq("status", "pending");
+    pendingPaymentsCount = count ?? 0;
+  }
+
   // Recent activity
   let activityQuery = supabase
     .from("activity_log")
@@ -91,6 +116,7 @@ export default async function DashboardPage() {
     { label: "Active Residents", value: residentCount ?? 0, icon: Users, href: "/residents" },
     { label: "Open Beds", value: (totalBeds ?? 0) - (occupiedBeds ?? 0), icon: Bed, href: "/houses" },
     { label: "Chore Reviews", value: pendingChoreReviews ?? 0, icon: ClipboardCheck, href: "/chores" },
+    { label: "Pending Payments", value: pendingPaymentsCount, icon: DollarSign, href: "/payments" },
     { label: "Leave Requests", value: pendingLeaveRequests ?? 0, icon: CalendarClock, href: "/leave-requests" },
   ];
 
@@ -103,7 +129,7 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {stats.map((stat) => (
           <Link key={stat.label} href={stat.href}>
             <Card className="hover:bg-muted/50 transition-colors">
@@ -237,7 +263,7 @@ async function ResidentDashboard({ userId }: { userId: string }) {
                 </p>
               </div>
             ) : (
-              <p className="text-muted-foreground">Not set</p>
+              <SobrietyDateSetter currentDate={resident.sobriety_date} />
             )}
           </CardContent>
         </Card>
@@ -360,6 +386,10 @@ function EventIcon({ eventType }: { eventType: string }) {
     case "leave_approved":
     case "leave_denied":
       return <CalendarClock className={iconClass} />;
+    case "payment_recorded":
+    case "payment_voided":
+    case "rent_config_updated":
+      return <DollarSign className={iconClass} />;
     default:
       return <Activity className={iconClass} />;
   }

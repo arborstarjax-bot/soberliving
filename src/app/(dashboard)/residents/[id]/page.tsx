@@ -11,6 +11,7 @@ import { ResidentNotes } from "./notes";
 import { ForcePhotoToggle } from "./force-photo-toggle";
 import { EditResidentForm } from "./edit-resident-form";
 import { DischargeDialog } from "./discharge-dialog";
+import { DocumentsList } from "@/components/documents-list";
 
 export default async function ResidentDetailPage(
   props: PageProps<"/residents/[id]">
@@ -86,6 +87,15 @@ export default async function ResidentDetailPage(
     .eq("resident_id", id)
     .order("created_at", { ascending: false })
     .limit(50);
+
+  // Documents (linked via user_id)
+  const { data: documents } = resident.user_id
+    ? await supabase
+        .from("documents")
+        .select("*")
+        .eq("user_id", resident.user_id)
+        .order("created_at", { ascending: false })
+    : { data: [] };
 
   const milestones = resident.sobriety_date
     ? calculateMilestones(resident.sobriety_date)
@@ -240,6 +250,9 @@ export default async function ResidentDetailPage(
               Notes ({notes?.length ?? 0})
             </TabsTrigger>
           )}
+          <TabsTrigger value="documents">
+            Documents ({documents?.length ?? 0})
+          </TabsTrigger>
           <TabsTrigger value="details">Details</TabsTrigger>
         </TabsList>
 
@@ -377,6 +390,10 @@ export default async function ResidentDetailPage(
             />
           </TabsContent>
         )}
+
+        <TabsContent value="documents" className="mt-4">
+          <DocumentsList documents={documents ?? []} />
+        </TabsContent>
 
         <TabsContent value="details" className="mt-4">
           <Card>
