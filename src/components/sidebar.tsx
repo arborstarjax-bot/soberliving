@@ -18,6 +18,8 @@ import {
   Menu,
   X,
   ShieldAlert,
+  MessageSquare,
+  Bell,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -70,6 +72,18 @@ const NAV_ITEMS: NavItem[] = [
     label: "Leave Requests",
     href: "/leave-requests",
     icon: CalendarClock,
+    roles: ["admin", "manager", "resident"],
+  },
+  {
+    label: "Bulletin",
+    href: "/bulletin",
+    icon: MessageSquare,
+    roles: ["admin", "manager", "resident"],
+  },
+  {
+    label: "Notifications",
+    href: "/notifications",
+    icon: Bell,
     roles: ["admin", "manager", "resident"],
   },
   // Users & Roles folded into Residents page — /users route still works for direct access
