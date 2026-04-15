@@ -107,12 +107,31 @@ export default async function ResidentDetailPage(
             </Badge>
           </p>
         </div>
-        {isStaff && (
-          <DischargeDialog
-            residentId={id}
-            status={resident.status}
-          />
-        )}
+        <div className="flex items-center gap-2">
+          {canEdit && (
+            <EditResidentForm
+              residentId={id}
+              resident={{
+                full_name: resident.full_name,
+                phone: resident.phone ?? null,
+                email: resident.email ?? null,
+                date_of_birth: resident.date_of_birth ?? null,
+                sobriety_date: resident.sobriety_date ?? null,
+                move_in_date: resident.move_in_date,
+                emergency_contact_name: resident.emergency_contact_name ?? null,
+                emergency_contact_phone: resident.emergency_contact_phone ?? null,
+                emergency_contact_relationship: resident.emergency_contact_relationship ?? null,
+                notes: resident.notes ?? null,
+              }}
+            />
+          )}
+          {isStaff && (
+            <DischargeDialog
+              residentId={id}
+              status={resident.status}
+            />
+          )}
+        </div>
       </div>
 
       {/* Quick stats */}
@@ -362,25 +381,6 @@ export default async function ResidentDetailPage(
         <TabsContent value="details" className="mt-4">
           <Card>
             <CardContent className="space-y-4 pt-6">
-              {/* Edit form for admin / house manager */}
-              {canEdit && (
-                <EditResidentForm
-                  residentId={id}
-                  resident={{
-                    full_name: resident.full_name,
-                    phone: resident.phone ?? null,
-                    email: resident.email ?? null,
-                    date_of_birth: resident.date_of_birth ?? null,
-                    sobriety_date: resident.sobriety_date ?? null,
-                    move_in_date: resident.move_in_date,
-                    emergency_contact_name: resident.emergency_contact_name ?? null,
-                    emergency_contact_phone: resident.emergency_contact_phone ?? null,
-                    emergency_contact_relationship: resident.emergency_contact_relationship ?? null,
-                    notes: resident.notes ?? null,
-                  }}
-                />
-              )}
-
               {isStaff && (
                 <div className="border rounded-md p-4 bg-muted/30">
                   <ForcePhotoToggle
