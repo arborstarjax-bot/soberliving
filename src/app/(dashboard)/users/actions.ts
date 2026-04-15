@@ -5,9 +5,14 @@ import { createClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { createUserSchema, assignManagerSchema } from "@/lib/validations";
+import crypto from "crypto";
+
+function generateTempPassword(): string {
+  return crypto.randomBytes(12).toString("base64url");
+}
 
 export async function createUser(
-  _prevState: { error?: string } | undefined,
+  _prevState: { error?: string; inviteLink?: string } | undefined,
   formData: FormData
 ) {
   const user = await requireRole("admin");
@@ -16,17 +21,17 @@ export async function createUser(
     full_name: formData.get("full_name"),
     phone: formData.get("phone") || undefined,
     role: formData.get("role"),
-    password: formData.get("password"),
   });
 
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
   const supabase = await createClient();
+  const tempPassword = generateTempPassword();
 
-  // Create auth user via Supabase
+  // Create auth user with auto-generated password
   const { data: authData, error: authError } = await supabase.auth.admin.createUser({
     email: parsed.data.email,
-    password: parsed.data.password,
+    password: tempPassword,
     email_confirm: true,
   });
 
@@ -50,6 +55,17 @@ export async function createUser(
 
   if (roleError) return { error: roleError.message };
 
+  // Generate a password recovery link so the user can set their own password
+  const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+    type: "recovery",
+    email: parsed.data.email,
+  });
+
+  let inviteLink = "";
+  if (!linkError && linkData?.properties?.action_link) {
+    inviteLink = linkData.properties.action_link;
+  }
+
   await logActivity({
     actorId: user.id,
     eventType: "user_created",
@@ -59,7 +75,7 @@ export async function createUser(
   });
 
   revalidatePath("/users");
-  return {};
+  return { inviteLink };
 }
 
 export async function changeUserRole(userId: string, newRole: string) {
