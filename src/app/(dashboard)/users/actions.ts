@@ -36,6 +36,17 @@ export async function createUser(
 
   const authUserId = linkData.user.id;
 
+  // Check if user record already exists (e.g. re-inviting an existing email)
+  const { data: existingUser } = await supabase
+    .from("users")
+    .select("id")
+    .eq("id", authUserId)
+    .maybeSingle();
+
+  if (existingUser) {
+    return { error: "A user with this email already exists" };
+  }
+
   // Create user record
   const { error: userError } = await supabase.from("users").insert({
     id: authUserId,
