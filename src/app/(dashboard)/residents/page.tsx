@@ -7,11 +7,13 @@ import { getDaysSober } from "@/lib/milestones";
 import { Users } from "lucide-react";
 import Link from "next/link";
 import { CreateResidentDialog } from "./create-resident-dialog";
+import { DeleteResidentButton } from "./delete-resident-button";
 
 export default async function ResidentsPage() {
   const user = await requireAuth();
   const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
+  const isAdmin = user.role === "admin";
 
   let query = supabase
     .from("residents")
@@ -92,6 +94,12 @@ export default async function ResidentsPage() {
                         <Badge variant="outline" className="capitalize">
                           {r.status}
                         </Badge>
+                        {isAdmin && (
+                          <DeleteResidentButton
+                            residentId={r.id}
+                            residentName={r.full_name}
+                          />
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -115,16 +123,24 @@ export default async function ResidentsPage() {
                           {(r.houses as unknown as { name: string } | null)?.name}
                         </p>
                       </div>
-                      <Badge
-                        variant={
-                          r.status === "discharged"
-                            ? "secondary"
-                            : "outline"
-                        }
-                        className="capitalize"
-                      >
-                        {r.status.replace("_", " ")}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={
+                            r.status === "discharged"
+                              ? "secondary"
+                              : "outline"
+                          }
+                          className="capitalize"
+                        >
+                          {r.status.replace("_", " ")}
+                        </Badge>
+                        {isAdmin && (
+                          <DeleteResidentButton
+                            residentId={r.id}
+                            residentName={r.full_name}
+                          />
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
                 </Link>

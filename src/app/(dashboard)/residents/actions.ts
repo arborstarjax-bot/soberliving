@@ -181,6 +181,51 @@ export async function dischargeResident(residentId: string) {
   revalidatePath("/residents");
 }
 
+export async function deleteResident(residentId: string) {
+  const user = await requireAuth();
+  if (user.role !== "admin") {
+    return { error: "Only admins can delete residents" };
+  }
+
+  const supabase = await createClient();
+
+  const { data: resident } = await supabase
+    .from("residents")
+    .select("house_id, full_name")
+    .eq("id", residentId)
+    .single();
+
+  if (!resident) return { error: "Resident not found" };
+
+  // End all active bed assignments
+  await supabase
+    .from("bed_assignments")
+    .update({ end_date: new Date().toISOString().split("T")[0] })
+    .eq("resident_id", residentId)
+    .is("end_date", null);
+
+  // Delete the resident
+  const { error } = await supabase
+    .from("residents")
+    .delete()
+    .eq("id", residentId);
+
+  if (error) return { error: error.message };
+
+  await logActivity({
+    houseId: resident.house_id,
+    actorId: user.id,
+    eventType: "resident_deleted",
+    entityType: "resident",
+    entityId: residentId,
+    description: `${resident.full_name} deleted by ${user.full_name}`,
+  });
+
+  revalidatePath("/residents");
+  revalidatePath(`/houses/${resident.house_id}`);
+  return {};
+}
+
 // --- Bed Assignments ---
 
 export async function assignBed(
