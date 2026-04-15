@@ -718,6 +718,27 @@ create policy "Demerits updatable by staff" on public.demerits
   );
 
 -- ============================================================
+-- Session user lookup (bypasses RLS via SECURITY DEFINER)
+-- ============================================================
+
+create or replace function public.get_session_user(p_user_id uuid)
+returns json
+language sql
+security definer
+stable
+as $$
+  select json_build_object(
+    'id', u.id,
+    'email', u.email,
+    'full_name', u.full_name,
+    'role', coalesce(ur.role, 'resident')
+  )
+  from public.users u
+  left join public.user_roles ur on ur.user_id = u.id
+  where u.id = p_user_id;
+$$;
+
+-- ============================================================
 -- Auto-create user profile on signup
 -- ============================================================
 

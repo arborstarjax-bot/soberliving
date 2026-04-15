@@ -13,22 +13,25 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
 
   if (!user) return null;
 
-  const { data: profile } = await supabase
-    .from("users")
-    .select("id, email, full_name")
-    .eq("id", user.id)
-    .single();
+  // Use SECURITY DEFINER RPC to bypass RLS for auth lookups
+  const { data: sessionData } = await supabase.rpc("get_session_user", {
+    p_user_id: user.id,
+  });
 
-  if (!profile) return null;
+  if (!sessionData) return null;
 
-  const { data: roleRecord } = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", user.id)
-    .limit(1)
-    .single();
+  const profile = sessionData as {
+    id: string;
+    email: string;
+    full_name: string;
+    role: string;
+  };
 
-  const role: UserRole = roleRecord?.role ?? "resident";
+  const role: UserRole = (
+    ["admin", "manager", "resident"].includes(profile.role)
+      ? profile.role
+      : "resident"
+  ) as UserRole;
 
   let assignedHouseIds: string[] = [];
   if (role === "manager") {
