@@ -430,25 +430,28 @@ function AddDemeritDialog({
     ? residents.filter((r) => r.house_id === selectedHouse)
     : residents;
 
-  async function handleSubmit(formData: FormData) {
-    // Submit demerit first
-    await createAction(formData);
+  function handleSubmit(formData: FormData) {
+    // Use startTransition so useActionState dispatches work correctly in React 19
+    startTransition(async () => {
+      // Submit demerit first
+      await createAction(formData);
 
-    // If restriction checkbox is checked, also submit the restriction
-    if (addRestriction) {
-      const restrictionData = new FormData();
-      restrictionData.set("house_id", formData.get("house_id") as string);
-      restrictionData.set("resident_id", formData.get("resident_id") as string);
-      restrictionData.set("restriction_type", restrictionType);
-      restrictionData.set("description", formData.get("restriction_description") as string || formData.get("reason") as string);
-      restrictionData.set("start_date", formData.get("restriction_start") as string || new Date().toISOString().split("T")[0]);
-      const endDate = formData.get("restriction_end") as string;
-      if (endDate) restrictionData.set("end_date", endDate);
-      const notes = formData.get("restriction_notes") as string;
-      if (notes) restrictionData.set("notes", notes);
-      if (restrictionType === "house_commitment") restrictionData.set("is_house_commitment", "on");
-      await restrictionAction(restrictionData);
-    }
+      // If restriction checkbox is checked, also submit the restriction
+      if (addRestriction) {
+        const restrictionData = new FormData();
+        restrictionData.set("house_id", formData.get("house_id") as string);
+        restrictionData.set("resident_id", formData.get("resident_id") as string);
+        restrictionData.set("restriction_type", restrictionType);
+        restrictionData.set("description", formData.get("restriction_description") as string || formData.get("reason") as string);
+        restrictionData.set("start_date", formData.get("restriction_start") as string || new Date().toISOString().split("T")[0]);
+        const endDate = formData.get("restriction_end") as string;
+        if (endDate) restrictionData.set("end_date", endDate);
+        const notes = formData.get("restriction_notes") as string;
+        if (notes) restrictionData.set("notes", notes);
+        if (restrictionType === "house_commitment") restrictionData.set("is_house_commitment", "on");
+        await restrictionAction(restrictionData);
+      }
+    });
   }
 
   return (
