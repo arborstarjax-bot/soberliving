@@ -672,3 +672,41 @@ create policy "Staff can manage payments"
       where user_id = auth.uid() and role in ('admin', 'manager')
     )
   );
+
+-- ============================================================
+-- Auto-create user profile on signup
+-- ============================================================
+
+-- This trigger automatically creates a row in public.users
+-- and assigns a default 'resident' role when a new user signs up
+-- via Supabase Auth. This ensures the profile exists even if the
+-- client-side insert fails due to RLS or network issues.
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = ''
+as $$
+begin
+  insert into public.users (id, email, full_name)
+  values (
+    new.id,
+    new.email,
+    coalesce(new.raw_user_meta_data ->> 'full_name', split_part(new.email, '@', 1))
+  )
+  on conflict (id) do nothing;
+
+  insert into public.user_roles (user_id, role)
+  values (new.id, 'resident')
+  on conflict (user_id) do nothing;
+
+  return new;
+end;
+$$;
+
+-- Drop the trigger if it already exists to avoid errors on re-run
+drop trigger if exists on_auth_user_created on auth.users;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
