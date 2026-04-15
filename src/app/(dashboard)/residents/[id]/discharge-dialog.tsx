@@ -43,10 +43,8 @@ export function DischargeDialog({ residentId, status }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setReason(""); setError(null); } }}>
-      <DialogTrigger asChild>
-        <Button variant="destructive" size="sm">
-          Discharge
-        </Button>
+      <DialogTrigger render={<Button variant="destructive" size="sm" />}>
+        Discharge
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
