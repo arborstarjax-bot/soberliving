@@ -9,6 +9,7 @@ import { calculateMilestones, getDaysSober } from "@/lib/milestones";
 import { ResidentTimeline } from "./timeline";
 import { ResidentNotes } from "./notes";
 import { ResidentActions } from "./resident-actions";
+import { ForcePhotoToggle } from "./force-photo-toggle";
 
 export default async function ResidentDetailPage(
   props: PageProps<"/residents/[id]">
@@ -351,6 +352,17 @@ export default async function ResidentDetailPage(
         <TabsContent value="details" className="mt-4">
           <Card>
             <CardContent className="space-y-4 pt-6">
+              {isStaff && (
+                <div className="border rounded-md p-4 bg-muted/30">
+                  <ForcePhotoToggle
+                    residentId={id}
+                    initialValue={resident.force_photo ?? false}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1 ml-7">
+                    When enabled, this resident must upload a photo before signing off on chores.
+                  </p>
+                </div>
+              )}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <p className="text-sm text-muted-foreground">Date of Birth</p>

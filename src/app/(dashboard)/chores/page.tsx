@@ -10,7 +10,7 @@ import { StartRotationDialog } from "./start-rotation-dialog";
 import { RotationBoard } from "./rotation-board";
 import { ChoreListManager } from "./chore-list-manager";
 import { SignoffReviewList } from "./signoff-review-list";
-import { ALL_DAYS, DAY_LABELS } from "@/lib/validations";
+import { ResidentChoreView } from "./resident-chore-view";
 
 export default async function ChoresPage() {
   const user = await requireAuth();
@@ -62,10 +62,14 @@ export default async function ChoresPage() {
     .select("id, chore_id, resident_id, reason, resident:residents(full_name)");
 
   // Normalize exclusions: Supabase returns joined resident as array, flatten to object
-  const normalizedExclusions = (exclusions ?? []).map((e) => ({
-    ...e,
-    resident: Array.isArray(e.resident) ? e.resident[0] ?? null : e.resident,
-  }));
+  // Also filter by house access using the already-fetched chores list
+  const accessibleChoreIds = new Set((chores ?? []).map((c) => c.id));
+  const normalizedExclusions = (exclusions ?? [])
+    .filter((e) => accessibleChoreIds.has(e.chore_id))
+    .map((e) => ({
+      ...e,
+      resident: Array.isArray(e.resident) ? e.resident[0] ?? null : e.resident,
+    }));
 
   // Get signoffs needing review
   const pendingSignoffsQuery = supabase
@@ -88,27 +92,32 @@ export default async function ChoresPage() {
     });
   }
 
-  // For residents, get their own assignments
+  // Get the current user's resident record if they are a resident
+  let userResidentId: string | null = null;
+  let userForcePhoto = false;
   let myAssignments: typeof rotations = null;
+
   if (user.role === "resident") {
     const { data: resident } = await supabase
       .from("residents")
-      .select("id")
+      .select("id, force_photo")
       .eq("user_id", user.id)
       .eq("status", "active")
       .single();
 
     if (resident) {
-        const { data } = await supabase
-          .from("chore_rotations")
-          .select(
-            "*, chore_rotation_assignments!inner(*, chore:chores(id, name, days_of_week, cycle_weeks, chore_tasks(*)), resident:residents(id, full_name), chore_signoffs(*))"
-          )
-          .eq("is_current", true)
-          .eq(
-            "chore_rotation_assignments.resident_id",
-            resident.id
-          );
+      userResidentId = resident.id;
+      userForcePhoto = resident.force_photo ?? false;
+      const { data } = await supabase
+        .from("chore_rotations")
+        .select(
+          "*, chore_rotation_assignments!inner(*, chore:chores(id, name, days_of_week, cycle_weeks, chore_tasks(*)), resident:residents(id, full_name), chore_signoffs(*))"
+        )
+        .eq("is_current", true)
+        .eq(
+          "chore_rotation_assignments.resident_id",
+          resident.id
+        );
       myAssignments = data;
     }
   }
@@ -132,7 +141,7 @@ export default async function ChoresPage() {
 
       {user.role === "resident" ? (
         // Resident view: show their chore and signoff grid
-        <ResidentChoreView rotations={myAssignments ?? []} />
+        <ResidentChoreView rotations={myAssignments ?? []} userResidentId={userResidentId} forcePhoto={userForcePhoto} />
       ) : (
         // Staff view: tabs for rotation board, review, and chore management
         <Tabs defaultValue="rotation">
@@ -166,6 +175,9 @@ export default async function ChoresPage() {
                       chores={houseChores}
                       residents={houseResidents}
                       assignments={rotation.chore_rotation_assignments ?? []}
+                      isStaff={isStaff}
+                      userRole={user.role}
+                      userResidentId={userResidentId}
                     />
                   );
                 })}
@@ -207,182 +219,4 @@ export default async function ChoresPage() {
       )}
     </div>
   );
-}
-
-function getCurrentWeekNumber(cycleStartDate: string): number {
-  const start = new Date(cycleStartDate + "T00:00:00");
-  const now = new Date();
-  const diffMs = now.getTime() - start.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  const weekNum = Math.floor(diffDays / 7) + 1;
-  return Math.max(1, weekNum);
-}
-
-function ResidentChoreView({
-  rotations,
-}: {
-  rotations: Array<{
-    id: string;
-    cycle_start_date: string;
-    cycle_end_date: string;
-    chore_rotation_assignments: Array<{
-      id: string;
-      chore: { id: string; name: string; days_of_week?: string[]; cycle_weeks?: number; chore_tasks: Array<{ id: string; description: string; sort_order: number; is_active: boolean }> };
-      chore_signoffs: Array<{
-        id: string;
-        day_of_week: string;
-        week_number: number;
-        status: string;
-        sign_off_date: string;
-      }>;
-    }>;
-  }>;
-}) {
-  if (rotations.length === 0) {
-    return (
-      <Card>
-        <CardContent className="py-12 text-center">
-          <p className="text-muted-foreground">
-            No chores assigned to you this cycle.
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      {rotations.map((rotation) => {
-        const currentWeek = getCurrentWeekNumber(rotation.cycle_start_date);
-
-        return rotation.chore_rotation_assignments.map((assignment) => {
-          const choreDays: string[] = assignment.chore.days_of_week ?? ["monday", "wednesday", "friday"];
-          const cycleWeeks = assignment.chore.cycle_weeks ?? 2;
-          const displayWeek = Math.min(currentWeek, cycleWeeks);
-
-          return (
-            <Card key={assignment.id}>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>{assignment.chore.name}</CardTitle>
-                    <p className="text-sm text-muted-foreground">
-                      {new Date(rotation.cycle_start_date).toLocaleDateString()} —{" "}
-                      {new Date(rotation.cycle_end_date).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <Badge variant="outline">
-                    Week {displayWeek} of {cycleWeeks}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Task checklist */}
-                {assignment.chore.chore_tasks
-                  ?.filter((t) => t.is_active)
-                  .sort((a, b) => a.sort_order - b.sort_order)
-                  .length > 0 && (
-                  <div>
-                    <p className="text-sm font-medium mb-2">Tasks:</p>
-                    <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
-                      {assignment.chore.chore_tasks
-                        .filter((t) => t.is_active)
-                        .sort((a, b) => a.sort_order - b.sort_order)
-                        .map((task) => (
-                          <li key={task.id}>{task.description}</li>
-                        ))}
-                    </ol>
-                  </div>
-                )}
-
-                {/* Signoff grid - current week Mon-Sun */}
-                <div>
-                  <p className="text-sm font-medium mb-2">Sign-off Tracking:</p>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm border">
-                      <thead>
-                        <tr>
-                          <th className="border p-2 text-left bg-muted">Day</th>
-                          {ALL_DAYS.map((day) => (
-                            <th
-                              key={day}
-                              className="border p-2 text-center bg-muted text-xs"
-                            >
-                              {DAY_LABELS[day]}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td className="border p-2 font-medium">
-                            {assignment.chore.name}
-                          </td>
-                          {ALL_DAYS.map((day) => {
-                            const isScheduled = choreDays.includes(day);
-                            if (!isScheduled) {
-                              return (
-                                <td
-                                  key={day}
-                                  className="border p-2 text-center bg-muted/30"
-                                />
-                              );
-                            }
-                            const signoff =
-                              assignment.chore_signoffs.find(
-                                (s) =>
-                                  s.week_number === displayWeek &&
-                                  s.day_of_week === day
-                              );
-                            return (
-                              <td
-                                key={day}
-                                className="border p-2 text-center"
-                              >
-                                {signoff ? (
-                                  <SignoffCell signoff={signoff} />
-                                ) : (
-                                  "—"
-                                )}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        });
-      })}
-    </div>
-  );
-}
-
-function SignoffCell({
-  signoff,
-}: {
-  signoff: { id: string; status: string; sign_off_date: string };
-}) {
-  const today = new Date().toISOString().split("T")[0];
-  const isFuture = signoff.sign_off_date > today;
-
-  if (signoff.status === "approved") {
-    return <Badge variant="default" className="text-xs">✓</Badge>;
-  }
-  if (signoff.status === "completed_pending_review") {
-    return <Badge variant="secondary" className="text-xs">Review</Badge>;
-  }
-  if (signoff.status === "rejected") {
-    return <Badge variant="destructive" className="text-xs">Redo</Badge>;
-  }
-  if (signoff.status === "missed") {
-    return <Badge variant="destructive" className="text-xs">Missed</Badge>;
-  }
-  if (isFuture) {
-    return <span className="text-muted-foreground">—</span>;
-  }
-  return <Badge variant="outline" className="text-xs">Pending</Badge>;
 }

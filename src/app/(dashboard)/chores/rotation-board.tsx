@@ -1,11 +1,12 @@
 "use client";
 
-import { useActionState } from "react";
-import { assignRotationChore } from "./actions";
+import { useState, useTransition, useActionState } from "react";
+import { assignRotationChore, unassignRotationChore, rotateSchedule, markSignoffComplete } from "./actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ALL_DAYS, DAY_LABELS } from "@/lib/validations";
+import { X, RefreshCw } from "lucide-react";
 
 interface RotationAssignment {
   id: string;
@@ -18,6 +19,7 @@ interface RotationAssignment {
     day_of_week: string;
     week_number: number;
     status: string;
+    sign_off_date: string;
   }>;
 }
 
@@ -32,6 +34,9 @@ interface Props {
   chores: Array<{ id: string; name: string; house_id: string; days_of_week?: string[]; cycle_weeks?: number }>;
   residents: Array<{ id: string; full_name: string }>;
   assignments: RotationAssignment[];
+  isStaff: boolean;
+  userRole: string;
+  userResidentId?: string | null;
 }
 
 function getCurrentWeekNumber(cycleStartDate: string): number {
@@ -43,14 +48,23 @@ function getCurrentWeekNumber(cycleStartDate: string): number {
   return Math.max(1, weekNum);
 }
 
+function getTodayDayOfWeek(): string {
+  const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  return days[new Date().getDay()];
+}
+
 export function RotationBoard({
   rotation,
   houseName,
   chores,
   residents,
   assignments,
+  isStaff,
+  userRole,
+  userResidentId,
 }: Props) {
   const currentWeek = getCurrentWeekNumber(rotation.cycle_start_date);
+  const todayDay = getTodayDayOfWeek();
 
   // Determine the max cycle weeks across all chores in this house
   const maxCycleWeeks = chores.length > 0
@@ -71,9 +85,14 @@ export function RotationBoard({
               {new Date(rotation.cycle_end_date).toLocaleDateString()}
             </p>
           </div>
-          <Badge variant="outline">
-            Week {displayWeek} of {maxCycleWeeks}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {isStaff && assignments.length >= 2 && (
+              <RotateButton rotationId={rotation.id} />
+            )}
+            <Badge variant="outline">
+              Week {displayWeek} of {maxCycleWeeks}
+            </Badge>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -88,8 +107,12 @@ export function RotationBoard({
                   Assigned To
                 </th>
                 {ALL_DAYS.map((day) => (
-                  <th key={day} className="border p-2 text-center bg-muted text-xs">
+                  <th
+                    key={day}
+                    className={`border p-2 text-center bg-muted text-xs ${day === todayDay ? "bg-primary/10 font-bold" : ""}`}
+                  >
                     {DAY_LABELS[day]}
+                    {day === todayDay && <span className="block text-[10px] text-primary">Today</span>}
                   </th>
                 ))}
               </tr>
@@ -106,7 +129,12 @@ export function RotationBoard({
                     <td className="border p-2 font-medium">{chore.name}</td>
                     <td className="border p-2">
                       {assignment ? (
-                        <span>{assignment.resident?.full_name}</span>
+                        <div className="flex items-center gap-1">
+                          <span className="flex-1">{assignment.resident?.full_name}</span>
+                          {isStaff && (
+                            <UnassignButton assignmentId={assignment.id} />
+                          )}
+                        </div>
                       ) : (
                         <AssignResidentInline
                           rotationId={rotation.id}
@@ -131,12 +159,24 @@ export function RotationBoard({
                           s.week_number === choreDisplayWeek &&
                           s.day_of_week === day
                       );
+
+                      const isToday = day === todayDay;
+                      const isOwnChore = userResidentId === assignment?.resident_id;
+                      // Residents can only check off today's chore; staff can check off any day
+                      const canCheckOff = signoff && signoff.status === "pending" && (
+                        isStaff || (userRole === "resident" && isOwnChore && isToday)
+                      );
+
                       return (
                         <td
                           key={`${chore.id}-${day}`}
-                          className="border p-2 text-center"
+                          className={`border p-2 text-center ${day === todayDay ? "bg-primary/5" : ""}`}
                         >
-                          <SignoffBadge status={signoff?.status} />
+                          {canCheckOff ? (
+                            <SignoffButton signoffId={signoff.id} />
+                          ) : (
+                            <SignoffBadge status={signoff?.status} />
+                          )}
                         </td>
                       );
                     })}
@@ -148,6 +188,76 @@ export function RotationBoard({
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function UnassignButton({ assignmentId }: { assignmentId: string }) {
+  const [pending, startTransition] = useTransition();
+
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      className="inline-flex items-center justify-center h-5 w-5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+      title="Unassign"
+      onClick={() => {
+        if (confirm("Unassign this chore? All signoff records will be removed.")) {
+          startTransition(() => {
+            unassignRotationChore(assignmentId);
+          });
+        }
+      }}
+    >
+      {pending ? <span className="text-xs">…</span> : <X className="h-3 w-3" />}
+    </button>
+  );
+}
+
+function RotateButton({ rotationId }: { rotationId: string }) {
+  const [pending, startTransition] = useTransition();
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={pending}
+      onClick={() => {
+        if (confirm("Rotate all chore assignments? This will shift residents by one position and reset signoffs.")) {
+          startTransition(() => {
+            rotateSchedule(rotationId);
+          });
+        }
+      }}
+    >
+      <RefreshCw className={`h-4 w-4 mr-1 ${pending ? "animate-spin" : ""}`} />
+      {pending ? "Rotating…" : "Rotate"}
+    </Button>
+  );
+}
+
+function SignoffButton({ signoffId }: { signoffId: string }) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <div>
+      <button
+        type="button"
+        disabled={pending}
+        className="inline-flex items-center justify-center h-7 w-7 rounded-full border-2 border-dashed border-primary/40 text-primary/60 hover:border-primary hover:text-primary hover:bg-primary/10 transition-colors text-xs"
+        title="Mark as done"
+        onClick={() => {
+          setError(null);
+          startTransition(async () => {
+            const result = await markSignoffComplete(signoffId);
+            if (result?.error) setError(result.error);
+          });
+        }}
+      >
+        {pending ? "…" : "✓"}
+      </button>
+      {error && <p className="text-[10px] text-destructive mt-0.5">{error}</p>}
+    </div>
   );
 }
 

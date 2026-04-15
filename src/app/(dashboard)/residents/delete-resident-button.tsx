@@ -38,6 +38,7 @@ export function DeleteResidentButton({
   }
 
   return (
+    <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         render={
@@ -76,5 +77,6 @@ export function DeleteResidentButton({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    </div>
   );
 }

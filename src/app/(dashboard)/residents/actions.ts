@@ -226,6 +226,47 @@ export async function deleteResident(residentId: string) {
   return {};
 }
 
+// --- Force Photo Toggle ---
+
+export async function updateResidentForcePhoto(
+  residentId: string,
+  forcePhoto: boolean
+) {
+  const user = await requireAuth();
+  const supabase = await createClient();
+
+  const { data: resident } = await supabase
+    .from("residents")
+    .select("house_id, full_name")
+    .eq("id", residentId)
+    .single();
+
+  if (!resident) return { error: "Resident not found" };
+  if (user.role !== "admin" && !canAccessHouse(user, resident.house_id)) {
+    return { error: "Not authorized" };
+  }
+
+  const { error } = await supabase
+    .from("residents")
+    .update({ force_photo: forcePhoto, updated_at: new Date().toISOString() })
+    .eq("id", residentId);
+
+  if (error) return { error: error.message };
+
+  await logActivity({
+    houseId: resident.house_id,
+    residentId,
+    actorId: user.id,
+    eventType: "resident_updated",
+    entityType: "resident",
+    entityId: residentId,
+    description: `Force photo ${forcePhoto ? "enabled" : "disabled"} for ${resident.full_name} by ${user.full_name}`,
+  });
+
+  revalidatePath(`/residents/${residentId}`);
+  return {};
+}
+
 // --- Bed Assignments ---
 
 export async function assignBed(
