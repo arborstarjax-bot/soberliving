@@ -254,7 +254,7 @@ export async function updateRoom(
 
   const { error } = await supabase
     .from("rooms")
-    .update({ ...parsed.data, updated_at: new Date().toISOString() })
+    .update(parsed.data)
     .eq("id", roomId);
 
   if (error) return { error: error.message };
@@ -299,7 +299,7 @@ export async function deleteRoom(
   // Soft-delete by setting is_active = false
   const { error } = await supabase
     .from("rooms")
-    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .update({ is_active: false })
     .eq("id", roomId);
 
   if (error) return { error: error.message };
@@ -352,7 +352,7 @@ export async function updateBed(
 
   const { error } = await supabase
     .from("beds")
-    .update({ ...parsed.data, updated_at: new Date().toISOString() })
+    .update(parsed.data)
     .eq("id", bedId);
 
   if (error) return { error: error.message };
@@ -398,7 +398,7 @@ export async function deleteBed(
   // Soft-delete by setting is_active = false
   const { error } = await supabase
     .from("beds")
-    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .update({ is_active: false })
     .eq("id", bedId);
 
   if (error) return { error: error.message };
