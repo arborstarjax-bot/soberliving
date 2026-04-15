@@ -207,7 +207,21 @@ create table if not exists public.chore_signoffs (
 );
 
 -- ============================================================
--- 14. Incidents
+-- 14. Chore Exclusions (residents excluded from specific chores)
+-- ============================================================
+
+create table if not exists public.chore_exclusions (
+  id uuid primary key default uuid_generate_v4(),
+  chore_id uuid not null references public.chores(id) on delete cascade,
+  resident_id uuid not null references public.residents(id) on delete cascade,
+  reason text,
+  created_by uuid not null references public.users(id),
+  created_at timestamptz not null default now(),
+  unique(chore_id, resident_id)
+);
+
+-- ============================================================
+-- 15. Incidents
 -- ============================================================
 
 create table if not exists public.incidents (
@@ -354,6 +368,7 @@ alter table public.chore_tasks enable row level security;
 alter table public.chore_rotations enable row level security;
 alter table public.chore_rotation_assignments enable row level security;
 alter table public.chore_signoffs enable row level security;
+alter table public.chore_exclusions enable row level security;
 alter table public.incidents enable row level security;
 alter table public.leave_requests enable row level security;
 alter table public.resident_notes enable row level security;
@@ -473,6 +488,14 @@ create policy "Authenticated users can update signoffs"
 create policy "Staff can insert signoffs"
   on public.chore_signoffs for insert to authenticated
   with check (public.is_staff());
+
+-- Chore Exclusions
+create policy "Chore exclusions viewable by authenticated"
+  on public.chore_exclusions for select to authenticated using (true);
+
+create policy "Staff can manage chore exclusions"
+  on public.chore_exclusions for all to authenticated
+  using (public.is_staff());
 
 -- Incidents
 create policy "Incidents viewable by staff"

@@ -20,6 +20,14 @@ interface RotationAssignment {
   }>;
 }
 
+interface ChoreExclusion {
+  id: string;
+  chore_id: string;
+  resident_id: string;
+  reason: string | null;
+  resident: { full_name: string } | null;
+}
+
 interface Props {
   rotation: {
     id: string;
@@ -31,6 +39,7 @@ interface Props {
   chores: Array<{ id: string; name: string; house_id: string }>;
   residents: Array<{ id: string; full_name: string }>;
   assignments: RotationAssignment[];
+  exclusions: ChoreExclusion[];
 }
 
 export function RotationBoard({
@@ -39,6 +48,7 @@ export function RotationBoard({
   chores,
   residents,
   assignments,
+  exclusions,
 }: Props) {
   return (
     <Card>
@@ -87,6 +97,12 @@ export function RotationBoard({
                 const assignment = assignments.find(
                   (a) => a.chore_id === chore.id
                 );
+                const choreExclusions = exclusions.filter(
+                  (e) => e.chore_id === chore.id
+                );
+                const eligibleResidents = residents.filter(
+                  (r) => !choreExclusions.some((e) => e.resident_id === r.id)
+                );
                 return (
                   <tr key={chore.id}>
                     <td className="border p-2 font-medium">{chore.name}</td>
@@ -97,7 +113,7 @@ export function RotationBoard({
                         <AssignResidentInline
                           rotationId={rotation.id}
                           choreId={chore.id}
-                          residents={residents}
+                          residents={eligibleResidents}
                         />
                       )}
                     </td>
