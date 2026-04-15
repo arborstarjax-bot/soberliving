@@ -6,6 +6,21 @@ const publicRoutes = ["/login", "/signup", "/register"];
 export default async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // Skip proxy for static assets and API auth routes
+  if (
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/api/auth") ||
+    pathname.includes(".")
+  ) {
+    return NextResponse.next();
+  }
+
+  // Allow public routes without any auth check
+  if (publicRoutes.some((r) => pathname.startsWith(r))) {
+    return NextResponse.next();
+  }
+
+  // For protected routes, check auth
   let supabaseResponse = NextResponse.next({ request: req });
 
   const supabase = createServerClient(
@@ -17,12 +32,10 @@ export default async function proxy(req: NextRequest) {
           return req.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          // Update request cookies so downstream server components see refreshed tokens
           cookiesToSet.forEach(({ name, value }) =>
             req.cookies.set(name, value)
           );
           supabaseResponse = NextResponse.next({ request: req });
-          // Update response cookies so the browser stores refreshed tokens
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
           );
@@ -31,28 +44,10 @@ export default async function proxy(req: NextRequest) {
     }
   );
 
-  // Always call getUser() to refresh the auth token
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Allow public routes and static assets without auth
-  if (
-    publicRoutes.some((r) => pathname.startsWith(r)) ||
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/api/auth") ||
-    pathname.includes(".")
-  ) {
-    // If user is logged in and visiting login/register, redirect to dashboard
-    if (user && (pathname.startsWith("/login") || pathname.startsWith("/register"))) {
-      const url = req.nextUrl.clone();
-      url.pathname = "/dashboard";
-      return NextResponse.redirect(url);
-    }
-    return supabaseResponse;
-  }
-
-  // Protected routes: redirect to login if not authenticated
   if (!user) {
     const loginUrl = new URL("/login", req.nextUrl);
     loginUrl.searchParams.set("redirect", pathname);
