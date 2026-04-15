@@ -387,6 +387,7 @@ export async function liftRestriction(restrictionId: string) {
 }
 
 export async function expireRestrictions() {
+  await requireAuth();
   const supabase = await createClient();
   const today = new Date().toISOString().split("T")[0];
 
