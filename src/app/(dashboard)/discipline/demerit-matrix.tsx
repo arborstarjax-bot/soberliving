@@ -398,8 +398,9 @@ function AddDemeritDialog({
   const [isPending, startTransition] = useTransition();
 
   // Reset state when dialog opens with preselected resident
-  const prevResident = useState(preselectedResident?.id)[0];
+  const [prevResident, setPrevResident] = useState(preselectedResident?.id);
   if (preselectedResident && preselectedResident.id !== prevResident) {
+    setPrevResident(preselectedResident.id);
     setSelectedHouse(preselectedResident.house_id);
   }
 

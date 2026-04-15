@@ -380,7 +380,8 @@ export async function liftRestriction(restrictionId: string) {
 }
 
 export async function expireRestrictions() {
-  await requireAuth();
+  const user = await requireAuth();
+  if (user.role === "resident") return { count: 0 };
   const supabase = await createClient();
   const today = new Date().toISOString().split("T")[0];
 
