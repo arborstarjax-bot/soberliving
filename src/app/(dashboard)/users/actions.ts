@@ -28,7 +28,7 @@ export async function createUser(
     type: "invite",
     email: parsed.data.email,
     options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/auth/callback`,
+      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/reset-password`,
     },
   });
 
@@ -76,12 +76,25 @@ export async function createUser(
   revalidatePath("/users");
   revalidatePath("/residents");
 
-  // Build the invite link from the token properties
+  // Use the action_link from Supabase (contains tokens in the URL).
+  // Rewrite the redirect so it lands on our /reset-password page where
+  // the user can set their password.
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const token = linkData.properties?.hashed_token;
-  const inviteLink = token
-    ? `${baseUrl}/auth/confirm?token_hash=${token}&type=invite`
-    : `${baseUrl}/login`;
+  let inviteLink = linkData.properties?.action_link ?? "";
+
+  if (inviteLink) {
+    // The action_link redirects to Supabase's default. We rewrite the
+    // redirect_to query param so it ends up on /reset-password in our app.
+    try {
+      const url = new URL(inviteLink);
+      url.searchParams.set("redirect_to", `${baseUrl}/reset-password`);
+      inviteLink = url.toString();
+    } catch {
+      // If URL parsing fails, fall back to the raw link
+    }
+  } else {
+    inviteLink = `${baseUrl}/login`;
+  }
 
   // Send invite email via Resend (best-effort — don't fail the whole action if email fails)
   try {
