@@ -1,8 +1,9 @@
 -- Jax Sober Living: Intake Forms & Documents Migration
 -- Run this in your Supabase SQL Editor
 
--- 1. Add intake_completed column to users table
+-- 1. Add intake_completed and is_resident columns to users table
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS intake_completed boolean NOT NULL DEFAULT false;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_resident boolean NOT NULL DEFAULT false;
 
 -- 2. Create intake_forms table
 CREATE TABLE IF NOT EXISTS public.intake_forms (
