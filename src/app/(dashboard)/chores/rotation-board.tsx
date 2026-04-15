@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useTransition, useActionState } from "react";
-import { assignRotationChore, unassignRotationChore, rotateSchedule, markSignoffComplete, reviewSignoff } from "./actions";
+import { assignRotationChore, unassignRotationChore, rotateSchedule, markSignoffComplete, reviewSignoff, overrideSignoffStatus } from "./actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ALL_DAYS, DAY_LABELS } from "@/lib/validations";
-import { X, RefreshCw, Check, XCircle } from "lucide-react";
+import { X, RefreshCw, Check, XCircle, Pencil } from "lucide-react";
 
 interface RotationAssignment {
   id: string;
@@ -169,6 +169,8 @@ export function RotationBoard({
                       );
 
                       const canVerify = signoff && signoff.status === "completed_pending_review" && isStaff;
+                      // Staff can override any non-pending signoff status
+                      const canOverride = signoff && signoff.status !== "pending" && isStaff && !canVerify;
 
                       return (
                         <td
@@ -179,6 +181,8 @@ export function RotationBoard({
                             <VerifyButtons signoffId={signoff.id} />
                           ) : canCheckOff ? (
                             <SignoffButton signoffId={signoff.id} />
+                          ) : canOverride ? (
+                            <StaffOverrideBadge signoffId={signoff.id} status={signoff.status} rejectionNote={signoff.rejection_note} />
                           ) : (
                             <SignoffBadge status={signoff?.status} rejectionNote={signoff?.rejection_note} />
                           )}
@@ -376,6 +380,65 @@ function AssignResidentInline({
         {pending ? "…" : "→"}
       </Button>
     </form>
+  );
+}
+
+function StaffOverrideBadge({ signoffId, status, rejectionNote }: { signoffId: string; status: string; rejectionNote?: string | null }) {
+  const [pending, startTransition] = useTransition();
+  const [showMenu, setShowMenu] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const statusOptions: Array<{ value: "pending" | "approved" | "rejected" | "missed"; label: string }> = [
+    { value: "pending", label: "Reset to Pending" },
+    { value: "approved", label: "Mark Approved" },
+    { value: "rejected", label: "Mark Rejected" },
+    { value: "missed", label: "Mark Missed" },
+  ].filter((o) => o.value !== status) as Array<{ value: "pending" | "approved" | "rejected" | "missed"; label: string }>;
+
+  return (
+    <div className="relative inline-block">
+      <button
+        type="button"
+        className="group relative cursor-pointer"
+        title="Click to change status"
+        onClick={() => setShowMenu(!showMenu)}
+      >
+        <SignoffBadge status={status} rejectionNote={rejectionNote} />
+        <span className="absolute -top-1 -right-1 hidden group-hover:flex items-center justify-center h-3.5 w-3.5 rounded-full bg-primary text-white">
+          <Pencil className="h-2 w-2" />
+        </span>
+      </button>
+      {showMenu && (
+        <div className="absolute z-50 top-full left-1/2 -translate-x-1/2 mt-1 bg-white dark:bg-zinc-900 border rounded-md shadow-lg py-1 min-w-[140px]">
+          {statusOptions.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              disabled={pending}
+              className="block w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors disabled:opacity-50"
+              onClick={() => {
+                setError(null);
+                startTransition(async () => {
+                  const result = await overrideSignoffStatus(signoffId, opt.value);
+                  if (result?.error) setError(result.error);
+                  setShowMenu(false);
+                });
+              }}
+            >
+              {pending ? "…" : opt.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            className="block w-full text-left px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted transition-colors border-t"
+            onClick={() => setShowMenu(false)}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      {error && <p className="text-[10px] text-destructive mt-0.5">{error}</p>}
+    </div>
   );
 }
 

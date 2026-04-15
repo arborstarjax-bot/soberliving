@@ -742,6 +742,76 @@ export async function reviewSignoff(
   return {};
 }
 
+// --- Staff Override Signoff Status ---
+
+export async function overrideSignoffStatus(
+  signoffId: string,
+  newStatus: "pending" | "approved" | "rejected" | "missed" | "completed_pending_review",
+  note?: string
+) {
+  const user = await requireAuth();
+  if (user.role === "resident") return { error: "Not authorized" };
+
+  const supabase = await createClient();
+
+  const { data: signoff } = await supabase
+    .from("chore_signoffs")
+    .select("id, status, rotation_assignment:chore_rotation_assignments(resident_id, chore:chores(name, house_id))")
+    .eq("id", signoffId)
+    .single();
+
+  if (!signoff) return { error: "Signoff not found" };
+
+  const ra = signoff.rotation_assignment as unknown as {
+    resident_id: string;
+    chore: { name: string; house_id: string } | null;
+  } | null;
+
+  const houseId = ra?.chore?.house_id ?? "";
+  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+    return { error: "Not authorized" };
+  }
+
+  const updateData: Record<string, unknown> = {
+    status: newStatus,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (newStatus === "rejected" && note) {
+    updateData.rejection_note = note;
+  }
+  if (newStatus === "approved") {
+    updateData.reviewed_by = user.id;
+    updateData.reviewed_at = new Date().toISOString();
+  }
+  if (newStatus === "pending") {
+    updateData.completed_at = null;
+    updateData.reviewed_by = null;
+    updateData.reviewed_at = null;
+    updateData.rejection_note = null;
+  }
+
+  const { error } = await supabase
+    .from("chore_signoffs")
+    .update(updateData)
+    .eq("id", signoffId);
+
+  if (error) return { error: error.message };
+
+  await logActivity({
+    houseId,
+    residentId: ra?.resident_id,
+    actorId: user.id,
+    eventType: "chore_signoff_overridden",
+    entityType: "chore_signoff",
+    entityId: signoffId,
+    description: `"${ra?.chore?.name}" signoff status changed to ${newStatus} by ${user.full_name}`,
+  });
+
+  revalidatePath("/chores");
+  return {};
+}
+
 // --- Chore Exclusions ---
 
 export async function addChoreExclusion(

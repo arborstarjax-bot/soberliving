@@ -7,6 +7,7 @@ import { AlertTriangle, ShieldAlert } from "lucide-react";
 import { CreateDemeritDialog } from "./create-demerit-dialog";
 import { CreateRestrictionDialog } from "./create-restriction-dialog";
 import { LiftRestrictionButton } from "./lift-restriction-button";
+import { DemeritManager } from "./demerit-manager";
 
 const RESTRICTION_TYPE_LABELS: Record<string, string> = {
   no_leave: "No Leave",
@@ -158,58 +159,41 @@ export default async function DisciplinePage() {
         )}
       </section>
 
-      {/* Demerits */}
+      {/* Demerits — grouped by house with edit/delete/mark-worked-off */}
       <section>
         <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
           <AlertTriangle className="h-5 w-5" />
           Demerits
         </h2>
-        {(demerits ?? []).length > 0 ? (
-          <div className="space-y-3">
-            {(demerits ?? []).map((d) => {
-              const residentName = (d.resident as unknown as { full_name: string } | null)?.full_name ?? "Unknown";
-              const houseName = (d.house as unknown as { name: string } | null)?.name ?? "";
-
-              return (
-                <Card key={d.id}>
-                  <CardContent className="py-4">
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{residentName}</span>
-                          {houseName && (
-                            <Badge variant="outline" className="text-xs">{houseName}</Badge>
-                          )}
-                          <Badge variant="secondary">{d.points} pt{d.points !== 1 ? "s" : ""}</Badge>
-                          {d.category && (
-                            <Badge variant="outline" className="text-xs">{d.category}</Badge>
-                          )}
-                        </div>
-                        <p className="text-sm text-muted-foreground">{d.reason}</p>
-                        {d.notes && (
-                          <p className="text-sm text-muted-foreground italic">Note: {d.notes}</p>
-                        )}
-                        {d.photo_url && (
-                          <a
-                            href={d.photo_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-primary hover:underline"
-                          >
-                            View photo
-                          </a>
-                        )}
-                      </div>
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        {new Date(d.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        ) : (
+        {(houses ?? []).map((house) => {
+          const houseDemerits = (demerits ?? []).filter((d) => d.house_id === house.id).map((d) => ({
+            id: d.id,
+            resident_id: d.resident_id,
+            reason: d.reason,
+            notes: d.notes ?? null,
+            status: d.status ?? "active",
+            auto_generated: d.auto_generated ?? false,
+            created_at: d.created_at,
+            worked_off_at: d.resolved_at ?? null,
+            worked_off_note: d.resolution_note ?? null,
+          }));
+          const houseResidents = (residents ?? []).filter((r) => r.house_id === house.id).map((r) => ({
+            id: r.id,
+            full_name: r.full_name,
+          }));
+          if (houseDemerits.length === 0 && houseResidents.length === 0) return null;
+          return (
+            <DemeritManager
+              key={house.id}
+              houseId={house.id}
+              houseName={house.name}
+              residents={houseResidents}
+              demerits={houseDemerits}
+              userRole={user.role}
+            />
+          );
+        })}
+        {(demerits ?? []).length === 0 && (
           <Card>
             <CardContent className="py-8 text-center">
               <p className="text-muted-foreground">No demerits recorded yet.</p>
