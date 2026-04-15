@@ -2,8 +2,12 @@ import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// Resend requires a verified domain. Use RESEND_FROM_EMAIL for a verified
+// sender, or fall back to Resend's default sandbox address.
 const fromEmail =
-  process.env.PROPOSAL_FROM_EMAIL || "noreply@soberliving.app";
+  process.env.RESEND_FROM_EMAIL ||
+  process.env.PROPOSAL_FROM_EMAIL ||
+  "Sober Living <onboarding@resend.dev>";
 
 export async function sendInviteEmail({
   to,
@@ -18,7 +22,7 @@ export async function sendInviteEmail({
 }) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-  const { error } = await resend.emails.send({
+  const { data, error } = await resend.emails.send({
     from: fromEmail,
     to,
     subject: "You've been invited to Sober Living",
@@ -50,5 +54,9 @@ export async function sendInviteEmail({
     `,
   });
 
-  return { error: error ? error.message : null };
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { error: null, id: data?.id };
 }

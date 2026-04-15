@@ -13,7 +13,7 @@ function generateTempPassword(): string {
 }
 
 export async function createUser(
-  _prevState: { error?: string; inviteLink?: string; emailSent?: boolean } | undefined,
+  _prevState: { error?: string; inviteLink?: string; emailSent?: boolean; emailError?: string | null } | undefined,
   formData: FormData
 ) {
   const user = await requireRole("admin");
@@ -67,9 +67,13 @@ export async function createUser(
   if (roleError) return { error: roleError.message };
 
   // Generate a password recovery link so the user can set their own password
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
   const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
     type: "recovery",
     email: parsed.data.email,
+    options: {
+      redirectTo: `${appUrl}/api/auth/callback?type=recovery`,
+    },
   });
 
   let inviteLink = "";
@@ -79,16 +83,18 @@ export async function createUser(
 
   // Send invite email via Resend
   let emailSent = false;
+  let emailError: string | null = null;
   if (inviteLink && process.env.RESEND_API_KEY) {
-    const { error: emailError } = await sendInviteEmail({
+    const result = await sendInviteEmail({
       to: parsed.data.email,
       fullName: parsed.data.full_name,
       role: parsed.data.role,
       inviteLink,
     });
-    emailSent = !emailError;
-    if (emailError) {
-      console.error("Failed to send invite email:", emailError);
+    emailSent = !result.error;
+    emailError = result.error;
+    if (result.error) {
+      console.error("Failed to send invite email:", result.error);
     }
   }
 
@@ -101,7 +107,7 @@ export async function createUser(
   });
 
   revalidatePath("/users");
-  return { inviteLink, emailSent };
+  return { inviteLink, emailSent, emailError };
 }
 
 export async function changeUserRole(userId: string, newRole: string) {

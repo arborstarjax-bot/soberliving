@@ -65,10 +65,17 @@ export function CreateUserDialog() {
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">
-                User created successfully. Share the invite link below so they
-                can set their password.
-              </p>
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  User created successfully. Share the invite link below so they
+                  can set their password.
+                </p>
+                {state.emailError && (
+                  <p className="text-xs text-destructive">
+                    Email failed: {state.emailError}
+                  </p>
+                )}
+              </div>
             )}
 
             {showLink ? (
