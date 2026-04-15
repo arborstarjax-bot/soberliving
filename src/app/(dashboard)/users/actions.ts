@@ -162,39 +162,18 @@ export async function deleteUser(userId: string) {
     .eq("id", userId)
     .single();
 
-  // First, clean up tables that reference users(id) with ON DELETE CASCADE or SET NULL
-  // These are safe to delete because they don't block the users row deletion
-  // Tables with ON DELETE CASCADE on user_id: user_roles, manager_house_assignments
-  // Tables with ON DELETE SET NULL on user_id: residents
-
-  // Try to delete the users row first to check for FK constraint violations
-  // If it fails, we haven't touched any data yet — safe fallback to soft-delete
-  // First remove child records that have CASCADE or won't cause issues
-  await adminClient.from("residents").delete().eq("user_id", userId);
-  await adminClient.from("manager_house_assignments").delete().eq("user_id", userId);
-  await adminClient.from("user_roles").delete().eq("user_id", userId);
-
-  // Attempt the users table delete
+  // Attempt to delete the users row directly.
+  // - user_roles and manager_house_assignments have ON DELETE CASCADE → auto-deleted
+  // - residents.user_id has ON DELETE SET NULL → just nulls out the link
+  // - If any other FK (e.g. activity_log.actor_id, payments.recorded_by) blocks it,
+  //   the delete fails and NO data is touched — we fall back to soft-delete safely.
   const { error: dbError } = await adminClient
     .from("users")
     .delete()
     .eq("id", userId);
 
   if (dbError) {
-    // FK constraint violation — restore the role and soft-delete instead
-    // Re-create the user_roles record since we deleted it above
-    const { data: roleData } = await adminClient
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (!roleData) {
-      // Restore default role since we deleted it
-      await adminClient.from("user_roles").insert({ user_id: userId, role: "resident" });
-    }
-
-    // Soft-delete: deactivate instead
+    // FK constraint violation — soft-delete (deactivate) instead
     await adminClient
       .from("users")
       .update({ is_active: false, updated_at: new Date().toISOString() })

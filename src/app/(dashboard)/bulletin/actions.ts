@@ -26,11 +26,11 @@ export async function createBulletinPost(
 
   const adminClient = createAdminClient();
 
-  const { error } = await adminClient.from("bulletin_posts").insert({
+  const { data, error } = await adminClient.from("bulletin_posts").insert({
     author_id: user.id,
     title: parsed.data.title,
     content: parsed.data.content,
-  });
+  }).select("id").single();
 
   if (error) return { error: error.message };
 
@@ -38,7 +38,7 @@ export async function createBulletinPost(
     actorId: user.id,
     eventType: "bulletin_post_created",
     entityType: "bulletin",
-    entityId: user.id,
+    entityId: data.id,
     description: `${user.full_name} posted "${parsed.data.title}" to the bulletin board`,
   });
 
