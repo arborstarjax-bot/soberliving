@@ -17,7 +17,8 @@ import type { UserRole } from "@/lib/types";
 import { AddBedDialog } from "./add-bed-dialog";
 import { AssignBedDialog } from "./assign-bed-dialog";
 import { updateRoom, deleteRoom, updateBed, deleteBed, reorderRooms } from "../actions";
-import { Pencil, Trash2, ArrowUp, ArrowDown } from "lucide-react";
+import { vacateBed } from "../../residents/actions";
+import { Pencil, Trash2, ArrowUp, ArrowDown, UserX } from "lucide-react";
 
 interface BedAssignment {
   id: string;
@@ -179,9 +180,18 @@ export function OccupancyGrid({
                           </Badge>
                         </div>
                         {isOccupied && activeAssignment?.resident ? (
-                          <p className="text-sm text-muted-foreground">
-                            {activeAssignment.resident.full_name}
-                          </p>
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm text-muted-foreground">
+                              {activeAssignment.resident.full_name}
+                            </p>
+                            {canManage && (
+                              <UnassignBedButton
+                                assignmentId={activeAssignment.id}
+                                residentName={activeAssignment.resident.full_name}
+                                bedLabel={bed.label}
+                              />
+                            )}
+                          </div>
                         ) : canManage ? (
                           <AssignBedDialog
                             bedId={bed.id}
@@ -416,5 +426,44 @@ function DeleteBedButton({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Unassign Bed Button ─────────────────────────────────────
+
+function UnassignBedButton({
+  assignmentId,
+  residentName,
+  bedLabel,
+}: {
+  assignmentId: string;
+  residentName: string;
+  bedLabel: string;
+}) {
+  const [isPending, startTransition] = useTransition();
+
+  function handleUnassign() {
+    if (
+      confirm(
+        `Unassign ${residentName} from ${bedLabel}? They can be reassigned to another bed.`
+      )
+    ) {
+      startTransition(() => {
+        vacateBed(assignmentId);
+      });
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleUnassign}
+      disabled={isPending}
+      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:text-destructive hover:bg-muted transition-colors disabled:opacity-50"
+      title={`Unassign ${residentName}`}
+    >
+      <UserX className="h-3 w-3" />
+      {isPending ? "…" : "Unassign"}
+    </button>
   );
 }
