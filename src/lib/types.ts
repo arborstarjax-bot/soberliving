@@ -21,6 +21,12 @@ export type IncidentSeverity = "minor" | "major" | "critical";
 
 export type LeaveRequestStatus = "pending" | "approved" | "denied" | "returned";
 
+export type PaymentType = "rent" | "deposit" | "fee" | "other";
+
+export type PaymentMethod = "cash" | "check" | "money_order" | "venmo" | "zelle" | "other";
+
+export type PaymentStatus = "completed" | "pending" | "refunded" | "void";
+
 // --- Database Row Types ---
 
 export interface User {
@@ -197,6 +203,36 @@ export interface ResidentNote {
   updated_at: string;
 }
 
+export interface RentConfig {
+  id: string;
+  house_id: string;
+  monthly_amount: number;
+  due_day_of_month: number;
+  late_fee: number;
+  grace_period_days: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Payment {
+  id: string;
+  resident_id: string;
+  house_id: string;
+  amount: number;
+  payment_type: PaymentType;
+  payment_method: PaymentMethod | null;
+  status: PaymentStatus;
+  period_start: string | null;
+  period_end: string | null;
+  due_date: string | null;
+  paid_at: string;
+  note: string | null;
+  recorded_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ActivityLog {
   id: string;
   house_id: string | null;
@@ -228,6 +264,12 @@ export interface ChoreRotationAssignmentWithDetails extends ChoreRotationAssignm
   chore: ChoreWithTasks;
   resident: Resident;
   signoffs: ChoreSignoff[];
+}
+
+export interface PaymentWithDetails extends Payment {
+  resident: { full_name: string };
+  house: { name: string };
+  recorder: { full_name: string };
 }
 
 export interface HouseWithOccupancy extends House {

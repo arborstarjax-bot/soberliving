@@ -11,6 +11,7 @@ import {
   ClipboardCheck,
   AlertTriangle,
   CalendarClock,
+  DollarSign,
   UserCog,
   Activity,
   Settings,
@@ -58,6 +59,12 @@ const NAV_ITEMS: NavItem[] = [
     href: "/incidents",
     icon: AlertTriangle,
     roles: ["admin", "manager"],
+  },
+  {
+    label: "Payments",
+    href: "/payments",
+    icon: DollarSign,
+    roles: ["admin", "manager", "resident"],
   },
   {
     label: "Leave Requests",

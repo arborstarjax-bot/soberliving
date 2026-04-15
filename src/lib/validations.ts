@@ -120,3 +120,33 @@ export const assignManagerSchema = z.object({
   user_id: z.string().uuid(),
   house_ids: z.array(z.string().uuid()).min(1, "Select at least one house"),
 });
+
+// --- Payments ---
+
+export const createPaymentSchema = z.object({
+  resident_id: z.string().uuid("Resident is required"),
+  house_id: z.string().uuid("House is required"),
+  amount: z.coerce.number().positive("Amount must be greater than 0"),
+  payment_type: z.enum(["rent", "deposit", "fee", "other"]),
+  payment_method: z.enum(["cash", "check", "money_order", "venmo", "zelle", "other"]).optional(),
+  status: z.enum(["completed", "pending"]).default("completed"),
+  period_start: z.string().optional(),
+  period_end: z.string().optional(),
+  due_date: z.string().optional(),
+  paid_at: z.string().optional(),
+  note: z.string().optional(),
+});
+
+export const voidPaymentSchema = z.object({
+  payment_id: z.string().uuid(),
+});
+
+// --- Rent Config ---
+
+export const upsertRentConfigSchema = z.object({
+  house_id: z.string().uuid(),
+  monthly_amount: z.coerce.number().positive("Monthly amount must be greater than 0"),
+  due_day_of_month: z.coerce.number().int().min(1).max(28, "Due day must be between 1 and 28"),
+  late_fee: z.coerce.number().min(0, "Late fee cannot be negative").default(0),
+  grace_period_days: z.coerce.number().int().min(0, "Grace period cannot be negative").default(0),
+});

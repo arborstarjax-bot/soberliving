@@ -570,3 +570,105 @@ create policy "Activity log viewable by staff"
 create policy "Authenticated can insert activity log"
   on public.activity_log for insert to authenticated
   with check (true);
+
+-- ============================================================
+-- 18. Rent Configurations (monthly rent per house)
+-- ============================================================
+
+create table if not exists public.rent_configs (
+  id uuid primary key default uuid_generate_v4(),
+  house_id uuid not null references public.houses(id) on delete cascade,
+  monthly_amount numeric(10,2) not null,
+  due_day_of_month integer not null default 1 check (due_day_of_month between 1 and 28),
+  late_fee numeric(10,2) not null default 0,
+  grace_period_days integer not null default 0,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(house_id)
+);
+
+-- ============================================================
+-- 19. Payments
+-- ============================================================
+
+create table if not exists public.payments (
+  id uuid primary key default uuid_generate_v4(),
+  resident_id uuid not null references public.residents(id) on delete cascade,
+  house_id uuid not null references public.houses(id) on delete cascade,
+  amount numeric(10,2) not null,
+  payment_type text not null check (payment_type in ('rent', 'deposit', 'fee', 'other')),
+  payment_method text check (payment_method in ('cash', 'check', 'money_order', 'venmo', 'zelle', 'other')),
+  status text not null default 'completed' check (status in ('completed', 'pending', 'refunded', 'void')),
+  period_start date,
+  period_end date,
+  due_date date,
+  paid_at timestamptz not null default now(),
+  note text,
+  recorded_by uuid not null references public.users(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Index for querying payments by resident and house
+create index if not exists idx_payments_resident on public.payments(resident_id, paid_at desc);
+create index if not exists idx_payments_house on public.payments(house_id, paid_at desc);
+
+-- ============================================================
+-- RLS for Rent Configs
+-- ============================================================
+
+alter table public.rent_configs enable row level security;
+
+create policy "Rent configs viewable by authenticated"
+  on public.rent_configs for select to authenticated using (true);
+
+create policy "Admins can manage rent configs"
+  on public.rent_configs for all to authenticated
+  using (
+    exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin')
+  );
+
+create policy "Managers can manage rent configs for their houses"
+  on public.rent_configs for all to authenticated
+  using (
+    exists (
+      select 1 from public.user_roles where user_id = auth.uid() and role = 'manager'
+    )
+    and house_id in (
+      select house_id from public.manager_house_assignments
+      where user_id = auth.uid() and unassigned_at is null
+    )
+  );
+
+-- ============================================================
+-- RLS for Payments
+-- ============================================================
+
+alter table public.payments enable row level security;
+
+create policy "Payments viewable by staff"
+  on public.payments for select to authenticated
+  using (
+    exists (
+      select 1 from public.user_roles
+      where user_id = auth.uid() and role in ('admin', 'manager')
+    )
+  );
+
+create policy "Residents can view own payments"
+  on public.payments for select to authenticated
+  using (
+    resident_id in (
+      select id from public.residents where user_id = auth.uid()
+    )
+  );
+
+create policy "Staff can manage payments"
+  on public.payments for all to authenticated
+  using (
+    exists (
+      select 1 from public.user_roles
+      where user_id = auth.uid() and role in ('admin', 'manager')
+    )
+  );
