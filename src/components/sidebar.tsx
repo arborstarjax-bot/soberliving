@@ -11,12 +11,18 @@ import {
   ClipboardCheck,
   AlertTriangle,
   CalendarClock,
+  DollarSign,
   UserCog,
   Activity,
   Settings,
   LogOut,
   Menu,
   X,
+  ShieldCheck,
+  MessageSquareText,
+  ClipboardList,
+  Bell,
+  Scale,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -28,60 +34,136 @@ interface NavItem {
   roles: UserRole[];
 }
 
-const NAV_ITEMS: NavItem[] = [
+interface NavSection {
+  title?: string;
+  items: NavItem[];
+}
+
+const NAV_SECTIONS: NavSection[] = [
+  // Overview
   {
-    label: "Dashboard",
-    href: "/dashboard",
-    icon: LayoutDashboard,
-    roles: ["admin", "manager", "resident"],
+    items: [
+      {
+        label: "Dashboard",
+        href: "/dashboard",
+        icon: LayoutDashboard,
+        roles: ["resident"],
+      },
+      {
+        label: "Admin Panel",
+        href: "/admin",
+        icon: ShieldCheck,
+        roles: ["admin", "manager"],
+      },
+    ],
   },
+  // House Management
   {
-    label: "Houses",
-    href: "/houses",
-    icon: Home,
-    roles: ["admin", "manager"],
+    title: "Management",
+    items: [
+      {
+        label: "Houses",
+        href: "/houses",
+        icon: Home,
+        roles: ["admin", "manager"],
+      },
+      {
+        label: "Residents",
+        href: "/residents",
+        icon: Users,
+        roles: ["admin", "manager"],
+      },
+      {
+        label: "Users & Roles",
+        href: "/users",
+        icon: UserCog,
+        roles: ["admin"],
+      },
+      {
+        label: "Intake Review",
+        href: "/intake-review",
+        icon: ClipboardList,
+        roles: ["admin", "manager"],
+      },
+    ],
   },
+  // Daily Operations
   {
-    label: "Residents",
-    href: "/residents",
-    icon: Users,
-    roles: ["admin", "manager"],
+    title: "Daily Operations",
+    items: [
+      {
+        label: "Chores",
+        href: "/chores",
+        icon: ClipboardCheck,
+        roles: ["admin", "manager", "resident"],
+      },
+      {
+        label: "Leave Requests",
+        href: "/leave-requests",
+        icon: CalendarClock,
+        roles: ["admin", "manager", "resident"],
+      },
+      {
+        label: "Payments",
+        href: "/payments",
+        icon: DollarSign,
+        roles: ["admin", "manager", "resident"],
+      },
+    ],
   },
+  // Accountability
   {
-    label: "Chores",
-    href: "/chores",
-    icon: ClipboardCheck,
-    roles: ["admin", "manager", "resident"],
+    title: "Accountability",
+    items: [
+      {
+        label: "House Discipline",
+        href: "/discipline",
+        icon: Scale,
+        roles: ["admin", "manager", "resident"],
+      },
+      {
+        label: "Incidents",
+        href: "/incidents",
+        icon: AlertTriangle,
+        roles: ["admin", "manager"],
+      },
+    ],
   },
+  // Communication
   {
-    label: "Incidents",
-    href: "/incidents",
-    icon: AlertTriangle,
-    roles: ["admin", "manager"],
+    title: "Communication",
+    items: [
+      {
+        label: "Bulletin Board",
+        href: "/bulletin",
+        icon: MessageSquareText,
+        roles: ["admin", "manager", "resident"],
+      },
+      {
+        label: "Notifications",
+        href: "/notifications",
+        icon: Bell,
+        roles: ["admin", "manager", "resident"],
+      },
+    ],
   },
+  // System
   {
-    label: "Leave Requests",
-    href: "/leave-requests",
-    icon: CalendarClock,
-    roles: ["admin", "manager", "resident"],
-  },
-  {
-    label: "Users & Roles",
-    href: "/users",
-    icon: UserCog,
-    roles: ["admin"],
-  },
-  {
-    label: "Activity Log",
-    href: "/activity",
-    icon: Activity,
-    roles: ["admin", "manager"],
-  },
-  {
-    label: "Settings",
-    href: "/settings",
-    icon: Settings,
-    roles: ["admin"],
+    title: "System",
+    items: [
+      {
+        label: "Activity Log",
+        href: "/activity",
+        icon: Activity,
+        roles: ["admin", "manager"],
+      },
+      {
+        label: "Settings",
+        href: "/settings",
+        icon: Settings,
+        roles: ["admin"],
+      },
+    ],
   },
 ];
 
@@ -94,15 +176,17 @@ export function Sidebar({ role, userName }: SidebarProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const filteredItems = NAV_ITEMS.filter((item) =>
-    item.roles.includes(role)
-  );
+  // Filter sections to only show items the user has access to
+  const filteredSections = NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => item.roles.includes(role)),
+  })).filter((section) => section.items.length > 0);
 
   const navContent = (
     <>
       <div className="flex h-14 items-center border-b px-4">
         <Link
-          href="/dashboard"
+          href={role === "resident" ? "/dashboard" : "/admin"}
           className="flex items-center gap-2 font-semibold"
           onClick={() => setMobileOpen(false)}
         >
@@ -111,28 +195,39 @@ export function Sidebar({ role, userName }: SidebarProps) {
         </Link>
       </div>
 
-      <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-        {filteredItems.map((item) => {
-          const isActive =
-            pathname === item.href ||
-            (item.href !== "/dashboard" && pathname.startsWith(item.href));
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setMobileOpen(false)}
-              className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              <item.icon className="h-4 w-4 shrink-0" />
-              {item.label}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 overflow-y-auto p-3 space-y-4">
+        {filteredSections.map((section, idx) => (
+          <div key={idx}>
+            {section.title && (
+              <p className="px-3 mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                {section.title}
+              </p>
+            )}
+            <div className="space-y-0.5">
+              {section.items.map((item) => {
+                const isActive =
+                  pathname === item.href ||
+                  (item.href !== "/dashboard" && pathname.startsWith(item.href));
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMobileOpen(false)}
+                    className={cn(
+                      "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                      isActive
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    <item.icon className="h-4 w-4 shrink-0" />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       <div className="border-t p-3">

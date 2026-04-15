@@ -14,7 +14,10 @@ type Entity =
   | "leave_requests"
   | "notes"
   | "activity_log"
-  | "users";
+  | "users"
+  | "payments"
+  | "rent_configs"
+  | "demerits";
 
 interface PermissionCheck {
   user: SessionUser;
@@ -46,6 +49,9 @@ const managerPermissions: Record<Entity, Action[]> = {
   notes: ["view", "create", "edit"],
   activity_log: ["view"],
   users: ["view"],
+  payments: ["view", "create", "edit"],
+  rent_configs: ["view", "create", "edit"],
+  demerits: ["view", "create", "edit"],
 };
 
 const residentPermissions: Record<Entity, Action[]> = {
@@ -61,6 +67,9 @@ const residentPermissions: Record<Entity, Action[]> = {
   notes: [],
   activity_log: ["view"],
   users: ["view"],
+  payments: ["view"],
+  rent_configs: [],
+  demerits: ["view"],
 };
 
 export function authorize({

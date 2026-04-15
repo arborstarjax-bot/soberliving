@@ -17,6 +17,9 @@ create table if not exists public.users (
   phone text,
   avatar_url text,
   is_active boolean not null default true,
+  is_resident boolean not null default false,
+  intake_completed boolean not null default false,
+  commitment_signed boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -69,6 +72,7 @@ create table if not exists public.rooms (
   house_id uuid not null references public.houses(id) on delete cascade,
   name text not null,
   floor integer,
+  sort_order integer not null default 0,
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
@@ -206,7 +210,21 @@ create table if not exists public.chore_signoffs (
 );
 
 -- ============================================================
--- 14. Incidents
+-- 14. Chore Exclusions (residents excluded from specific chores)
+-- ============================================================
+
+create table if not exists public.chore_exclusions (
+  id uuid primary key default uuid_generate_v4(),
+  chore_id uuid not null references public.chores(id) on delete cascade,
+  resident_id uuid not null references public.residents(id) on delete cascade,
+  reason text,
+  created_by uuid not null references public.users(id),
+  created_at timestamptz not null default now(),
+  unique(chore_id, resident_id)
+);
+
+-- ============================================================
+-- 15. Incidents
 -- ============================================================
 
 create table if not exists public.incidents (
@@ -277,6 +295,36 @@ create index if not exists idx_activity_log_house on public.activity_log(house_i
 create index if not exists idx_activity_log_created on public.activity_log(created_at desc);
 
 -- ============================================================
+-- 18. House Commitments
+-- ============================================================
+
+create table if not exists public.house_commitments (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  resident_id uuid references public.residents(id) on delete set null,
+  house_id uuid not null references public.houses(id) on delete cascade,
+  room_id uuid references public.rooms(id) on delete set null,
+  bed_id uuid references public.beds(id) on delete set null,
+  payment_frequency text not null default 'monthly' check (payment_frequency in ('weekly', 'monthly')),
+  rent_amount numeric not null default 800,
+  admin_fee numeric not null default 200,
+  rent_due_date text not null default '1st of each month',
+  commitment_start_date date not null default current_date,
+  commitment_term text not null default '181 days',
+  property_location text,
+  notes text,
+  staff_signature text,
+  staff_signed_at timestamptz,
+  staff_signer_id uuid references public.users(id),
+  resident_signature text,
+  resident_signed_at timestamptz,
+  status text not null default 'pending_resident_signature' check (status in ('pending_resident_signature', 'active', 'terminated')),
+  pdf_storage_path text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- ============================================================
 -- Helper function: update house capacity when beds change
 -- ============================================================
 
@@ -288,12 +336,52 @@ begin
     select count(*)
     from public.beds b
     join public.rooms r on r.id = b.room_id
-    where r.house_id = p_house_id and b.is_active = true
+    where r.house_id = p_house_id and b.is_active = true and r.is_active = true
   ),
   updated_at = now()
   where id = p_house_id;
 end;
 $$ language plpgsql security definer;
+
+-- ============================================================
+-- RLS helper functions (SECURITY DEFINER to avoid recursion)
+-- ============================================================
+
+create or replace function public.is_admin()
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1 from public.user_roles
+    where user_id = auth.uid() and role = 'admin'
+  );
+$$;
+
+create or replace function public.is_staff()
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1 from public.user_roles
+    where user_id = auth.uid() and role in ('admin', 'manager')
+  );
+$$;
+
+create or replace function public.is_manager()
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1 from public.user_roles
+    where user_id = auth.uid() and role = 'manager'
+  );
+$$;
 
 -- ============================================================
 -- Row Level Security (RLS) Policies
@@ -313,6 +401,7 @@ alter table public.chore_tasks enable row level security;
 alter table public.chore_rotations enable row level security;
 alter table public.chore_rotation_assignments enable row level security;
 alter table public.chore_signoffs enable row level security;
+alter table public.chore_exclusions enable row level security;
 alter table public.incidents enable row level security;
 alter table public.leave_requests enable row level security;
 alter table public.resident_notes enable row level security;
@@ -333,9 +422,7 @@ create policy "Users can update own profile"
 
 create policy "Admins can insert users"
   on public.users for insert to authenticated
-  with check (
-    exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin')
-  );
+  with check (public.is_admin());
 
 -- User roles: viewable by authenticated, modifiable by admins
 create policy "User roles are viewable by authenticated users"
@@ -344,9 +431,7 @@ create policy "User roles are viewable by authenticated users"
 
 create policy "Admins can manage user roles"
   on public.user_roles for all to authenticated
-  using (
-    exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin')
-  );
+  using (public.is_admin());
 
 -- Houses: viewable by all authenticated, modifiable by admins
 create policy "Houses are viewable by authenticated users"
@@ -355,9 +440,7 @@ create policy "Houses are viewable by authenticated users"
 
 create policy "Admins can manage houses"
   on public.houses for all to authenticated
-  using (
-    exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin')
-  );
+  using (public.is_admin());
 
 -- Manager assignments: viewable by authenticated
 create policy "Manager assignments viewable by authenticated"
@@ -366,9 +449,7 @@ create policy "Manager assignments viewable by authenticated"
 
 create policy "Admins can manage manager assignments"
   on public.manager_house_assignments for all to authenticated
-  using (
-    exists (select 1 from public.user_roles where user_id = auth.uid() and role = 'admin')
-  );
+  using (public.is_admin());
 
 -- Rooms, Beds: viewable by authenticated, managed by admin/managers
 create policy "Rooms viewable by authenticated"
@@ -376,44 +457,23 @@ create policy "Rooms viewable by authenticated"
 
 create policy "Staff can manage rooms"
   on public.rooms for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 create policy "Beds viewable by authenticated"
   on public.beds for select to authenticated using (true);
 
 create policy "Staff can manage beds"
   on public.beds for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 -- Residents: viewable by staff, own data for residents
 create policy "Staff can view all residents"
   on public.residents for select to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-    or user_id = auth.uid()
-  );
+  using (public.is_staff() or user_id = auth.uid());
 
 create policy "Staff can manage residents"
   on public.residents for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 -- Bed assignments
 create policy "Bed assignments viewable by authenticated"
@@ -421,12 +481,7 @@ create policy "Bed assignments viewable by authenticated"
 
 create policy "Staff can manage bed assignments"
   on public.bed_assignments for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 -- Chores and related tables
 create policy "Chores viewable by authenticated"
@@ -434,48 +489,28 @@ create policy "Chores viewable by authenticated"
 
 create policy "Staff can manage chores"
   on public.chores for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 create policy "Chore tasks viewable by authenticated"
   on public.chore_tasks for select to authenticated using (true);
 
 create policy "Staff can manage chore tasks"
   on public.chore_tasks for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 create policy "Chore rotations viewable by authenticated"
   on public.chore_rotations for select to authenticated using (true);
 
 create policy "Staff can manage chore rotations"
   on public.chore_rotations for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 create policy "Rotation assignments viewable by authenticated"
   on public.chore_rotation_assignments for select to authenticated using (true);
 
 create policy "Staff can manage rotation assignments"
   on public.chore_rotation_assignments for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 create policy "Signoffs viewable by authenticated"
   on public.chore_signoffs for select to authenticated using (true);
@@ -485,42 +520,29 @@ create policy "Authenticated users can update signoffs"
 
 create policy "Staff can insert signoffs"
   on public.chore_signoffs for insert to authenticated
-  with check (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  with check (public.is_staff());
+
+-- Chore Exclusions
+create policy "Chore exclusions viewable by authenticated"
+  on public.chore_exclusions for select to authenticated using (true);
+
+create policy "Staff can manage chore exclusions"
+  on public.chore_exclusions for all to authenticated
+  using (public.is_staff());
 
 -- Incidents
 create policy "Incidents viewable by staff"
   on public.incidents for select to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 create policy "Staff can manage incidents"
   on public.incidents for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 -- Leave requests
 create policy "Leave requests viewable by staff or own"
   on public.leave_requests for select to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-    or requested_by = auth.uid()
-  );
+  using (public.is_staff() or requested_by = auth.uid());
 
 create policy "Authenticated can create leave requests"
   on public.leave_requests for insert to authenticated
@@ -528,40 +550,22 @@ create policy "Authenticated can create leave requests"
 
 create policy "Staff can update leave requests"
   on public.leave_requests for update to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 -- Resident notes (staff only)
 create policy "Notes viewable by staff"
   on public.resident_notes for select to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 create policy "Staff can manage notes"
   on public.resident_notes for all to authenticated
-  using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
-  );
+  using (public.is_staff());
 
 -- Activity log
 create policy "Activity log viewable by staff"
   on public.activity_log for select to authenticated
   using (
-    exists (
-      select 1 from public.user_roles
-      where user_id = auth.uid() and role in ('admin', 'manager')
-    )
+    public.is_staff()
     or resident_id in (
       select id from public.residents where user_id = auth.uid()
     )
@@ -570,3 +574,187 @@ create policy "Activity log viewable by staff"
 create policy "Authenticated can insert activity log"
   on public.activity_log for insert to authenticated
   with check (true);
+
+-- ============================================================
+-- 18. Rent Configurations (monthly rent per house)
+-- ============================================================
+
+create table if not exists public.rent_configs (
+  id uuid primary key default uuid_generate_v4(),
+  house_id uuid not null references public.houses(id) on delete cascade,
+  monthly_amount numeric(10,2) not null,
+  due_day_of_month integer not null default 1 check (due_day_of_month between 1 and 28),
+  late_fee numeric(10,2) not null default 0,
+  grace_period_days integer not null default 0,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(house_id)
+);
+
+-- ============================================================
+-- 19. Payments
+-- ============================================================
+
+create table if not exists public.payments (
+  id uuid primary key default uuid_generate_v4(),
+  resident_id uuid not null references public.residents(id) on delete cascade,
+  house_id uuid not null references public.houses(id) on delete cascade,
+  amount numeric(10,2) not null,
+  payment_type text not null check (payment_type in ('rent', 'deposit', 'fee', 'other')),
+  payment_method text check (payment_method in ('cash', 'check', 'money_order', 'venmo', 'zelle', 'other')),
+  status text not null default 'completed' check (status in ('completed', 'pending', 'refunded', 'void')),
+  period_start date,
+  period_end date,
+  due_date date,
+  paid_at timestamptz not null default now(),
+  note text,
+  recorded_by uuid not null references public.users(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Index for querying payments by resident and house
+create index if not exists idx_payments_resident on public.payments(resident_id, paid_at desc);
+create index if not exists idx_payments_house on public.payments(house_id, paid_at desc);
+
+-- ============================================================
+-- RLS for Rent Configs
+-- ============================================================
+
+alter table public.rent_configs enable row level security;
+
+create policy "Rent configs viewable by authenticated"
+  on public.rent_configs for select to authenticated using (true);
+
+create policy "Admins can manage rent configs"
+  on public.rent_configs for all to authenticated
+  using (public.is_admin());
+
+create policy "Managers can manage rent configs for their houses"
+  on public.rent_configs for all to authenticated
+  using (
+    public.is_manager()
+    and house_id in (
+      select house_id from public.manager_house_assignments
+      where user_id = auth.uid() and unassigned_at is null
+    )
+  );
+
+-- ============================================================
+-- RLS for Payments
+-- ============================================================
+
+alter table public.payments enable row level security;
+
+create policy "Payments viewable by staff"
+  on public.payments for select to authenticated
+  using (public.is_staff());
+
+create policy "Residents can view own payments"
+  on public.payments for select to authenticated
+  using (
+    resident_id in (
+      select id from public.residents where user_id = auth.uid()
+    )
+  );
+
+create policy "Staff can manage payments"
+  on public.payments for all to authenticated
+  using (public.is_staff());
+
+-- ============================================================
+-- 18. Demerits
+-- ============================================================
+
+create table if not exists public.demerits (
+  id uuid primary key default uuid_generate_v4(),
+  resident_id uuid not null references public.residents(id) on delete cascade,
+  house_id uuid not null references public.houses(id) on delete cascade,
+  issued_by uuid not null references public.users(id),
+  points integer not null default 1,
+  reason text not null,
+  category text,
+  status text not null default 'active' check (status in ('active', 'resolved', 'appealed')),
+  resolved_by uuid references public.users(id),
+  resolved_at timestamptz,
+  resolution_note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.demerits enable row level security;
+
+drop policy if exists "Demerits viewable by authenticated" on public.demerits;
+create policy "Demerits viewable by authenticated" on public.demerits
+  for select using (auth.role() = 'authenticated');
+
+drop policy if exists "Demerits insertable by staff" on public.demerits;
+create policy "Demerits insertable by staff" on public.demerits
+  for insert with check (public.is_staff());
+
+drop policy if exists "Demerits updatable by staff" on public.demerits;
+create policy "Demerits updatable by staff" on public.demerits
+  for update using (public.is_staff());
+
+-- ============================================================
+-- Session user lookup (bypasses RLS via SECURITY DEFINER)
+-- ============================================================
+
+create or replace function public.get_session_user(p_user_id uuid)
+returns json
+language sql
+security definer
+stable
+as $$
+  select json_build_object(
+    'id', u.id,
+    'email', u.email,
+    'full_name', u.full_name,
+    'role', coalesce(ur.role, 'resident'),
+    'intake_completed', coalesce(u.intake_completed, false),
+    'is_resident', coalesce(u.is_resident, false),
+    'commitment_signed', coalesce(u.commitment_signed, false)
+  )
+  from public.users u
+  left join public.user_roles ur on ur.user_id = u.id
+  where u.id = p_user_id;
+$$;
+
+-- ============================================================
+-- Auto-create user profile on signup
+-- ============================================================
+
+-- This trigger automatically creates a row in public.users
+-- and assigns a default 'resident' role when a new user signs up
+-- via Supabase Auth. This ensures the profile exists even if the
+-- client-side insert fails due to RLS or network issues.
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = ''
+as $$
+begin
+  insert into public.users (id, email, full_name)
+  values (
+    new.id,
+    new.email,
+    coalesce(new.raw_user_meta_data ->> 'full_name', split_part(new.email, '@', 1))
+  )
+  on conflict (id) do nothing;
+
+  insert into public.user_roles (user_id, role)
+  values (new.id, 'resident')
+  on conflict (user_id) do nothing;
+
+  return new;
+end;
+$$;
+
+-- Drop the trigger if it already exists to avoid errors on re-run
+drop trigger if exists on_auth_user_created on auth.users;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();

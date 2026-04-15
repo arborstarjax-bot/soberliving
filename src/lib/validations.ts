@@ -8,7 +8,11 @@ export const createHouseSchema = z.object({
   phone: z.string().max(20).optional(),
 });
 
-export const updateHouseSchema = createHouseSchema.partial();
+export const updateHouseSchema = z.object({
+  name: z.string().min(1, "House name is required").max(100).optional(),
+  address: z.string().max(500).nullish(),
+  phone: z.string().max(20).nullish(),
+});
 
 // --- Rooms ---
 
@@ -16,12 +20,22 @@ export const createRoomSchema = z.object({
   house_id: z.string().uuid(),
   name: z.string().min(1, "Room name is required").max(100),
   floor: z.coerce.number().int().optional(),
+  bed_count: z.coerce.number().int().min(0).max(20).optional(),
+});
+
+export const updateRoomSchema = z.object({
+  name: z.string().min(1, "Room name is required").max(100).optional(),
+  floor: z.coerce.number().int().optional(),
 });
 
 // --- Beds ---
 
 export const createBedSchema = z.object({
   room_id: z.string().uuid(),
+  label: z.string().min(1, "Bed label is required").max(50),
+});
+
+export const updateBedSchema = z.object({
   label: z.string().min(1, "Bed label is required").max(50),
 });
 
@@ -113,10 +127,62 @@ export const createUserSchema = z.object({
   full_name: z.string().min(1, "Full name is required").max(200),
   phone: z.string().max(20).optional(),
   role: z.enum(["admin", "manager", "resident"]),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  is_resident: z.boolean().optional(),
+});
+
+export const updateUserProfileSchema = z.object({
+  full_name: z.string().min(1, "Full name is required").max(200).optional(),
+  phone: z.string().max(20).nullish(),
+  role: z.enum(["admin", "manager", "resident"]).optional(),
+  is_resident: z.boolean().optional(),
 });
 
 export const assignManagerSchema = z.object({
   user_id: z.string().uuid(),
-  house_ids: z.array(z.string().uuid()).min(1, "Select at least one house"),
+  house_ids: z.array(z.string().uuid()),
+});
+
+// --- Payments ---
+
+export const createPaymentSchema = z.object({
+  resident_id: z.string().uuid("Resident is required"),
+  house_id: z.string().uuid("House is required"),
+  amount: z.coerce.number().positive("Amount must be greater than 0"),
+  payment_type: z.enum(["rent", "deposit", "fee", "other"]),
+  payment_method: z.enum(["cash", "check", "money_order", "venmo", "zelle", "other"]).optional(),
+  status: z.enum(["completed", "pending"]).default("completed"),
+  period_start: z.string().optional(),
+  period_end: z.string().optional(),
+  due_date: z.string().optional(),
+  paid_at: z.string().optional(),
+  note: z.string().optional(),
+});
+
+export const voidPaymentSchema = z.object({
+  payment_id: z.string().uuid(),
+});
+
+// --- Rent Config ---
+
+// --- Demerits ---
+
+export const createDemeritSchema = z.object({
+  resident_id: z.string().uuid("Resident is required"),
+  house_id: z.string().uuid("House is required"),
+  points: z.coerce.number().int().min(1).max(10).default(1),
+  reason: z.string().min(1, "Reason is required"),
+  category: z.string().optional(),
+});
+
+export const resolveDemeritSchema = z.object({
+  demerit_id: z.string().uuid(),
+  resolution_note: z.string().optional(),
+});
+
+export const upsertRentConfigSchema = z.object({
+  house_id: z.string().uuid(),
+  monthly_amount: z.coerce.number().positive("Monthly amount must be greater than 0"),
+  due_day_of_month: z.coerce.number().int().min(1).max(28, "Due day must be between 1 and 28"),
+  late_fee: z.coerce.number().min(0, "Late fee cannot be negative").default(0),
+  grace_period_days: z.coerce.number().int().min(0, "Grace period cannot be negative").default(0),
 });
