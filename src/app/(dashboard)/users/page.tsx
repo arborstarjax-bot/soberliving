@@ -1,5 +1,5 @@
 import { requireRole } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CreateUserDialog } from "./create-user-dialog";
@@ -7,7 +7,7 @@ import { UserActions } from "./user-actions";
 
 export default async function UsersPage() {
   await requireRole("admin");
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data: users } = await supabase
     .from("users")
