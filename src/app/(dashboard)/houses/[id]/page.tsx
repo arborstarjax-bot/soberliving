@@ -82,7 +82,7 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold">{house.name}</h1>
-            {user.role === "admin" && (
+            {(user.role === "admin" || user.role === "manager") && (
               <>
                 <EditHouseDialog
                   houseId={house.id}

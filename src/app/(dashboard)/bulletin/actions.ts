@@ -58,7 +58,7 @@ export async function deleteBulletinPost(postId: string) {
     .single();
 
   if (!post) return { error: "Post not found" };
-  if (post.author_id !== user.id && user.role !== "admin") {
+  if (post.author_id !== user.id && user.role !== "admin" && user.role !== "manager") {
     return { error: "Not authorized" };
   }
 
@@ -82,7 +82,7 @@ export async function deleteBulletinPost(postId: string) {
 }
 
 export async function togglePinPost(postId: string) {
-  const user = await requireRole("admin");
+  const user = await requireRole("admin", "manager");
   const adminClient = createAdminClient();
 
   const { data: post } = await adminClient

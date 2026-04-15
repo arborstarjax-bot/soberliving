@@ -79,7 +79,12 @@ export async function submitIntakeForm(
   }
 
   // Mark intake as completed and auto-populate user profile from intake data
-  const fullName = [formData.first_name, formData.last_name].filter(Boolean).join(" ") || user.full_name;
+  const firstName = ((formData.first_name as string) || "").trim();
+  const middleName = ((formData.middle_name as string) || "").trim();
+  const lastName = ((formData.last_name as string) || "").trim();
+  const intakeName = [firstName, middleName, lastName].filter(Boolean).join(" ");
+  // Only use intake name if it's meaningful; otherwise keep existing
+  const fullName = intakeName || user.full_name;
   const phone = (formData.phone as string) || null;
 
   await adminClient

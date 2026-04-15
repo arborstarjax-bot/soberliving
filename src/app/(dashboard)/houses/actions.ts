@@ -55,7 +55,10 @@ export async function createHouse(
 }
 
 export async function updateHouse(houseId: string, formData: FormData) {
-  const user = await requireRole("admin");
+  const user = await requireAuth();
+  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+    return { error: "Not authorized" };
+  }
   const parsed = updateHouseSchema.safeParse({
     name: formData.get("name") || undefined,
     address: formData.has("address") ? (formData.get("address") || null) : undefined,
@@ -304,6 +307,25 @@ export async function deleteRoom(
 
   if (error) return { error: error.message };
 
+  // End active bed assignments for all beds in this room and soft-delete beds
+  const { data: roomBeds } = await supabase
+    .from("beds")
+    .select("id")
+    .eq("room_id", roomId);
+
+  if (roomBeds && roomBeds.length > 0) {
+    const bedIds = roomBeds.map((b) => b.id);
+    await supabase
+      .from("bed_assignments")
+      .update({ end_date: new Date().toISOString().split("T")[0] })
+      .in("bed_id", bedIds)
+      .is("end_date", null);
+    await supabase
+      .from("beds")
+      .update({ is_active: false })
+      .in("id", bedIds);
+  }
+
   await supabase.rpc("update_house_capacity", { p_house_id: room.house_id });
 
   await logActivity({
@@ -402,6 +424,13 @@ export async function deleteBed(
     .eq("id", bedId);
 
   if (error) return { error: error.message };
+
+  // End any active bed assignment for this bed
+  await supabase
+    .from("bed_assignments")
+    .update({ end_date: new Date().toISOString().split("T")[0] })
+    .eq("bed_id", bedId)
+    .is("end_date", null);
 
   await supabase.rpc("update_house_capacity", { p_house_id: houseId });
 

@@ -27,10 +27,10 @@ export function BulletinActions({
   currentUserRole,
 }: BulletinActionsProps) {
   const [, startTransition] = useTransition();
-  const isAdmin = currentUserRole === "admin";
+  const isStaff = currentUserRole === "admin" || currentUserRole === "manager";
   const isOwner = currentUserId === authorId;
 
-  if (!isAdmin && !isOwner) return null;
+  if (!isStaff && !isOwner) return null;
 
   function handleDelete() {
     if (confirm("Delete this post? This cannot be undone.")) {
@@ -54,7 +54,7 @@ export function BulletinActions({
         <MoreVertical className="h-4 w-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {isAdmin && (
+        {isStaff && (
           <DropdownMenuItem onClick={handleTogglePin}>
             {isPinned ? (
               <>
@@ -69,7 +69,7 @@ export function BulletinActions({
             )}
           </DropdownMenuItem>
         )}
-        {(isOwner || isAdmin) && (
+        {(isOwner || isStaff) && (
           <DropdownMenuItem onClick={handleDelete} className="text-destructive">
             <Trash2 className="mr-2 h-4 w-4" />
             Delete

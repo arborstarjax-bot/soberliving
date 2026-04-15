@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Home, Users, ClipboardCheck, AlertTriangle, CalendarClock, Bed, Activity, DollarSign } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { SobrietyDateSetter } from "./sobriety-date-setter";
 
 export default async function DashboardPage() {
   const user = await requireAuth();
@@ -262,7 +263,7 @@ async function ResidentDashboard({ userId }: { userId: string }) {
                 </p>
               </div>
             ) : (
-              <p className="text-muted-foreground">Not set</p>
+              <SobrietyDateSetter currentDate={resident.sobriety_date} />
             )}
           </CardContent>
         </Card>
