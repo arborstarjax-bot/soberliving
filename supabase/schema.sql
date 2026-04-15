@@ -289,7 +289,7 @@ begin
     select count(*)
     from public.beds b
     join public.rooms r on r.id = b.room_id
-    where r.house_id = p_house_id and b.is_active = true
+    where r.house_id = p_house_id and b.is_active = true and r.is_active = true
   ),
   updated_at = now()
   where id = p_house_id;

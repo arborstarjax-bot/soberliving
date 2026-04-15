@@ -14,7 +14,7 @@ export default async function HousesPage() {
 
   let query = supabase
     .from("houses")
-    .select("*, rooms(id, beds(id, bed_assignments(id, end_date)))")
+    .select("*, rooms(id, is_active, beds(id, is_active, bed_assignments(id, end_date)))")
     .eq("is_active", true)
     .order("name");
 
@@ -28,7 +28,9 @@ export default async function HousesPage() {
     let totalBeds = 0;
     let occupiedBeds = 0;
     for (const room of house.rooms ?? []) {
+      if (!room.is_active) continue;
       for (const bed of room.beds ?? []) {
+        if (!bed.is_active) continue;
         totalBeds++;
         const hasActive = (bed.bed_assignments ?? []).some(
           (ba: { end_date: string | null }) => !ba.end_date

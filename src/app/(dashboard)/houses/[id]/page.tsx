@@ -9,6 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Link from "next/link";
 import { OccupancyGrid } from "./occupancy-grid";
 import { AddRoomDialog } from "./add-room-dialog";
+import { EditHouseDialog } from "../edit-house-dialog";
+import { DeleteHouseDialog } from "../delete-house-dialog";
 
 export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) {
   const { id } = await props.params;
@@ -78,7 +80,20 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">{house.name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold">{house.name}</h1>
+            {user.role === "admin" && (
+              <>
+                <EditHouseDialog
+                  houseId={house.id}
+                  currentName={house.name}
+                  currentAddress={house.address}
+                  currentPhone={house.phone}
+                />
+                <DeleteHouseDialog houseId={house.id} houseName={house.name} />
+              </>
+            )}
+          </div>
           {house.address && (
             <p className="text-muted-foreground">{house.address}</p>
           )}
