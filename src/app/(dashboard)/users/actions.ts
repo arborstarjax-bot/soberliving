@@ -58,11 +58,11 @@ export async function createUser(
     return { error: userError.message };
   }
 
-  // Create role record
-  const { error: roleError } = await adminClient.from("user_roles").insert({
+  // Create role record (upsert to handle handle_new_user trigger race)
+  const { error: roleError } = await adminClient.from("user_roles").upsert({
     user_id: authData.user.id,
     role: parsed.data.role,
-  });
+  }, { onConflict: "user_id" });
 
   if (roleError) return { error: roleError.message };
 
