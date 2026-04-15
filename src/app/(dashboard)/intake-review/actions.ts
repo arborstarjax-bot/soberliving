@@ -166,6 +166,49 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
   return {};
 }
 
+export async function markIntakeComplete(userId: string) {
+  const currentUser = await requireRole("admin", "manager");
+  const adminClient = createAdminClient();
+
+  const { data: targetUser } = await adminClient
+    .from("users")
+    .select("id, full_name")
+    .eq("id", userId)
+    .single();
+
+  if (!targetUser) return { error: "User not found" };
+
+  // Mark commitment as active (resident signed)
+  await adminClient
+    .from("house_commitments")
+    .update({
+      status: "active",
+      resident_signed_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId)
+    .eq("status", "pending_resident_signature");
+
+  // Mark user as commitment signed
+  const { error } = await adminClient
+    .from("users")
+    .update({ commitment_signed: true })
+    .eq("id", userId);
+
+  if (error) return { error: error.message };
+
+  await logActivity({
+    actorId: currentUser.id,
+    eventType: "intake_marked_complete",
+    entityType: "user",
+    entityId: userId,
+    description: `${currentUser.full_name} manually marked intake as complete for ${targetUser.full_name}`,
+  });
+
+  revalidatePath("/intake-review");
+  revalidatePath("/users");
+  return {};
+}
+
 export async function getRoomsForHouse(houseId: string) {
   await requireRole("admin", "manager");
   const adminClient = createAdminClient();

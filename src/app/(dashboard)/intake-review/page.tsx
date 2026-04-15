@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { IntakeReviewForm } from "./intake-review-form";
+import { MarkCompleteButton } from "./mark-complete-button";
 
 export default async function IntakeReviewPage() {
   await requireRole("admin", "manager");
@@ -84,9 +85,12 @@ export default async function IntakeReviewPage() {
                     <p className="font-medium">{user.full_name}</p>
                     <p className="text-sm text-muted-foreground">{user.email}</p>
                   </div>
-                  <Badge variant="outline" className="text-yellow-700 border-yellow-400">
-                    Pending Resident Signature
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <MarkCompleteButton userId={user.id} userName={user.full_name} />
+                    <Badge variant="outline" className="text-yellow-700 border-yellow-400">
+                      Pending Resident Signature
+                    </Badge>
+                  </div>
                 </div>
               ))}
             </div>
