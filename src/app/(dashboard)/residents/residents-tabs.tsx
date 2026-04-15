@@ -36,6 +36,25 @@ interface House {
   name: string;
 }
 
+// Unified person type for the merged list
+interface UnifiedPerson {
+  key: string;
+  full_name: string;
+  staffRole: string | null; // "admin" | "manager" | null
+  isResident: boolean;
+  residentId: string | null;
+  userId: string | null;
+  house_name: string;
+  house_id: string | null;
+  move_in_date: string | null;
+  days_sober: number | null;
+  status: string; // "active" | "discharged" | etc.
+  email: string | null;
+  assigned_house_names: string[];
+  is_active: boolean;
+  sortOrder: number; // 0 = admin, 1 = manager, 2 = resident
+}
+
 interface ResidentsTabsProps {
   houses: House[];
   residents: Resident[];
@@ -49,10 +68,66 @@ export function ResidentsTabs({
   residents,
   staffUsers,
   isAdmin,
-  isStaff,
 }: ResidentsTabsProps) {
-  const activeResidents = residents.filter((r) => r.status === "active");
-  const otherResidents = residents.filter((r) => r.status !== "active");
+  // Build a unified list of all people
+  // Start with staff users (they sort first)
+  const staffResidentIds = new Set(
+    staffUsers.filter((s) => s.resident_id).map((s) => s.resident_id)
+  );
+
+  const unifiedPeople: UnifiedPerson[] = [];
+
+  // Add staff users first
+  for (const s of staffUsers) {
+    const matchingResident = s.resident_id
+      ? residents.find((r) => r.id === s.resident_id)
+      : null;
+    unifiedPeople.push({
+      key: `staff-${s.user_id}`,
+      full_name: s.full_name,
+      staffRole: s.role,
+      isResident: s.is_also_resident,
+      residentId: s.resident_id,
+      userId: s.user_id,
+      house_name: matchingResident?.house_name ?? s.assigned_house_names[0] ?? "",
+      house_id: matchingResident?.house_id ?? (s.assigned_house_ids[0] || null),
+      move_in_date: matchingResident?.move_in_date ?? null,
+      days_sober: matchingResident?.days_sober ?? null,
+      status: matchingResident?.status ?? "active",
+      email: s.email,
+      assigned_house_names: s.assigned_house_names,
+      is_active: s.is_active,
+      sortOrder: s.role === "admin" ? 0 : 1,
+    });
+  }
+
+  // Add residents who are NOT already represented as staff
+  for (const r of residents) {
+    if (staffResidentIds.has(r.id)) continue;
+    unifiedPeople.push({
+      key: `resident-${r.id}`,
+      full_name: r.full_name,
+      staffRole: null,
+      isResident: true,
+      residentId: r.id,
+      userId: null,
+      house_name: r.house_name,
+      house_id: r.house_id,
+      move_in_date: r.move_in_date,
+      days_sober: r.days_sober,
+      status: r.status,
+      email: null,
+      assigned_house_names: [],
+      is_active: true,
+      sortOrder: 2,
+    });
+  }
+
+  // Sort: admin first, then manager, then resident
+  unifiedPeople.sort((a, b) => a.sortOrder - b.sortOrder || a.full_name.localeCompare(b.full_name));
+
+  const activePeople = unifiedPeople.filter((p) => p.status === "active");
+  const otherPeople = unifiedPeople.filter((p) => p.status !== "active");
 
   // Build tabs: "All" + one per house
   const tabs = [
@@ -60,18 +135,79 @@ export function ResidentsTabs({
     ...houses.map((h, i) => ({ value: i + 1, label: h.name, houseId: h.id })),
   ];
 
-  function getStaffForHouse(houseId: string | null) {
-    if (!houseId) return staffUsers.filter((u) => u.role === "admin" || u.role === "manager");
-    return staffUsers.filter(
-      (u) =>
-        u.role === "admin" ||
-        (u.role === "manager" && u.assigned_house_ids.includes(houseId))
-    );
+  function filterByHouse(list: UnifiedPerson[], houseId: string | null) {
+    if (!houseId) return list;
+    return list.filter((p) => {
+      // Staff with admin role show in every house tab
+      if (p.staffRole === "admin") return true;
+      // Managers show in houses they're assigned to
+      if (p.staffRole === "manager" && p.assigned_house_names.length > 0) {
+        const staffUser = staffUsers.find((s) => s.user_id === p.userId);
+        return staffUser?.assigned_house_ids.includes(houseId) ?? false;
+      }
+      // Residents show in their house
+      return p.house_id === houseId;
+    });
   }
 
-  function getResidentsForHouse(houseId: string | null, list: Resident[]) {
-    if (!houseId) return list;
-    return list.filter((r) => r.house_id === houseId);
+  function renderPersonCard(p: UnifiedPerson) {
+    const href = p.residentId
+      ? `/residents/${p.residentId}`
+      : p.userId && isAdmin
+        ? `/users/${p.userId}`
+        : "#";
+
+    return (
+      <Link key={p.key} href={href}>
+        <Card className={`hover:bg-muted/50 transition-colors ${p.status !== "active" ? "opacity-60" : ""}`}>
+          <CardContent className="flex items-center justify-between py-3">
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium">{p.full_name}</span>
+                {p.staffRole === "admin" && (
+                  <Badge variant="default">Admin</Badge>
+                )}
+                {p.staffRole === "manager" && (
+                  <Badge variant="secondary">Manager</Badge>
+                )}
+                {p.isResident && (
+                  <Badge variant="outline">Resident</Badge>
+                )}
+                {!p.is_active && <Badge variant="destructive">Inactive</Badge>}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {p.house_name}
+                {p.move_in_date && ` · Moved in ${new Date(p.move_in_date).toLocaleDateString()}`}
+                {p.staffRole === "manager" && p.assigned_house_names.length > 0 && (
+                  ` · Houses: ${p.assigned_house_names.join(", ")}`
+                )}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {p.days_sober !== null && (
+                <span className="text-xs text-muted-foreground">
+                  {p.days_sober} days sober
+                </span>
+              )}
+              {p.status !== "active" && (
+                <Badge
+                  variant={p.status === "discharged" ? "secondary" : "outline"}
+                  className="capitalize"
+                >
+                  {p.status.replace("_", " ")}
+                </Badge>
+              )}
+              {isAdmin && p.residentId && (
+                <DeleteResidentButton
+                  residentId={p.residentId}
+                  residentName={p.full_name}
+                />
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </Link>
+    );
   }
 
   return (
@@ -79,8 +215,15 @@ export function ResidentsTabs({
       <TabsList>
         {tabs.map((tab) => {
           const count = tab.houseId
-            ? activeResidents.filter((r) => r.house_id === tab.houseId).length
-            : activeResidents.length;
+            ? activePeople.filter((p) => {
+                if (p.staffRole === "admin") return true;
+                if (p.staffRole === "manager") {
+                  const su = staffUsers.find((s) => s.user_id === p.userId);
+                  return su?.assigned_house_ids.includes(tab.houseId!) ?? false;
+                }
+                return p.house_id === tab.houseId;
+              }).length
+            : activePeople.length;
           return (
             <TabsTrigger key={tab.value} value={tab.value}>
               {tab.label}
@@ -95,10 +238,9 @@ export function ResidentsTabs({
       </TabsList>
 
       {tabs.map((tab) => {
-        const houseStaff = getStaffForHouse(tab.houseId);
-        const houseActiveResidents = getResidentsForHouse(tab.houseId, activeResidents);
-        const houseOtherResidents = getResidentsForHouse(tab.houseId, otherResidents);
-        const isEmpty = houseStaff.length === 0 && houseActiveResidents.length === 0 && houseOtherResidents.length === 0;
+        const houseActive = filterByHouse(activePeople, tab.houseId);
+        const houseOther = filterByHouse(otherPeople, tab.houseId);
+        const isEmpty = houseActive.length === 0 && houseOther.length === 0;
 
         return (
           <TabsContent key={tab.value} value={tab.value}>
@@ -114,119 +256,18 @@ export function ResidentsTabs({
                 </Card>
               ) : (
                 <>
-                  {/* Staff / Managers / Admins — shown first */}
-                  {isStaff && houseStaff.length > 0 && (
+                  {houseActive.length > 0 && (
                     <div className="space-y-2">
-                      <h2 className="text-lg font-semibold">Staff</h2>
-                      {houseStaff.map((u) => (
-                        <Link key={u.user_id} href={isAdmin ? `/users/${u.user_id}` : "#"}>
-                          <Card className="hover:bg-muted/50 transition-colors">
-                            <CardContent className="flex items-center justify-between py-3">
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <span className="font-medium">{u.full_name}</span>
-                                  <Badge
-                                    variant={u.role === "admin" ? "default" : "secondary"}
-                                    className="capitalize"
-                                  >
-                                    {u.role}
-                                  </Badge>
-                                  {u.is_also_resident && (
-                                    <Badge variant="outline">Resident</Badge>
-                                  )}
-                                  {!u.is_active && <Badge variant="destructive">Inactive</Badge>}
-                                </div>
-                                <p className="text-xs text-muted-foreground">{u.email}</p>
-                                {u.role === "manager" && u.assigned_house_names.length > 0 && (
-                                  <p className="text-xs text-muted-foreground mt-0.5">
-                                    Houses: {u.assigned_house_names.join(", ")}
-                                  </p>
-                                )}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        </Link>
-                      ))}
+                      {houseActive.map(renderPersonCard)}
                     </div>
                   )}
 
-                  {/* Active Residents */}
-                  {houseActiveResidents.length > 0 && (
-                    <div className="space-y-2">
-                      <h2 className="text-lg font-semibold">Active Residents</h2>
-                      {houseActiveResidents.map((r) => {
-                        // Skip if this resident is already shown as staff
-                        const shownAsStaff = houseStaff.some((s) => s.resident_id === r.id);
-                        if (shownAsStaff) return null;
-                        return (
-                          <Link key={r.id} href={`/residents/${r.id}`}>
-                            <Card className="hover:bg-muted/50 transition-colors">
-                              <CardContent className="flex items-center justify-between py-3">
-                                <div>
-                                  <p className="font-medium">{r.full_name}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {r.house_name} · Moved in{" "}
-                                    {new Date(r.move_in_date).toLocaleDateString()}
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  {r.days_sober !== null && (
-                                    <span className="text-xs text-muted-foreground">
-                                      {r.days_sober} days sober
-                                    </span>
-                                  )}
-                                  <Badge variant="outline" className="capitalize">
-                                    {r.status}
-                                  </Badge>
-                                  {isAdmin && (
-                                    <DeleteResidentButton
-                                      residentId={r.id}
-                                      residentName={r.full_name}
-                                    />
-                                  )}
-                                </div>
-                              </CardContent>
-                            </Card>
-                          </Link>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Discharged / On Leave */}
-                  {houseOtherResidents.length > 0 && (
+                  {houseOther.length > 0 && (
                     <div className="space-y-2">
                       <h2 className="text-lg font-semibold text-muted-foreground">
                         Discharged / On Leave
                       </h2>
-                      {houseOtherResidents.map((r) => (
-                        <Link key={r.id} href={`/residents/${r.id}`}>
-                          <Card className="hover:bg-muted/50 transition-colors opacity-60">
-                            <CardContent className="flex items-center justify-between py-3">
-                              <div>
-                                <p className="font-medium">{r.full_name}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {r.house_name}
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Badge
-                                  variant={r.status === "discharged" ? "secondary" : "outline"}
-                                  className="capitalize"
-                                >
-                                  {r.status.replace("_", " ")}
-                                </Badge>
-                                {isAdmin && (
-                                  <DeleteResidentButton
-                                    residentId={r.id}
-                                    residentName={r.full_name}
-                                  />
-                                )}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        </Link>
-                      ))}
+                      {houseOther.map(renderPersonCard)}
                     </div>
                   )}
                 </>
