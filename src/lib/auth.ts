@@ -40,12 +40,33 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     assignedHouseIds = assignments?.map((a) => a.house_id) ?? [];
   }
 
+  // Check if the user has a linked resident record for intake/commitment status
+  const isResident = role === "resident";
+  let intakeCompleted = false;
+  let commitmentSigned = false;
+
+  if (isResident) {
+    const { data: resident } = await supabase
+      .from("residents")
+      .select("intake_completed, commitment_signed")
+      .eq("user_id", user.id)
+      .eq("status", "active")
+      .limit(1)
+      .maybeSingle();
+
+    intakeCompleted = resident?.intake_completed ?? false;
+    commitmentSigned = resident?.commitment_signed ?? false;
+  }
+
   return {
     id: profile.id,
     email: profile.email,
     full_name: profile.full_name,
     role,
     assigned_house_ids: assignedHouseIds,
+    intake_completed: intakeCompleted,
+    is_resident: isResident,
+    commitment_signed: commitmentSigned,
   };
 });
 
