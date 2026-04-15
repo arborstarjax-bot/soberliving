@@ -127,7 +127,23 @@ export const createUserSchema = z.object({
   full_name: z.string().min(1, "Full name is required").max(200),
   phone: z.string().max(20).optional(),
   role: z.enum(["admin", "manager", "resident"]),
-});
+  is_resident: z.boolean().optional(),
+  // Resident profile fields (required when is_resident is true or role is resident)
+  house_id: z.string().uuid("House is required").optional(),
+  move_in_date: z.string().min(1, "Move-in date is required").optional(),
+  sobriety_date: z.string().optional(),
+  date_of_birth: z.string().optional(),
+  emergency_contact_name: z.string().min(1, "Emergency contact name is required").optional(),
+  emergency_contact_phone: z.string().min(1, "Emergency contact phone is required").optional(),
+  emergency_contact_relationship: z.string().optional(),
+}).refine(
+  (data) => {
+    const needsResident = data.is_resident || data.role === "resident";
+    if (!needsResident) return true;
+    return !!data.house_id && !!data.move_in_date && !!data.emergency_contact_name && !!data.emergency_contact_phone;
+  },
+  { message: "House, move-in date, and emergency contact are required for residents" }
+);
 
 export const updateUserProfileSchema = z.object({
   full_name: z.string().min(1, "Full name is required").max(200).optional(),

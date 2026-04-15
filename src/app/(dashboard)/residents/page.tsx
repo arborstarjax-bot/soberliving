@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { getDaysSober } from "@/lib/milestones";
 import { Users } from "lucide-react";
 import Link from "next/link";
-import { CreateResidentDialog } from "./create-resident-dialog";
 
 export default async function ResidentsPage() {
   const user = await requireAuth();
@@ -26,17 +25,6 @@ export default async function ResidentsPage() {
 
   const { data: residents } = await query;
 
-  // Get houses for the create dialog
-  let housesQuery = supabase
-    .from("houses")
-    .select("id, name")
-    .eq("is_active", true)
-    .order("name");
-  if (houseFilter) {
-    housesQuery = housesQuery.in("id", houseFilter);
-  }
-  const { data: houses } = await housesQuery;
-
   const activeResidents = (residents ?? []).filter(
     (r) => r.status === "active"
   );
@@ -54,7 +42,13 @@ export default async function ResidentsPage() {
           </p>
         </div>
         {(user.role === "admin" || user.role === "manager") && (
-          <CreateResidentDialog houses={houses ?? []} />
+          <Link
+            href="/users"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            <Users className="mr-2 h-4 w-4" />
+            Add via Users & Roles
+          </Link>
         )}
       </div>
 
@@ -63,7 +57,11 @@ export default async function ResidentsPage() {
           <CardContent className="py-12 text-center">
             <Users className="mx-auto h-12 w-12 text-muted-foreground/50" />
             <p className="mt-4 text-muted-foreground">
-              No residents yet. Add your first resident to get started.
+              No residents yet. Go to{" "}
+              <Link href="/users" className="underline font-medium">
+                Users & Roles
+              </Link>{" "}
+              and add a user with the &quot;Is Resident&quot; option checked.
             </p>
           </CardContent>
         </Card>

@@ -14,17 +14,27 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, Copy, Check, Mail } from "lucide-react";
 
-export function CreateUserDialog() {
+interface Props {
+  houses: { id: string; name: string }[];
+}
+
+export function CreateUserDialog({ houses }: Props) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState(createUser, undefined);
   const [copied, setCopied] = useState(false);
   const [showLink, setShowLink] = useState(false);
+  const [selectedRole, setSelectedRole] = useState("resident");
+  const [isResident, setIsResident] = useState(true);
+
+  const showResidentFields = isResident || selectedRole === "resident";
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
     if (!next) {
       setCopied(false);
       setShowLink(false);
+      setSelectedRole("resident");
+      setIsResident(true);
     }
   }
 
@@ -42,7 +52,7 @@ export function CreateUserDialog() {
         <Plus className="mr-2 h-4 w-4" />
         Add User
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto max-w-lg">
         <DialogHeader>
           <DialogTitle>
             {state?.inviteLink ? "User Created" : "Create User"}
@@ -144,6 +154,11 @@ export function CreateUserDialog() {
               <select
                 name="role"
                 required
+                value={selectedRole}
+                onChange={(e) => {
+                  setSelectedRole(e.target.value);
+                  if (e.target.value === "resident") setIsResident(true);
+                }}
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
               >
                 <option value="resident">Resident</option>
@@ -151,6 +166,91 @@ export function CreateUserDialog() {
                 <option value="admin">Admin</option>
               </select>
             </div>
+
+            {selectedRole !== "resident" && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="is_resident"
+                  name="is_resident"
+                  checked={isResident}
+                  onChange={(e) => setIsResident(e.target.checked)}
+                  className="h-4 w-4 rounded border-input"
+                />
+                <Label htmlFor="is_resident" className="text-sm font-normal">
+                  Also a resident (eligible for chores, bed assignments, leave)
+                </Label>
+              </div>
+            )}
+
+            {/* Resident-specific fields */}
+            {showResidentFields && (
+              <div className="border-t pt-4 space-y-4">
+                <p className="text-sm font-medium">Resident Information</p>
+
+                <div className="space-y-2">
+                  <Label>House *</Label>
+                  <select
+                    name="house_id"
+                    required
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                  >
+                    <option value="">Select house</option>
+                    {houses.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Move-in Date *</Label>
+                    <Input
+                      name="move_in_date"
+                      type="date"
+                      required
+                      defaultValue={new Date().toISOString().split("T")[0]}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Sobriety Date</Label>
+                    <Input name="sobriety_date" type="date" />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Date of Birth</Label>
+                  <Input name="date_of_birth" type="date" />
+                </div>
+
+                <div className="border-t pt-3">
+                  <p className="text-sm font-medium mb-3">Emergency Contact</p>
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label>Emergency Contact Name *</Label>
+                      <Input name="emergency_contact_name" required />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label>Emergency Phone *</Label>
+                        <Input
+                          name="emergency_contact_phone"
+                          type="tel"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Relationship</Label>
+                        <Input name="emergency_contact_relationship" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <p className="text-xs text-muted-foreground">
               An invite email will be sent automatically with a link to set
               their password.

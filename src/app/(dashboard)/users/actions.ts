@@ -17,11 +17,23 @@ export async function createUser(
   formData: FormData
 ) {
   const user = await requireRole("admin");
+  const role = formData.get("role") as string;
+  const isResidentField = formData.get("is_resident");
+  const isResident = role === "resident" || isResidentField === "on" || isResidentField === "true";
+
   const parsed = createUserSchema.safeParse({
     email: formData.get("email"),
     full_name: formData.get("full_name"),
     phone: formData.get("phone") || undefined,
-    role: formData.get("role"),
+    role,
+    is_resident: isResident,
+    house_id: formData.get("house_id") || undefined,
+    move_in_date: formData.get("move_in_date") || undefined,
+    sobriety_date: formData.get("sobriety_date") || undefined,
+    date_of_birth: formData.get("date_of_birth") || undefined,
+    emergency_contact_name: formData.get("emergency_contact_name") || undefined,
+    emergency_contact_phone: formData.get("emergency_contact_phone") || undefined,
+    emergency_contact_relationship: formData.get("emergency_contact_relationship") || undefined,
   });
 
   if (!parsed.success) return { error: parsed.error.issues[0].message };
@@ -49,6 +61,7 @@ export async function createUser(
     email: parsed.data.email,
     full_name: parsed.data.full_name,
     phone: parsed.data.phone ?? null,
+    is_resident: isResident,
   }, { onConflict: "id" });
 
   if (userError) {
@@ -65,6 +78,29 @@ export async function createUser(
   }, { onConflict: "user_id" });
 
   if (roleError) return { error: roleError.message };
+
+  // Auto-create residents record when is_resident is set
+  if (isResident && parsed.data.house_id && parsed.data.move_in_date) {
+    const { error: residentError } = await adminClient.from("residents").insert({
+      user_id: authData.user.id,
+      house_id: parsed.data.house_id,
+      full_name: parsed.data.full_name,
+      phone: parsed.data.phone ?? null,
+      email: parsed.data.email,
+      date_of_birth: parsed.data.date_of_birth || null,
+      move_in_date: parsed.data.move_in_date,
+      sobriety_date: parsed.data.sobriety_date || null,
+      emergency_contact_name: parsed.data.emergency_contact_name ?? "",
+      emergency_contact_phone: parsed.data.emergency_contact_phone ?? "",
+      emergency_contact_relationship: parsed.data.emergency_contact_relationship || null,
+      status: "active",
+    });
+
+    if (residentError) {
+      console.error("Failed to create resident record:", residentError.message);
+      // Don't fail the whole operation — user is created, resident record can be added later
+    }
+  }
 
   // Generate a password recovery link so the user can set their own password
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
@@ -100,13 +136,15 @@ export async function createUser(
 
   await logActivity({
     actorId: user.id,
+    houseId: parsed.data.house_id,
     eventType: "user_created",
     entityType: "user",
     entityId: authData.user.id,
-    description: `User "${parsed.data.full_name}" (${parsed.data.role}) created by ${user.full_name}`,
+    description: `User "${parsed.data.full_name}" (${parsed.data.role}${isResident ? ", resident" : ""}) created by ${user.full_name}`,
   });
 
   revalidatePath("/users");
+  revalidatePath("/residents");
   return { inviteLink, emailSent, emailError };
 }
 
