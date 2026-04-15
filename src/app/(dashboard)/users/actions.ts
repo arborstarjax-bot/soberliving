@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { createUserSchema, assignManagerSchema, updateUserProfileSchema } from "@/lib/validations";
@@ -21,9 +21,10 @@ export async function createUser(
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
   const supabase = await createClient();
+  const adminClient = createAdminClient();
 
-  // Generate an invite link (also sends email) via Supabase admin API
-  const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
+  // Generate an invite link via Supabase admin API (requires service role key)
+  const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
     type: "invite",
     email: parsed.data.email,
     options: {
