@@ -125,9 +125,10 @@ export function RotationBoard({
                           />
                         );
                       }
+                      const choreDisplayWeek = Math.min(currentWeek, chore.cycle_weeks ?? 2);
                       const signoff = assignment?.chore_signoffs?.find(
                         (s) =>
-                          s.week_number === displayWeek &&
+                          s.week_number === choreDisplayWeek &&
                           s.day_of_week === day
                       );
                       return (
