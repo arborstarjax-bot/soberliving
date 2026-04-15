@@ -379,6 +379,45 @@ export async function liftRestriction(restrictionId: string) {
   return {};
 }
 
+export async function deleteRestriction(restrictionId: string) {
+  const user = await requireAuth();
+  if (user.role === "resident") return { error: "Not authorized" };
+
+  const supabase = await createClient();
+
+  const { data: restriction } = await supabase
+    .from("restrictions")
+    .select("house_id, resident_id, description")
+    .eq("id", restrictionId)
+    .single();
+
+  if (!restriction) return { error: "Restriction not found" };
+  if (user.role !== "admin" && !canAccessHouse(user, restriction.house_id)) {
+    return { error: "Not authorized" };
+  }
+
+  const { error } = await supabase
+    .from("restrictions")
+    .delete()
+    .eq("id", restrictionId);
+
+  if (error) return { error: error.message };
+
+  await logActivity({
+    houseId: restriction.house_id,
+    residentId: restriction.resident_id,
+    actorId: user.id,
+    eventType: "restriction_deleted",
+    entityType: "restriction",
+    entityId: restrictionId,
+    description: `Restriction deleted by ${user.full_name}: ${restriction.description}`,
+  });
+
+  revalidatePath("/discipline");
+  revalidatePath(`/residents/${restriction.resident_id}`);
+  return {};
+}
+
 export async function expireRestrictions() {
   const user = await requireAuth();
   if (user.role === "resident") return { count: 0 };

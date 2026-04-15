@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ShieldAlert } from "lucide-react";
 import { CreateRestrictionDialog } from "./create-restriction-dialog";
-import { LiftRestrictionButton } from "./lift-restriction-button";
+import { LiftRestrictionButton, DeleteRestrictionButton } from "./lift-restriction-button";
 import { DemeritMatrix } from "./demerit-matrix";
 
 const RESTRICTION_TYPE_LABELS: Record<string, string> = {
@@ -200,11 +200,14 @@ export default async function DisciplinePage() {
                         <Badge variant="outline" className="text-xs">{typeLabel}</Badge>
                         <span className="text-xs text-muted-foreground">{r.description}</span>
                       </div>
-                      <span className="text-xs text-muted-foreground">
-                        {r.end_date
-                          ? `Expired ${new Date(r.end_date).toLocaleDateString()}`
-                          : `Lifted ${new Date(r.updated_at).toLocaleDateString()}`}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          {r.end_date
+                            ? `Expired ${new Date(r.end_date).toLocaleDateString()}`
+                            : `Lifted ${new Date(r.updated_at).toLocaleDateString()}`}
+                        </span>
+                        {isStaff && <DeleteRestrictionButton restrictionId={r.id} />}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
