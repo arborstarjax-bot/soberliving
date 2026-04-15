@@ -21,6 +21,17 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Copy, Check, Mail, Trash2, Send } from "lucide-react";
 
+interface ResidentProfile {
+  id: string;
+  houseId: string;
+  moveInDate: string;
+  sobrietyDate: string;
+  dateOfBirth: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  emergencyContactRelationship: string;
+}
+
 interface Props {
   userId: string;
   fullName: string;
@@ -32,6 +43,7 @@ interface Props {
   isSelf: boolean;
   houses: { id: string; name: string }[];
   assignedHouseIds: string[];
+  residentProfile: ResidentProfile | null;
 }
 
 export function UserProfileForm({
@@ -45,9 +57,11 @@ export function UserProfileForm({
   isSelf,
   houses,
   assignedHouseIds,
+  residentProfile,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [isResidentChecked, setIsResidentChecked] = useState(isResident);
 
   // Profile update form
   const boundUpdate = updateUserProfile.bind(null, userId);
@@ -105,6 +119,8 @@ export function UserProfileForm({
       });
     }
   }
+
+  const showResidentFields = isResidentChecked || role === "resident";
 
   return (
     <div className="space-y-6">
@@ -176,16 +192,118 @@ export function UserProfileForm({
                 type="checkbox"
                 id="is_resident"
                 name="is_resident"
-                defaultChecked={isResident}
+                checked={isResidentChecked}
+                onChange={(e) => setIsResidentChecked(e.target.checked)}
                 className="h-4 w-4 rounded border-input"
               />
               <Label htmlFor="is_resident" className="font-normal">
                 This user is also a resident{" "}
                 <span className="text-muted-foreground">
-                  (admins and managers can also be residents)
+                  (eligible for chores, bed assignments, leave, payments)
                 </span>
               </Label>
             </div>
+
+            {/* Resident Profile Fields */}
+            {showResidentFields && (
+              <div className="border-t pt-4 space-y-4">
+                <p className="text-sm font-medium">
+                  Resident Profile
+                  {!residentProfile && (
+                    <Badge variant="secondary" className="ml-2 text-xs">
+                      Not yet created — fill in and save to create
+                    </Badge>
+                  )}
+                </p>
+
+                <div className="space-y-2">
+                  <Label>House *</Label>
+                  <select
+                    name="resident_house_id"
+                    required={showResidentFields}
+                    defaultValue={residentProfile?.houseId ?? ""}
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                  >
+                    <option value="">Select house</option>
+                    {houses.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Move-in Date *</Label>
+                    <Input
+                      name="resident_move_in_date"
+                      type="date"
+                      required={showResidentFields}
+                      defaultValue={
+                        residentProfile?.moveInDate ??
+                        new Date().toISOString().split("T")[0]
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Sobriety Date</Label>
+                    <Input
+                      name="resident_sobriety_date"
+                      type="date"
+                      defaultValue={residentProfile?.sobrietyDate ?? ""}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Date of Birth</Label>
+                  <Input
+                    name="resident_date_of_birth"
+                    type="date"
+                    defaultValue={residentProfile?.dateOfBirth ?? ""}
+                  />
+                </div>
+
+                <div className="border-t pt-3">
+                  <p className="text-sm font-medium mb-3">Emergency Contact</p>
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label>Emergency Contact Name *</Label>
+                      <Input
+                        name="resident_emergency_contact_name"
+                        required={showResidentFields}
+                        defaultValue={
+                          residentProfile?.emergencyContactName ?? ""
+                        }
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label>Emergency Phone *</Label>
+                        <Input
+                          name="resident_emergency_contact_phone"
+                          type="tel"
+                          required={showResidentFields}
+                          defaultValue={
+                            residentProfile?.emergencyContactPhone ?? ""
+                          }
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Relationship</Label>
+                        <Input
+                          name="resident_emergency_contact_relationship"
+                          defaultValue={
+                            residentProfile?.emergencyContactRelationship ?? ""
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {profileState?.error && (
               <p className="text-sm text-destructive">{profileState.error}</p>

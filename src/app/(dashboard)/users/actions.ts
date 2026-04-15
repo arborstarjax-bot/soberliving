@@ -192,6 +192,43 @@ export async function deleteUser(userId: string) {
     .eq("id", userId)
     .single();
 
+  // Check for FK dependencies that would block deletion
+  const checks = await Promise.all([
+    adminClient.from("payments").select("id", { count: "exact", head: true }).eq("recorded_by", userId),
+    adminClient.from("incidents").select("id", { count: "exact", head: true }).eq("reported_by", userId),
+    adminClient.from("demerits").select("id", { count: "exact", head: true }).eq("issued_by", userId),
+  ]);
+
+  const hasReferences = checks.some((c) => (c.count ?? 0) > 0);
+
+  if (hasReferences) {
+    // Soft-delete: deactivate instead of hard-deleting to preserve referential integrity
+    const { error: deactivateError } = await adminClient
+      .from("users")
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq("id", userId);
+
+    if (deactivateError) return { error: deactivateError.message };
+
+    await logActivity({
+      actorId: user.id,
+      eventType: "user_deactivated",
+      entityType: "user",
+      entityId: userId,
+      description: `User "${targetUser?.full_name}" (${targetUser?.email}) deactivated by ${user.full_name} (has activity history, cannot hard-delete)`,
+    });
+
+    revalidatePath("/users");
+    return { error: "This user has recorded activity (payments, incidents, etc.) and cannot be fully deleted. They have been deactivated instead." };
+  }
+
+  // Safe to hard-delete — no FK references
+  // Delete residents records first
+  await adminClient
+    .from("residents")
+    .delete()
+    .eq("user_id", userId);
+
   // Delete from manager_house_assignments
   await adminClient
     .from("manager_house_assignments")
@@ -216,7 +253,6 @@ export async function deleteUser(userId: string) {
   const { error: authError } = await adminClient.auth.admin.deleteUser(userId);
   if (authError) {
     console.error("Failed to delete auth user:", authError.message);
-    // Don't return error since DB records are already deleted
   }
 
   await logActivity({
@@ -388,11 +424,13 @@ export async function updateUserProfile(
 ) {
   const user = await requireRole("admin");
 
+  const isResident = formData.get("is_resident") === "on";
+
   const parsed = updateUserProfileSchema.safeParse({
     full_name: formData.get("full_name") || undefined,
     phone: formData.has("phone") ? (formData.get("phone") || null) : undefined,
     role: formData.get("role") || undefined,
-    is_resident: formData.get("is_resident") === "on",
+    is_resident: isResident,
   });
 
   if (!parsed.success) return { error: parsed.error.issues[0].message };
@@ -423,6 +461,66 @@ export async function updateUserProfile(
     if (roleError) return { error: roleError.message };
   }
 
+  // Handle resident profile creation/update when is_resident is checked
+  if (isResident || parsed.data.role === "resident") {
+    const residentHouseId = formData.get("resident_house_id") as string;
+    const residentMoveInDate = formData.get("resident_move_in_date") as string;
+    const residentSobrietyDate = formData.get("resident_sobriety_date") as string;
+    const residentDateOfBirth = formData.get("resident_date_of_birth") as string;
+    const residentEmergencyName = formData.get("resident_emergency_contact_name") as string;
+    const residentEmergencyPhone = formData.get("resident_emergency_contact_phone") as string;
+    const residentEmergencyRelationship = formData.get("resident_emergency_contact_relationship") as string;
+
+    if (!residentHouseId || !residentMoveInDate || !residentEmergencyName || !residentEmergencyPhone) {
+      return { error: "House, move-in date, and emergency contact are required for residents" };
+    }
+
+    // Get user info for resident record
+    const { data: targetUserData } = await adminClient
+      .from("users")
+      .select("full_name, email, phone")
+      .eq("id", userId)
+      .single();
+
+    // Check if a residents record already exists
+    const { data: existingResident } = await adminClient
+      .from("residents")
+      .select("id")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    const residentData = {
+      house_id: residentHouseId,
+      full_name: parsed.data.full_name ?? targetUserData?.full_name ?? "",
+      phone: parsed.data.phone ?? targetUserData?.phone ?? null,
+      email: targetUserData?.email ?? null,
+      move_in_date: residentMoveInDate,
+      sobriety_date: residentSobrietyDate || null,
+      date_of_birth: residentDateOfBirth || null,
+      emergency_contact_name: residentEmergencyName,
+      emergency_contact_phone: residentEmergencyPhone,
+      emergency_contact_relationship: residentEmergencyRelationship || null,
+      status: "active" as const,
+    };
+
+    if (existingResident) {
+      // Update existing record
+      const { error: resUpdateError } = await adminClient
+        .from("residents")
+        .update(residentData)
+        .eq("id", existingResident.id);
+
+      if (resUpdateError) return { error: `Failed to update resident profile: ${resUpdateError.message}` };
+    } else {
+      // Create new record linked to user
+      const { error: resInsertError } = await adminClient
+        .from("residents")
+        .insert({ ...residentData, user_id: userId });
+
+      if (resInsertError) return { error: `Failed to create resident profile: ${resInsertError.message}` };
+    }
+  }
+
   const { data: targetUser } = await adminClient
     .from("users")
     .select("full_name")
@@ -439,5 +537,6 @@ export async function updateUserProfile(
 
   revalidatePath(`/users/${userId}`);
   revalidatePath("/users");
+  revalidatePath("/residents");
   return {};
 }

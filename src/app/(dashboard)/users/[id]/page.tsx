@@ -27,6 +27,14 @@ export default async function UserProfilePage(
     .eq("is_active", true)
     .order("name");
 
+  // Get linked resident record (if any)
+  const { data: residentRecord } = await supabase
+    .from("residents")
+    .select("id, house_id, move_in_date, sobriety_date, date_of_birth, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, status")
+    .eq("user_id", id)
+    .eq("status", "active")
+    .maybeSingle();
+
   // Get documents for this user
   const { data: documents } = await supabase
     .from("documents")
@@ -147,6 +155,16 @@ export default async function UserProfilePage(
         isSelf={isSelf}
         houses={houses ?? []}
         assignedHouseIds={assignedHouseIds}
+        residentProfile={residentRecord ? {
+          id: residentRecord.id,
+          houseId: residentRecord.house_id,
+          moveInDate: residentRecord.move_in_date,
+          sobrietyDate: residentRecord.sobriety_date ?? "",
+          dateOfBirth: residentRecord.date_of_birth ?? "",
+          emergencyContactName: residentRecord.emergency_contact_name,
+          emergencyContactPhone: residentRecord.emergency_contact_phone,
+          emergencyContactRelationship: residentRecord.emergency_contact_relationship ?? "",
+        } : null}
       />
 
       {/* Documents */}

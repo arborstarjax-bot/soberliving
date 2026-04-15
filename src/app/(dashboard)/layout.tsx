@@ -9,8 +9,9 @@ export default async function DashboardLayout({
 }) {
   const user = await requireAuth();
 
-  // Redirect residents (or users marked as resident) who haven't completed intake
-  if ((user.role === "resident" || user.is_resident) && !user.intake_completed) {
+  // Redirect resident-role users who haven't completed intake
+  // Only applies to role=resident, NOT admins/managers who are also marked as residents
+  if (user.role === "resident" && !user.intake_completed) {
     redirect("/intake");
   }
 
