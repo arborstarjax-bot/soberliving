@@ -129,7 +129,7 @@ export async function updateResident(residentId: string, formData: FormData) {
   return {};
 }
 
-export async function dischargeResident(residentId: string) {
+export async function dischargeResident(residentId: string, reason?: string) {
   const user = await requireAuth();
   const supabase = await createClient();
 
@@ -147,25 +147,29 @@ export async function dischargeResident(residentId: string) {
     return { error: "Not authorized" };
   }
 
+  const dischargeDate = new Date().toISOString().split("T")[0];
+
   // End all active bed assignments
   await supabase
     .from("bed_assignments")
-    .update({ end_date: new Date().toISOString().split("T")[0] })
+    .update({ end_date: dischargeDate })
     .eq("resident_id", residentId)
     .is("end_date", null);
 
-  // Update resident status
+  // Update resident status with discharge date and optional reason
   const { error } = await supabase
     .from("residents")
     .update({
       status: "discharged",
-      move_out_date: new Date().toISOString().split("T")[0],
+      move_out_date: dischargeDate,
+      discharge_reason: reason || null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", residentId);
 
   if (error) return { error: error.message };
 
+  const reasonText = reason ? ` — Reason: ${reason}` : "";
   await logActivity({
     houseId: resident.house_id,
     residentId,
@@ -173,12 +177,13 @@ export async function dischargeResident(residentId: string) {
     eventType: "move_out",
     entityType: "resident",
     entityId: residentId,
-    description: `${resident.full_name} discharged by ${user.full_name}`,
+    description: `${resident.full_name} discharged by ${user.full_name}${reasonText}`,
   });
 
   revalidatePath(`/residents/${residentId}`);
   revalidatePath(`/houses/${resident.house_id}`);
   revalidatePath("/residents");
+  return {};
 }
 
 export async function deleteResident(residentId: string) {

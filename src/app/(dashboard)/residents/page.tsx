@@ -1,21 +1,19 @@
 import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { getDaysSober } from "@/lib/milestones";
-import { Users, UserCog } from "lucide-react";
-import Link from "next/link";
 import { CreateResidentDialog } from "./create-resident-dialog";
-import { DeleteResidentButton } from "./delete-resident-button";
 import { CreateUserDialog } from "../users/create-user-dialog";
+import { ResidentsTabs } from "./residents-tabs";
 
 export default async function ResidentsPage() {
   const user = await requireAuth();
   const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
   const isAdmin = user.role === "admin";
+  const isStaff = user.role === "admin" || user.role === "manager";
 
+  // Fetch residents
   let query = supabase
     .from("residents")
     .select(
@@ -29,7 +27,7 @@ export default async function ResidentsPage() {
 
   const { data: residents } = await query;
 
-  // Get houses for the create dialog
+  // Fetch houses
   let housesQuery = supabase
     .from("houses")
     .select("id, name")
@@ -40,30 +38,73 @@ export default async function ResidentsPage() {
   }
   const { data: houses } = await housesQuery;
 
-  const activeResidents = (residents ?? []).filter(
-    (r) => r.status === "active"
-  );
-  const otherResidents = (residents ?? []).filter(
-    (r) => r.status !== "active"
-  );
-
-  // Admin: fetch all users for staff section
-  type StaffUser = {
+  // Fetch staff users (admins + managers) with house assignments
+  type RawStaffUser = {
     id: string;
     full_name: string;
     email: string;
     is_active: boolean;
     user_roles: Array<{ role: string }>;
-    manager_house_assignments: Array<{ house_id: string; houses: { name: string } | null; unassigned_at: string | null }>;
+    manager_house_assignments: Array<{
+      house_id: string;
+      houses: { name: string } | null;
+      unassigned_at: string | null;
+    }>;
   };
-  let staffUsers: StaffUser[] | null = null;
-  if (isAdmin) {
+
+  let rawStaffUsers: RawStaffUser[] = [];
+  if (isStaff) {
     const { data } = await supabase
       .from("users")
-      .select("id, full_name, email, is_active, user_roles(role), manager_house_assignments(house_id, houses(name), unassigned_at)")
+      .select(
+        "id, full_name, email, is_active, user_roles(role), manager_house_assignments(house_id, houses(name), unassigned_at)"
+      )
       .order("full_name");
-    staffUsers = data as StaffUser[] | null;
+    rawStaffUsers = (data as RawStaffUser[] | null) ?? [];
   }
+
+  // Normalize residents for the tabs component
+  const normalizedResidents = (residents ?? []).map((r) => ({
+    id: r.id,
+    full_name: r.full_name,
+    status: r.status,
+    move_in_date: r.move_in_date,
+    sobriety_date: r.sobriety_date,
+    house_id: r.house_id,
+    house_name:
+      (r.houses as unknown as { name: string } | null)?.name ?? "Unknown",
+    days_sober: r.sobriety_date ? getDaysSober(r.sobriety_date) : null,
+  }));
+
+  // Normalize staff users — only admins and managers
+  const normalizedStaff = rawStaffUsers
+    .filter((u) => {
+      const role = u.user_roles?.[0]?.role ?? "resident";
+      return role === "admin" || role === "manager";
+    })
+    .map((u) => {
+      const role = u.user_roles?.[0]?.role ?? "resident";
+      const activeAssignments = (u.manager_house_assignments ?? []).filter(
+        (a) => !a.unassigned_at
+      );
+      const matchingResident = normalizedResidents.find(
+        (r) => r.full_name === u.full_name
+      );
+      return {
+        id: u.id,
+        user_id: u.id,
+        full_name: u.full_name,
+        email: u.email,
+        role,
+        is_active: u.is_active,
+        assigned_house_ids: activeAssignments.map((a) => a.house_id),
+        assigned_house_names: activeAssignments
+          .map((a) => a.houses?.name ?? "")
+          .filter(Boolean),
+        is_also_resident: !!matchingResident,
+        resident_id: matchingResident?.id ?? null,
+      };
+    });
 
   return (
     <div className="space-y-6">
@@ -71,145 +112,23 @@ export default async function ResidentsPage() {
         <div>
           <h1 className="text-2xl font-bold">Residents</h1>
           <p className="text-muted-foreground">
-            {activeResidents.length} active residents
+            {normalizedResidents.filter((r) => r.status === "active").length}{" "}
+            active residents
           </p>
         </div>
-        {(user.role === "admin" || user.role === "manager") && (
-          <CreateResidentDialog houses={houses ?? []} />
-        )}
+        <div className="flex items-center gap-2">
+          {isAdmin && <CreateUserDialog />}
+          {isStaff && <CreateResidentDialog houses={houses ?? []} />}
+        </div>
       </div>
 
-      {activeResidents.length === 0 && otherResidents.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Users className="mx-auto h-12 w-12 text-muted-foreground/50" />
-            <p className="mt-4 text-muted-foreground">
-              No residents yet. Add your first resident to get started.
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-6">
-          {activeResidents.length > 0 && (
-            <div className="space-y-2">
-              <h2 className="text-lg font-semibold">Active</h2>
-              {activeResidents.map((r) => (
-                <Link key={r.id} href={`/residents/${r.id}`}>
-                  <Card className="hover:bg-muted/50 transition-colors">
-                    <CardContent className="flex items-center justify-between py-3">
-                      <div>
-                        <p className="font-medium">{r.full_name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {(r.houses as unknown as { name: string } | null)?.name} · Moved in{" "}
-                          {new Date(r.move_in_date).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {r.sobriety_date && (
-                          <span className="text-xs text-muted-foreground">
-                            {getDaysSober(r.sobriety_date)} days sober
-                          </span>
-                        )}
-                        <Badge variant="outline" className="capitalize">
-                          {r.status}
-                        </Badge>
-                        {isAdmin && (
-                          <DeleteResidentButton
-                            residentId={r.id}
-                            residentName={r.full_name}
-                          />
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          )}
-
-          {otherResidents.length > 0 && (
-            <div className="space-y-2">
-              <h2 className="text-lg font-semibold text-muted-foreground">
-                Discharged / On Leave
-              </h2>
-              {otherResidents.map((r) => (
-                <Link key={r.id} href={`/residents/${r.id}`}>
-                  <Card className="hover:bg-muted/50 transition-colors opacity-60">
-                    <CardContent className="flex items-center justify-between py-3">
-                      <div>
-                        <p className="font-medium">{r.full_name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {(r.houses as unknown as { name: string } | null)?.name}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          variant={
-                            r.status === "discharged"
-                              ? "secondary"
-                              : "outline"
-                          }
-                          className="capitalize"
-                        >
-                          {r.status.replace("_", " ")}
-                        </Badge>
-                        {isAdmin && (
-                          <DeleteResidentButton
-                            residentId={r.id}
-                            residentName={r.full_name}
-                          />
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-      {/* Staff / Users section — admin only */}
-      {isAdmin && staffUsers && (
-        <div className="space-y-2 pt-4 border-t">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <UserCog className="h-5 w-5 text-muted-foreground" />
-              <h2 className="text-lg font-semibold">Users & Roles</h2>
-            </div>
-            <CreateUserDialog />
-          </div>
-          {staffUsers.map((u) => {
-            const role = (u.user_roles)?.[0]?.role ?? "resident";
-            const activeAssignments = (u.manager_house_assignments)?.filter((a) => !a.unassigned_at);
-            return (
-              <Link key={u.id} href={`/users/${u.id}`}>
-                <Card className={`hover:bg-muted/50 transition-colors ${!u.is_active ? "opacity-50" : ""}`}>
-                  <CardContent className="flex items-center justify-between py-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{u.full_name}</span>
-                        <Badge
-                          variant={role === "admin" ? "default" : role === "manager" ? "secondary" : "outline"}
-                          className="capitalize"
-                        >
-                          {role}
-                        </Badge>
-                        {!u.is_active && <Badge variant="destructive">Inactive</Badge>}
-                      </div>
-                      <p className="text-xs text-muted-foreground">{u.email}</p>
-                      {role === "manager" && activeAssignments && activeAssignments.length > 0 && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Houses: {activeAssignments.map((a) => a.houses?.name).join(", ")}
-                        </p>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            );
-          })}
-        </div>
-      )}
+      <ResidentsTabs
+        houses={houses ?? []}
+        residents={normalizedResidents}
+        staffUsers={normalizedStaff}
+        isAdmin={isAdmin}
+        isStaff={isStaff}
+      />
     </div>
   );
 }

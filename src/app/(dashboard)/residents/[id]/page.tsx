@@ -8,8 +8,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { calculateMilestones, getDaysSober } from "@/lib/milestones";
 import { ResidentTimeline } from "./timeline";
 import { ResidentNotes } from "./notes";
-import { ResidentActions } from "./resident-actions";
 import { ForcePhotoToggle } from "./force-photo-toggle";
+import { EditResidentForm } from "./edit-resident-form";
+import { DischargeDialog } from "./discharge-dialog";
 
 export default async function ResidentDetailPage(
   props: PageProps<"/residents/[id]">
@@ -92,6 +93,7 @@ export default async function ResidentDetailPage(
 
   const activeBeds = (bedAssignments ?? []).filter((ba) => !ba.end_date);
   const isStaff = user.role === "admin" || user.role === "manager";
+  const canEdit = user.role === "admin" || (user.role === "manager" && canAccessHouse(user, resident.house_id));
 
   return (
     <div className="space-y-6">
@@ -106,7 +108,7 @@ export default async function ResidentDetailPage(
           </p>
         </div>
         {isStaff && (
-          <ResidentActions
+          <DischargeDialog
             residentId={id}
             status={resident.status}
           />
@@ -360,6 +362,25 @@ export default async function ResidentDetailPage(
         <TabsContent value="details" className="mt-4">
           <Card>
             <CardContent className="space-y-4 pt-6">
+              {/* Edit form for admin / house manager */}
+              {canEdit && (
+                <EditResidentForm
+                  residentId={id}
+                  resident={{
+                    full_name: resident.full_name,
+                    phone: resident.phone ?? null,
+                    email: resident.email ?? null,
+                    date_of_birth: resident.date_of_birth ?? null,
+                    sobriety_date: resident.sobriety_date ?? null,
+                    move_in_date: resident.move_in_date,
+                    emergency_contact_name: resident.emergency_contact_name ?? null,
+                    emergency_contact_phone: resident.emergency_contact_phone ?? null,
+                    emergency_contact_relationship: resident.emergency_contact_relationship ?? null,
+                    notes: resident.notes ?? null,
+                  }}
+                />
+              )}
+
               {isStaff && (
                 <div className="border rounded-md p-4 bg-muted/30">
                   <ForcePhotoToggle
@@ -424,6 +445,12 @@ export default async function ResidentDetailPage(
                       : "—"}
                   </p>
                 </div>
+                {resident.discharge_reason && (
+                  <div className="sm:col-span-2">
+                    <p className="text-sm text-muted-foreground">Discharge Reason</p>
+                    <p className="text-sm">{resident.discharge_reason}</p>
+                  </div>
+                )}
               </div>
               <div className="border-t pt-4">
                 <p className="text-sm text-muted-foreground mb-1">
