@@ -24,6 +24,8 @@ export async function createChore(
   const parsed = createChoreSchema.safeParse({
     house_id: formData.get("house_id"),
     name: formData.get("name"),
+    days_of_week: formData.getAll("days_of_week"),
+    cycle_weeks: formData.get("cycle_weeks"),
   });
 
   if (!parsed.success) return { error: parsed.error.issues[0].message };
@@ -235,7 +237,19 @@ export async function createRotation(
     .eq("is_current", true);
 
   const startDate = new Date(parsed.data.cycle_start_date);
-  const endDate = addDays(startDate, 13); // 2-week cycle
+
+  // Determine cycle length from the max cycle_weeks of active chores in this house
+  const { data: houseChores } = await supabase
+    .from("chores")
+    .select("cycle_weeks")
+    .eq("house_id", parsed.data.house_id)
+    .eq("is_active", true);
+
+  const maxCycleWeeks = houseChores && houseChores.length > 0
+    ? Math.max(...houseChores.map((c) => c.cycle_weeks ?? 2))
+    : 2;
+
+  const endDate = addDays(startDate, maxCycleWeeks * 7 - 1);
 
   const { data, error } = await supabase
     .from("chore_rotations")
@@ -257,7 +271,7 @@ export async function createRotation(
     eventType: "rotation_created",
     entityType: "chore_rotation",
     entityId: data.id,
-    description: `New 2-week chore rotation started by ${user.full_name} (${parsed.data.cycle_start_date})`,
+    description: `New ${maxCycleWeeks}-week chore rotation started by ${user.full_name} (${parsed.data.cycle_start_date})`,
   });
 
   revalidatePath("/chores");
@@ -325,19 +339,36 @@ export async function assignRotationChore(
 
     if (error) return { error: error.message };
 
-    // Auto-create signoff records for Mon/Wed/Fri of both weeks
+    // Look up the chore's schedule settings
+    const { data: choreData } = await supabase
+      .from("chores")
+      .select("days_of_week, cycle_weeks")
+      .eq("id", parsed.data.chore_id)
+      .single();
+
+    const choreDays: string[] = choreData?.days_of_week ?? ["monday", "wednesday", "friday"];
+    const choreCycleWeeks: number = choreData?.cycle_weeks ?? 2;
+
+    // Map day names to offset from Monday (cycle start)
+    const dayToOffset: Record<string, number> = {
+      monday: 0,
+      tuesday: 1,
+      wednesday: 2,
+      thursday: 3,
+      friday: 4,
+      saturday: 5,
+      sunday: 6,
+    };
+
+    // Auto-create signoff records based on chore's schedule
     const signoffs = [];
     const startDate = new Date(rotation.cycle_start_date);
 
-    for (let weekNum = 1; weekNum <= 2; weekNum++) {
+    for (let weekNum = 1; weekNum <= choreCycleWeeks; weekNum++) {
       const weekOffset = (weekNum - 1) * 7;
-      // Mon=0, Wed=2, Fri=4 offset from start of week (assuming Monday start)
-      const dayOffsets = [
-        { offset: 0, day: "monday" as const },
-        { offset: 2, day: "wednesday" as const },
-        { offset: 4, day: "friday" as const },
-      ];
-      for (const { offset, day } of dayOffsets) {
+      for (const day of choreDays) {
+        const offset = dayToOffset[day];
+        if (offset === undefined) continue;
         const signoffDate = addDays(startDate, weekOffset + offset);
         signoffs.push({
           rotation_assignment_id: data.id,

@@ -10,6 +10,7 @@ import { StartRotationDialog } from "./start-rotation-dialog";
 import { RotationBoard } from "./rotation-board";
 import { ChoreListManager } from "./chore-list-manager";
 import { SignoffReviewList } from "./signoff-review-list";
+import { ALL_DAYS, DAY_LABELS } from "@/lib/validations";
 
 export default async function ChoresPage() {
   const user = await requireAuth();
@@ -30,7 +31,7 @@ export default async function ChoresPage() {
   // Get chores with tasks for all accessible houses
   let choresQuery = supabase
     .from("chores")
-    .select("*, chore_tasks(*)")
+    .select("*, chore_tasks(*), days_of_week, cycle_weeks")
     .eq("is_active", true)
     .order("sort_order");
   if (houseFilter) choresQuery = choresQuery.in("house_id", houseFilter);
@@ -40,7 +41,7 @@ export default async function ChoresPage() {
   let rotationsQuery = supabase
     .from("chore_rotations")
     .select(
-      "*, chore_rotation_assignments(*, chore:chores(id, name), resident:residents(id, full_name), chore_signoffs(*))"
+      "*, chore_rotation_assignments(*, chore:chores(id, name, days_of_week, cycle_weeks), resident:residents(id, full_name), chore_signoffs(*))"
     )
     .eq("is_current", true);
   if (houseFilter) rotationsQuery = rotationsQuery.in("house_id", houseFilter);
@@ -87,16 +88,16 @@ export default async function ChoresPage() {
       .single();
 
     if (resident) {
-      const { data } = await supabase
-        .from("chore_rotations")
-        .select(
-          "*, chore_rotation_assignments!inner(*, chore:chores(id, name, chore_tasks(*)), resident:residents(id, full_name), chore_signoffs(*))"
-        )
-        .eq("is_current", true)
-        .eq(
-          "chore_rotation_assignments.resident_id",
-          resident.id
-        );
+        const { data } = await supabase
+          .from("chore_rotations")
+          .select(
+            "*, chore_rotation_assignments!inner(*, chore:chores(id, name, days_of_week, cycle_weeks, chore_tasks(*)), resident:residents(id, full_name), chore_signoffs(*))"
+          )
+          .eq("is_current", true)
+          .eq(
+            "chore_rotation_assignments.resident_id",
+            resident.id
+          );
       myAssignments = data;
     }
   }
@@ -107,7 +108,7 @@ export default async function ChoresPage() {
         <div>
           <h1 className="text-2xl font-bold">Chores</h1>
           <p className="text-muted-foreground">
-            2-week rotation cycle · Mon / Wed / Fri
+            Chore rotation · Current week view
           </p>
         </div>
         {isStaff && (
@@ -163,7 +164,7 @@ export default async function ChoresPage() {
                 <CardContent className="py-12 text-center">
                   <ClipboardCheck className="mx-auto h-12 w-12 text-muted-foreground/50" />
                   <p className="mt-4 text-muted-foreground">
-                    No active rotation. Start a new 2-week rotation to begin
+                    No active rotation. Start a new rotation to begin
                     assigning chores.
                   </p>
                 </CardContent>
@@ -195,6 +196,15 @@ export default async function ChoresPage() {
   );
 }
 
+function getCurrentWeekNumber(cycleStartDate: string): number {
+  const start = new Date(cycleStartDate + "T00:00:00");
+  const now = new Date();
+  const diffMs = now.getTime() - start.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const weekNum = Math.floor(diffDays / 7) + 1;
+  return Math.max(1, weekNum);
+}
+
 function ResidentChoreView({
   rotations,
 }: {
@@ -204,7 +214,7 @@ function ResidentChoreView({
     cycle_end_date: string;
     chore_rotation_assignments: Array<{
       id: string;
-      chore: { id: string; name: string; chore_tasks: Array<{ id: string; description: string; sort_order: number; is_active: boolean }> };
+      chore: { id: string; name: string; days_of_week?: string[]; cycle_weeks?: number; chore_tasks: Array<{ id: string; description: string; sort_order: number; is_active: boolean }> };
       chore_signoffs: Array<{
         id: string;
         day_of_week: string;
@@ -229,104 +239,111 @@ function ResidentChoreView({
 
   return (
     <div className="space-y-6">
-      {rotations.map((rotation) =>
-        rotation.chore_rotation_assignments.map((assignment) => (
-          <Card key={assignment.id}>
-            <CardHeader>
-              <CardTitle>{assignment.chore.name}</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                {new Date(rotation.cycle_start_date).toLocaleDateString()} —{" "}
-                {new Date(rotation.cycle_end_date).toLocaleDateString()}
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Task checklist */}
-              {assignment.chore.chore_tasks
-                ?.filter((t) => t.is_active)
-                .sort((a, b) => a.sort_order - b.sort_order)
-                .length > 0 && (
-                <div>
-                  <p className="text-sm font-medium mb-2">Tasks:</p>
-                  <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
-                    {assignment.chore.chore_tasks
-                      .filter((t) => t.is_active)
-                      .sort((a, b) => a.sort_order - b.sort_order)
-                      .map((task) => (
-                        <li key={task.id}>{task.description}</li>
-                      ))}
-                  </ol>
-                </div>
-              )}
+      {rotations.map((rotation) => {
+        const currentWeek = getCurrentWeekNumber(rotation.cycle_start_date);
 
-              {/* Signoff grid */}
-              <div>
-                <p className="text-sm font-medium mb-2">Sign-off Tracking:</p>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm border">
-                    <thead>
-                      <tr>
-                        <th className="border p-2 text-left bg-muted" />
-                        <th className="border p-2 text-center bg-muted" colSpan={3}>
-                          Week 1
-                        </th>
-                        <th className="border p-2 text-center bg-muted" colSpan={3}>
-                          Week 2
-                        </th>
-                      </tr>
-                      <tr>
-                        <th className="border p-2 text-left bg-muted/50">Day</th>
-                        {["Mon", "Wed", "Fri", "Mon", "Wed", "Fri"].map(
-                          (d, i) => (
+        return rotation.chore_rotation_assignments.map((assignment) => {
+          const choreDays: string[] = assignment.chore.days_of_week ?? ["monday", "wednesday", "friday"];
+          const cycleWeeks = assignment.chore.cycle_weeks ?? 2;
+          const displayWeek = Math.min(currentWeek, cycleWeeks);
+
+          return (
+            <Card key={assignment.id}>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>{assignment.chore.name}</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      {new Date(rotation.cycle_start_date).toLocaleDateString()} —{" "}
+                      {new Date(rotation.cycle_end_date).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <Badge variant="outline">
+                    Week {displayWeek} of {cycleWeeks}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Task checklist */}
+                {assignment.chore.chore_tasks
+                  ?.filter((t) => t.is_active)
+                  .sort((a, b) => a.sort_order - b.sort_order)
+                  .length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium mb-2">Tasks:</p>
+                    <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
+                      {assignment.chore.chore_tasks
+                        .filter((t) => t.is_active)
+                        .sort((a, b) => a.sort_order - b.sort_order)
+                        .map((task) => (
+                          <li key={task.id}>{task.description}</li>
+                        ))}
+                    </ol>
+                  </div>
+                )}
+
+                {/* Signoff grid - current week Mon-Sun */}
+                <div>
+                  <p className="text-sm font-medium mb-2">Sign-off Tracking:</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm border">
+                      <thead>
+                        <tr>
+                          <th className="border p-2 text-left bg-muted">Day</th>
+                          {ALL_DAYS.map((day) => (
                             <th
-                              key={i}
-                              className="border p-2 text-center bg-muted/50"
+                              key={day}
+                              className="border p-2 text-center bg-muted text-xs"
                             >
-                              {d}
+                              {DAY_LABELS[day]}
                             </th>
-                          )
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td className="border p-2 font-medium">
-                          {assignment.chore.name}
-                        </td>
-                        {[1, 2].flatMap((week) =>
-                          (["monday", "wednesday", "friday"] as const).map(
-                            (day) => {
-                              const signoff =
-                                assignment.chore_signoffs.find(
-                                  (s) =>
-                                    s.week_number === week &&
-                                    s.day_of_week === day
-                                );
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td className="border p-2 font-medium">
+                            {assignment.chore.name}
+                          </td>
+                          {ALL_DAYS.map((day) => {
+                            const isScheduled = choreDays.includes(day);
+                            if (!isScheduled) {
                               return (
                                 <td
-                                  key={`${week}-${day}`}
-                                  className="border p-2 text-center"
-                                >
-                                  {signoff ? (
-                                    <SignoffCell
-                                      signoff={signoff}
-                                    />
-                                  ) : (
-                                    "—"
-                                  )}
-                                </td>
+                                  key={day}
+                                  className="border p-2 text-center bg-muted/30"
+                                />
                               );
                             }
-                          )
-                        )}
-                      </tr>
-                    </tbody>
-                  </table>
+                            const signoff =
+                              assignment.chore_signoffs.find(
+                                (s) =>
+                                  s.week_number === displayWeek &&
+                                  s.day_of_week === day
+                              );
+                            return (
+                              <td
+                                key={day}
+                                className="border p-2 text-center"
+                              >
+                                {signoff ? (
+                                  <SignoffCell signoff={signoff} />
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))
-      )}
+              </CardContent>
+            </Card>
+          );
+        });
+      })}
     </div>
   );
 }

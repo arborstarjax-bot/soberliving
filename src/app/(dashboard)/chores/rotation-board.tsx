@@ -5,12 +5,13 @@ import { assignRotationChore } from "./actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ALL_DAYS, DAY_LABELS } from "@/lib/validations";
 
 interface RotationAssignment {
   id: string;
   chore_id: string;
   resident_id: string;
-  chore: { id: string; name: string } | null;
+  chore: { id: string; name: string; days_of_week?: string[]; cycle_weeks?: number } | null;
   resident: { id: string; full_name: string } | null;
   chore_signoffs: Array<{
     id: string;
@@ -28,9 +29,18 @@ interface Props {
     cycle_end_date: string;
   };
   houseName: string;
-  chores: Array<{ id: string; name: string; house_id: string }>;
+  chores: Array<{ id: string; name: string; house_id: string; days_of_week?: string[]; cycle_weeks?: number }>;
   residents: Array<{ id: string; full_name: string }>;
   assignments: RotationAssignment[];
+}
+
+function getCurrentWeekNumber(cycleStartDate: string): number {
+  const start = new Date(cycleStartDate + "T00:00:00");
+  const now = new Date();
+  const diffMs = now.getTime() - start.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const weekNum = Math.floor(diffDays / 7) + 1;
+  return Math.max(1, weekNum);
 }
 
 export function RotationBoard({
@@ -40,6 +50,16 @@ export function RotationBoard({
   residents,
   assignments,
 }: Props) {
+  const currentWeek = getCurrentWeekNumber(rotation.cycle_start_date);
+
+  // Determine the max cycle weeks across all chores in this house
+  const maxCycleWeeks = chores.length > 0
+    ? Math.max(...chores.map((c) => c.cycle_weeks ?? 2))
+    : 2;
+
+  // Clamp current week to the cycle range
+  const displayWeek = Math.min(currentWeek, maxCycleWeeks);
+
   return (
     <Card>
       <CardHeader>
@@ -51,7 +71,9 @@ export function RotationBoard({
               {new Date(rotation.cycle_end_date).toLocaleDateString()}
             </p>
           </div>
-          <Badge variant="outline">2-Week Cycle</Badge>
+          <Badge variant="outline">
+            Week {displayWeek} of {maxCycleWeeks}
+          </Badge>
         </div>
       </CardHeader>
       <CardContent>
@@ -65,19 +87,9 @@ export function RotationBoard({
                 <th className="border p-2 text-left bg-muted min-w-[160px]">
                   Assigned To
                 </th>
-                <th className="border p-2 text-center bg-muted" colSpan={3}>
-                  Week 1
-                </th>
-                <th className="border p-2 text-center bg-muted" colSpan={3}>
-                  Week 2
-                </th>
-              </tr>
-              <tr>
-                <th className="border p-2" />
-                <th className="border p-2" />
-                {["Mon", "Wed", "Fri", "Mon", "Wed", "Fri"].map((d, i) => (
-                  <th key={i} className="border p-2 text-center text-xs">
-                    {d}
+                {ALL_DAYS.map((day) => (
+                  <th key={day} className="border p-2 text-center bg-muted text-xs">
+                    {DAY_LABELS[day]}
                   </th>
                 ))}
               </tr>
@@ -87,6 +99,8 @@ export function RotationBoard({
                 const assignment = assignments.find(
                   (a) => a.chore_id === chore.id
                 );
+                const choreDays: string[] = chore.days_of_week ?? ["monday", "wednesday", "friday"];
+
                 return (
                   <tr key={chore.id}>
                     <td className="border p-2 font-medium">{chore.name}</td>
@@ -101,24 +115,30 @@ export function RotationBoard({
                         />
                       )}
                     </td>
-                    {[1, 2].flatMap((week) =>
-                      (["monday", "wednesday", "friday"] as const).map(
-                        (day) => {
-                          const signoff = assignment?.chore_signoffs?.find(
-                            (s) =>
-                              s.week_number === week && s.day_of_week === day
-                          );
-                          return (
-                            <td
-                              key={`${chore.id}-${week}-${day}`}
-                              className="border p-2 text-center"
-                            >
-                              <SignoffBadge status={signoff?.status} />
-                            </td>
-                          );
-                        }
-                      )
-                    )}
+                    {ALL_DAYS.map((day) => {
+                      const isScheduled = choreDays.includes(day);
+                      if (!isScheduled) {
+                        return (
+                          <td
+                            key={`${chore.id}-${day}`}
+                            className="border p-2 text-center bg-muted/30"
+                          />
+                        );
+                      }
+                      const signoff = assignment?.chore_signoffs?.find(
+                        (s) =>
+                          s.week_number === displayWeek &&
+                          s.day_of_week === day
+                      );
+                      return (
+                        <td
+                          key={`${chore.id}-${day}`}
+                          className="border p-2 text-center"
+                        >
+                          <SignoffBadge status={signoff?.status} />
+                        </td>
+                      );
+                    })}
                   </tr>
                 );
               })}

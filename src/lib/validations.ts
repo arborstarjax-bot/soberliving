@@ -54,9 +54,43 @@ export const createBedAssignmentSchema = z.object({
 
 // --- Chores ---
 
+const dayOfWeekEnum = z.enum([
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+]);
+
+export type DayOfWeek = z.infer<typeof dayOfWeekEnum>;
+
+export const ALL_DAYS: DayOfWeek[] = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+];
+
+export const DAY_LABELS: Record<DayOfWeek, string> = {
+  monday: "Mon",
+  tuesday: "Tue",
+  wednesday: "Wed",
+  thursday: "Thu",
+  friday: "Fri",
+  saturday: "Sat",
+  sunday: "Sun",
+};
+
 export const createChoreSchema = z.object({
   house_id: z.string().uuid(),
   name: z.string().min(1, "Chore name is required").max(200),
+  days_of_week: z.array(dayOfWeekEnum).min(1, "Select at least one day"),
+  cycle_weeks: z.coerce.number().int().min(1).max(4),
 });
 
 export const updateChoreSchema = z.object({
