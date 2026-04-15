@@ -204,10 +204,10 @@ export async function markDemeritWorkedOff(
   return {};
 }
 
-export async function generateMissedChoreDemerits(houseId: string) {
+export async function generateMissedChoreDemerits(houseId?: string) {
   const user = await requireAuth();
   if (user.role === "resident") return { error: "Not authorized" };
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (houseId && user.role !== "admin" && !canAccessHouse(user, houseId)) {
     return { error: "Not authorized" };
   }
 
@@ -230,7 +230,7 @@ export async function generateMissedChoreDemerits(houseId: string) {
     return { count: 0 };
   }
 
-  // Filter to the specified house and mark as missed
+  // Filter to the specified house (or all accessible houses) and mark as missed
   let count = 0;
   for (const signoff of missedSignoffs) {
     const ra = signoff.rotation_assignment as unknown as {
@@ -238,7 +238,12 @@ export async function generateMissedChoreDemerits(houseId: string) {
       chore: { name: string; house_id: string } | null;
     } | null;
 
-    if (!ra?.chore || ra.chore.house_id !== houseId) continue;
+    if (!ra?.chore) continue;
+    // If houseId provided, filter to that house; otherwise process all accessible houses
+    if (houseId && ra.chore.house_id !== houseId) continue;
+    if (!houseId && user.role !== "admin" && !canAccessHouse(user, ra.chore.house_id)) continue;
+
+    const effectiveHouseId = ra.chore.house_id;
 
     // Mark signoff as missed
     await supabase
@@ -251,7 +256,7 @@ export async function generateMissedChoreDemerits(houseId: string) {
       .from("demerits")
       .insert({
         resident_id: ra.resident_id,
-        house_id: houseId,
+        house_id: effectiveHouseId,
         points: 1,
         reason: `Missed chore: ${ra.chore.name} on ${signoff.sign_off_date}`,
         category: "Missed Chore",
@@ -263,7 +268,7 @@ export async function generateMissedChoreDemerits(houseId: string) {
     if (demerit) {
       count++;
       await logActivity({
-        houseId,
+        houseId: effectiveHouseId,
         residentId: ra.resident_id,
         actorId: user.id,
         eventType: "demerit_issued",
