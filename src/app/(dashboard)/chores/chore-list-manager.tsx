@@ -21,12 +21,22 @@ interface ChoreWithTasks {
   tasks: ChoreTask[];
 }
 
+interface Exclusion {
+  id: string;
+  chore_id: string;
+  resident_id: string;
+  reason: string | null;
+  resident: { full_name: string } | null;
+}
+
 interface Props {
   houses: { id: string; name: string }[];
   chores: ChoreWithTasks[];
+  residents: { id: string; full_name: string; house_id: string }[];
+  exclusions: Exclusion[];
 }
 
-export function ChoreListManager({ houses, chores }: Props) {
+export function ChoreListManager({ houses, chores, residents, exclusions }: Props) {
   const [selectedHouse, setSelectedHouse] = useState(houses[0]?.id ?? "");
 
   const houseChores = chores.filter((c) => c.house_id === selectedHouse);
