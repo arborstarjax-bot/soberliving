@@ -1,8 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { createIncident } from "./actions";
-import { uploadIncidentPhoto } from "./actions";
+import { createIncident, uploadIncidentPhoto } from "./actions";
+import { compressImage } from "@/lib/compress-image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,12 +31,13 @@ export function CreateIncidentDialog({ houses, residents }: Props) {
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setPhotoFile(file);
+    const raw = e.target.files?.[0];
+    if (!raw) return;
     setUploading(true);
     setUploadError(null);
     try {
+      const file = await compressImage(raw);
+      setPhotoFile(file);
       const fd = new FormData();
       fd.append("file", file);
       const result = await uploadIncidentPhoto(fd);

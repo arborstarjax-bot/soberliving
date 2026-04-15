@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { createDemerit, uploadDemeritPhoto } from "./actions";
+import { compressImage } from "@/lib/compress-image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,12 +31,13 @@ export function CreateDemeritDialog({ houses, residents }: Props) {
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setPhotoFile(file);
+    const raw = e.target.files?.[0];
+    if (!raw) return;
     setUploading(true);
     setUploadError(null);
     try {
+      const file = await compressImage(raw);
+      setPhotoFile(file);
       const fd = new FormData();
       fd.append("file", file);
       const result = await uploadDemeritPhoto(fd);

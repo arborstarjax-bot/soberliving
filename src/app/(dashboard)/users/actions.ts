@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
-import { createUserSchema, assignManagerSchema } from "@/lib/validations";
+import { createUserSchema, assignManagerSchema, updateUserProfileSchema } from "@/lib/validations";
 
 export async function createUser(
   _prevState: { error?: string } | undefined,
@@ -153,27 +153,36 @@ export async function updateUserProfile(
 ) {
   const user = await requireRole("admin");
   const userId = formData.get("user_id") as string;
-  const fullName = formData.get("full_name") as string;
-  const phone = (formData.get("phone") as string) || null;
-  const role = formData.get("role") as string;
 
-  if (!userId || !fullName) return { error: "Name is required" };
+  if (!userId) return { error: "User ID is required" };
+
+  const parsed = updateUserProfileSchema.safeParse({
+    full_name: formData.get("full_name") || undefined,
+    phone: formData.get("phone") || undefined,
+    role: formData.get("role") || undefined,
+  });
+
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
 
   const supabase = await createClient();
 
   // Update user record
+  const updateFields: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (parsed.data.full_name) updateFields.full_name = parsed.data.full_name;
+  if (parsed.data.phone !== undefined) updateFields.phone = parsed.data.phone ?? null;
+
   const { error: userError } = await supabase
     .from("users")
-    .update({ full_name: fullName, phone, updated_at: new Date().toISOString() })
+    .update(updateFields)
     .eq("id", userId);
 
   if (userError) return { error: userError.message };
 
   // Update role if provided
-  if (role) {
+  if (parsed.data.role) {
     const { error: roleError } = await supabase
       .from("user_roles")
-      .upsert({ user_id: userId, role }, { onConflict: "user_id" });
+      .upsert({ user_id: userId, role: parsed.data.role }, { onConflict: "user_id" });
 
     if (roleError) return { error: roleError.message };
   }
@@ -183,7 +192,7 @@ export async function updateUserProfile(
     eventType: "user_updated",
     entityType: "user",
     entityId: userId,
-    description: `${fullName}'s profile updated by ${user.full_name}`,
+    description: `User profile updated by ${user.full_name}`,
   });
 
   revalidatePath(`/users/${userId}`);

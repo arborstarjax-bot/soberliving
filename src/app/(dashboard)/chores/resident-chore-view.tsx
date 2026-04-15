@@ -2,6 +2,7 @@
 
 import { useState, useTransition, useRef } from "react";
 import { markSignoffComplete, uploadChorePhoto } from "./actions";
+import { compressImage } from "@/lib/compress-image";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -223,11 +224,12 @@ function ResidentSignoffButton({ signoffId, forcePhoto }: { signoffId: string; f
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const raw = e.target.files?.[0];
+    if (!raw) return;
     setError(null);
 
     startTransition(async () => {
+      const file = await compressImage(raw);
       const formData = new FormData();
       formData.append("file", file);
       const uploadResult = await uploadChorePhoto(formData);

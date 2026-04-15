@@ -105,6 +105,7 @@ export function DemeritManager({
                   </DialogHeader>
                   <form action={action} className="space-y-4">
                     <input type="hidden" name="house_id" value={houseId} />
+                    <input type="hidden" name="points" value="1" />
                     <div className="space-y-2">
                       <Label>Resident *</Label>
                       <select

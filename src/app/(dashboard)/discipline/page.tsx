@@ -3,11 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, ShieldAlert } from "lucide-react";
-import { CreateDemeritDialog } from "./create-demerit-dialog";
+import { ShieldAlert } from "lucide-react";
 import { CreateRestrictionDialog } from "./create-restriction-dialog";
 import { LiftRestrictionButton } from "./lift-restriction-button";
-import { DemeritManager } from "./demerit-manager";
+import { DemeritMatrix } from "./demerit-matrix";
 
 const RESTRICTION_TYPE_LABELS: Record<string, string> = {
   no_leave: "No Leave",
@@ -42,23 +41,27 @@ export default async function DisciplinePage() {
   if (houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
   const { data: residents } = await residentsQuery;
 
-  // Get demerits
+  // Get demerits (select only needed columns to avoid body size limit)
   let demeritsQuery = supabase
     .from("demerits")
-    .select("*, resident:residents(full_name), house:houses(name)")
+    .select("id, resident_id, house_id, reason, notes, category, status, auto_generated, created_at, resolved_at, resolution_note, photo_url")
     .order("created_at", { ascending: false })
-    .limit(50);
+    .limit(200);
   if (houseFilter) demeritsQuery = demeritsQuery.in("house_id", houseFilter);
   const { data: demerits } = await demeritsQuery;
 
-  // Auto-expire restrictions past their end date
+  // Auto-expire restrictions past their end date (staff only, house-scoped)
   const today = new Date().toISOString().split("T")[0];
-  await supabase
-    .from("restrictions")
-    .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq("is_active", true)
-    .lte("end_date", today)
-    .not("end_date", "is", null);
+  if (isStaff) {
+    let expireQuery = supabase
+      .from("restrictions")
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq("is_active", true)
+      .lte("end_date", today)
+      .not("end_date", "is", null);
+    if (houseFilter) expireQuery = expireQuery.in("house_id", houseFilter);
+    await expireQuery;
+  }
 
   // Get active restrictions
   let restrictionsQuery = supabase
@@ -90,12 +93,30 @@ export default async function DisciplinePage() {
           </p>
         </div>
         {isStaff && (
-          <div className="flex items-center gap-2">
-            <CreateRestrictionDialog houses={houses ?? []} residents={residents ?? []} />
-            <CreateDemeritDialog houses={houses ?? []} residents={residents ?? []} />
-          </div>
+          <CreateRestrictionDialog houses={houses ?? []} residents={residents ?? []} />
         )}
       </div>
+
+      {/* Demerit Matrix Grid */}
+      <DemeritMatrix
+        houses={houses ?? []}
+        residents={residents ?? []}
+        demerits={(demerits ?? []).map((d) => ({
+          id: d.id,
+          resident_id: d.resident_id,
+          house_id: d.house_id,
+          reason: d.reason,
+          notes: d.notes ?? null,
+          category: d.category ?? null,
+          status: d.status ?? "active",
+          auto_generated: d.auto_generated ?? false,
+          created_at: d.created_at,
+          resolved_at: d.resolved_at ?? null,
+          resolution_note: d.resolution_note ?? null,
+          photo_url: d.photo_url ?? null,
+        }))}
+        userRole={user.role}
+      />
 
       {/* Active Restrictions */}
       <section>
@@ -154,49 +175,6 @@ export default async function DisciplinePage() {
           <Card>
             <CardContent className="py-8 text-center">
               <p className="text-muted-foreground">No active restrictions.</p>
-            </CardContent>
-          </Card>
-        )}
-      </section>
-
-      {/* Demerits — grouped by house with edit/delete/mark-worked-off */}
-      <section>
-        <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-          <AlertTriangle className="h-5 w-5" />
-          Demerits
-        </h2>
-        {(houses ?? []).map((house) => {
-          const houseDemerits = (demerits ?? []).filter((d) => d.house_id === house.id).map((d) => ({
-            id: d.id,
-            resident_id: d.resident_id,
-            reason: d.reason,
-            notes: d.notes ?? null,
-            status: d.status ?? "active",
-            auto_generated: d.auto_generated ?? false,
-            created_at: d.created_at,
-            worked_off_at: d.resolved_at ?? null,
-            worked_off_note: d.resolution_note ?? null,
-          }));
-          const houseResidents = (residents ?? []).filter((r) => r.house_id === house.id).map((r) => ({
-            id: r.id,
-            full_name: r.full_name,
-          }));
-          if (houseDemerits.length === 0 && houseResidents.length === 0) return null;
-          return (
-            <DemeritManager
-              key={house.id}
-              houseId={house.id}
-              houseName={house.name}
-              residents={houseResidents}
-              demerits={houseDemerits}
-              userRole={user.role}
-            />
-          );
-        })}
-        {(demerits ?? []).length === 0 && (
-          <Card>
-            <CardContent className="py-8 text-center">
-              <p className="text-muted-foreground">No demerits recorded yet.</p>
             </CardContent>
           </Card>
         )}
