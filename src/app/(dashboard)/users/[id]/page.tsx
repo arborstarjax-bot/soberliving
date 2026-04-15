@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { UserProfileForm } from "./user-profile-form";
+import { DocumentsList } from "@/components/documents-list";
 
 export default async function UserProfilePage(
   props: PageProps<"/users/[id]">
@@ -25,6 +26,13 @@ export default async function UserProfilePage(
     .select("id, name")
     .eq("is_active", true)
     .order("name");
+
+  // Get documents for this user
+  const { data: documents } = await supabase
+    .from("documents")
+    .select("id, name, document_type, storage_path, file_size, created_at")
+    .eq("user_id", id)
+    .order("created_at", { ascending: false });
 
   // Get activity log for this user
   const { data: activity } = await supabase
@@ -140,6 +148,9 @@ export default async function UserProfilePage(
         houses={houses ?? []}
         assignedHouseIds={assignedHouseIds}
       />
+
+      {/* Documents */}
+      <DocumentsList documents={documents ?? []} />
 
       {/* Activity Log */}
       <Card>

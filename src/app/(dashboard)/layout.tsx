@@ -1,4 +1,5 @@
 import { requireAuth } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
 
 export default async function DashboardLayout({
@@ -7,6 +8,11 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const user = await requireAuth();
+
+  // Redirect residents (or users marked as resident) who haven't completed intake
+  if ((user.role === "resident" || user.is_resident) && !user.intake_completed) {
+    redirect("/intake");
+  }
 
   return (
     <div className="flex h-screen overflow-hidden">

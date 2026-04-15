@@ -308,4 +308,6 @@ export interface SessionUser {
   full_name: string;
   role: UserRole;
   assigned_house_ids: string[];
+  intake_completed: boolean;
+  is_resident: boolean;
 }
