@@ -70,6 +70,14 @@ export default async function ResidentDetailPage(
     .eq("resident_id", id)
     .order("created_at", { ascending: false });
 
+  // Active restrictions
+  const { data: restrictions } = await supabase
+    .from("restrictions")
+    .select("*")
+    .eq("resident_id", id)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false });
+
   // Activity log
   const { data: activity } = await supabase
     .from("activity_log")
@@ -361,6 +369,32 @@ export default async function ResidentDetailPage(
                   <p className="text-xs text-muted-foreground mt-1 ml-7">
                     When enabled, this resident must upload a photo before signing off on chores.
                   </p>
+                </div>
+              )}
+
+              {/* Active Restrictions */}
+              {(restrictions ?? []).length > 0 && (
+                <div className="border-t pt-4">
+                  <p className="text-sm text-muted-foreground mb-2">Active Restrictions</p>
+                  <div className="space-y-2">
+                    {(restrictions ?? []).map((r) => (
+                      <div key={r.id} className="flex items-center justify-between text-sm border border-red-200 rounded-md p-2 bg-red-50">
+                        <div>
+                          <span className="font-medium capitalize">{r.restriction_type.replace("_", " ")}</span>
+                          {r.is_house_commitment && (
+                            <Badge variant="secondary" className="ml-2 text-xs">New Intake</Badge>
+                          )}
+                          <p className="text-xs text-muted-foreground">{r.description}</p>
+                          {r.notes && <p className="text-xs text-muted-foreground italic">Note: {r.notes}</p>}
+                        </div>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          {r.end_date
+                            ? `Until ${new Date(r.end_date).toLocaleDateString()}`
+                            : "Indefinite"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
               <div className="grid gap-4 sm:grid-cols-2">
