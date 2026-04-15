@@ -10,6 +10,8 @@ import { StartRotationDialog } from "./start-rotation-dialog";
 import { RotationBoard } from "./rotation-board";
 import { ChoreListManager } from "./chore-list-manager";
 import { SignoffReviewList } from "./signoff-review-list";
+import { ChoreScheduleEditor } from "./chore-schedule-editor";
+import { ChoreCompletionForm } from "./chore-completion-form";
 
 export default async function ChoresPage() {
   const user = await requireAuth();
@@ -87,17 +89,23 @@ export default async function ChoresPage() {
     });
   }
 
-  // For residents, get their own assignments
+  // For residents, get their own assignments + completion data
   let myAssignments: typeof rotations = null;
-  if (user.role === "resident") {
+  let myResidentId: string | undefined;
+  let myForcePhoto = false;
+  let myCompletedToday: string[] = [];
+  if (user.role === "resident" || user.is_resident) {
     const { data: resident } = await supabase
       .from("residents")
-      .select("id")
+      .select("id, force_photo, house_id")
       .eq("user_id", user.id)
       .eq("status", "active")
       .single();
 
     if (resident) {
+      myResidentId = resident.id;
+      myForcePhoto = resident.force_photo ?? false;
+
       const { data } = await supabase
         .from("chore_rotations")
         .select(
@@ -109,6 +117,15 @@ export default async function ChoresPage() {
           resident.id
         );
       myAssignments = data;
+
+      // Get today's completions
+      const today = new Date().toISOString().split("T")[0];
+      const { data: completions } = await supabase
+        .from("chore_completions")
+        .select("chore_id")
+        .eq("resident_id", resident.id)
+        .eq("completion_date", today);
+      myCompletedToday = (completions ?? []).map((c) => c.chore_id);
     }
   }
 
@@ -130,8 +147,23 @@ export default async function ChoresPage() {
       </div>
 
       {user.role === "resident" ? (
-        // Resident view: show their chore and signoff grid
-        <ResidentChoreView rotations={myAssignments ?? []} />
+        // Resident view: show their chore completion + signoff grid
+        <div className="space-y-6">
+          {myResidentId && (
+            <ChoreCompletionForm
+              chores={(chores ?? []).filter((c) => c.house_id === (residents ?? []).find((r) => r.id === myResidentId)?.house_id).map((c) => ({
+                id: c.id,
+                name: c.name,
+                house_id: c.house_id,
+                scheduled_days: c.scheduled_days ?? [],
+              }))}
+              residentId={myResidentId}
+              forcePhoto={myForcePhoto}
+              completedToday={myCompletedToday}
+            />
+          )}
+          <ResidentChoreView rotations={myAssignments ?? []} />
+        </div>
       ) : (
         // Staff view: tabs for rotation board, review, and chore management
         <Tabs defaultValue="rotation">
@@ -140,6 +172,7 @@ export default async function ChoresPage() {
             <TabsTrigger value="review">
               Needs Review ({filteredPendingSignoffs.length})
             </TabsTrigger>
+            <TabsTrigger value="schedule">Day Schedule</TabsTrigger>
             <TabsTrigger value="chore-list">Chore Lists</TabsTrigger>
           </TabsList>
 
@@ -185,6 +218,28 @@ export default async function ChoresPage() {
 
           <TabsContent value="review" className="mt-4">
             <SignoffReviewList signoffs={filteredPendingSignoffs} />
+          </TabsContent>
+
+          <TabsContent value="schedule" className="mt-4">
+            <div className="space-y-6">
+              {(houses ?? []).map((house) => {
+                const houseChores = (chores ?? []).filter(
+                  (c) => c.house_id === house.id
+                ).map((c) => ({
+                  id: c.id,
+                  name: c.name,
+                  scheduled_days: c.scheduled_days ?? [],
+                  house_id: c.house_id,
+                }));
+                return (
+                  <ChoreScheduleEditor
+                    key={house.id}
+                    chores={houseChores}
+                    houseName={house.name}
+                  />
+                );
+              })}
+            </div>
           </TabsContent>
 
           <TabsContent value="chore-list" className="mt-4">

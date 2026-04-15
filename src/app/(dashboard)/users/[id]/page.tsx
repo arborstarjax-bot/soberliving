@@ -30,7 +30,7 @@ export default async function UserProfilePage(
   // Get linked resident record (if any)
   const { data: residentRecord } = await supabase
     .from("residents")
-    .select("id, house_id, move_in_date, sobriety_date, date_of_birth, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, status")
+    .select("id, house_id, move_in_date, sobriety_date, date_of_birth, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, status, force_photo")
     .eq("user_id", id)
     .eq("status", "active")
     .maybeSingle();
@@ -164,6 +164,7 @@ export default async function UserProfilePage(
           emergencyContactName: residentRecord.emergency_contact_name,
           emergencyContactPhone: residentRecord.emergency_contact_phone,
           emergencyContactRelationship: residentRecord.emergency_contact_relationship ?? "",
+          forcePhoto: residentRecord.force_photo ?? false,
         } : null}
       />
 

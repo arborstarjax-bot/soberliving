@@ -43,7 +43,7 @@ import { createHouse } from "@/app/(dashboard)/houses/actions";
 import { createResident, assignBed } from "@/app/(dashboard)/residents/actions";
 import { createChore } from "@/app/(dashboard)/chores/actions";
 import { addChoreTask, removeChoreTask, archiveChore } from "@/app/(dashboard)/chores/actions";
-import { reviewLeaveRequest, markLeaveReturned } from "@/app/(dashboard)/leave-requests/actions";
+import { approveAdminRequest, denyAdminRequest, markLeaveReturned } from "@/app/(dashboard)/leave-requests/actions";
 import { createIncident } from "@/app/(dashboard)/incidents/actions";
 import { changeUserRole, deactivateUser, assignManagerToHouses } from "@/app/(dashboard)/users/actions";
 import { createPayment } from "@/app/(dashboard)/payments/actions";
@@ -836,7 +836,7 @@ function LeaveActions({ requestId, status }: { requestId: string; status: string
             size="sm"
             variant="destructive"
             disabled={isPending}
-            onClick={() => startTransition(() => { reviewLeaveRequest(requestId, "deny", denialNote); })}
+            onClick={() => startTransition(() => { denyAdminRequest(requestId, denialNote); })}
           >
             Deny
           </Button>
@@ -850,7 +850,7 @@ function LeaveActions({ requestId, status }: { requestId: string; status: string
             size="sm"
             variant="default"
             disabled={isPending}
-            onClick={() => startTransition(() => { reviewLeaveRequest(requestId, "approve"); })}
+            onClick={() => startTransition(() => { approveAdminRequest(requestId); })}
           >
             <Check className="mr-1 h-3 w-3" /> Approve
           </Button>

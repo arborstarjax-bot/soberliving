@@ -21,6 +21,8 @@ import {
   ShieldCheck,
   MessageSquareText,
   ClipboardList,
+  Bell,
+  Scale,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -91,6 +93,18 @@ const NAV_ITEMS: NavItem[] = [
     label: "Leave Requests",
     href: "/leave-requests",
     icon: CalendarClock,
+    roles: ["admin", "manager", "resident"],
+  },
+  {
+    label: "House Discipline",
+    href: "/discipline",
+    icon: Scale,
+    roles: ["admin", "manager", "resident"],
+  },
+  {
+    label: "Notifications",
+    href: "/notifications",
+    icon: Bell,
     roles: ["admin", "manager", "resident"],
   },
   {

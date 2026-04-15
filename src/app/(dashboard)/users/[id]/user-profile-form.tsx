@@ -30,6 +30,7 @@ interface ResidentProfile {
   emergencyContactName: string;
   emergencyContactPhone: string;
   emergencyContactRelationship: string;
+  forcePhoto: boolean;
 }
 
 interface Props {
@@ -263,6 +264,23 @@ export function UserProfileForm({
                     type="date"
                     defaultValue={residentProfile?.dateOfBirth ?? ""}
                   />
+                </div>
+
+                {/* Force Photo (disciplinary) */}
+                <div className="flex items-center gap-3 rounded-md border border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/10 p-3">
+                  <input
+                    type="checkbox"
+                    id="resident_force_photo"
+                    name="resident_force_photo"
+                    defaultChecked={residentProfile?.forcePhoto ?? false}
+                    className="h-4 w-4 rounded border-input"
+                  />
+                  <Label htmlFor="resident_force_photo" className="font-normal">
+                    <span className="font-medium">Force Photo Required</span>
+                    <span className="text-muted-foreground text-xs block">
+                      Disciplinary: resident must upload a photo when completing any chore
+                    </span>
+                  </Label>
                 </div>
 
                 <div className="border-t pt-3">

@@ -412,6 +412,7 @@ export async function updateUserProfile(
     const residentEmergencyName = formData.get("resident_emergency_contact_name") as string;
     const residentEmergencyPhone = formData.get("resident_emergency_contact_phone") as string;
     const residentEmergencyRelationship = formData.get("resident_emergency_contact_relationship") as string;
+    const residentForcePhoto = formData.get("resident_force_photo") === "on";
 
     if (!residentHouseId || !residentMoveInDate || !residentEmergencyName || !residentEmergencyPhone) {
       return { error: "House, move-in date, and emergency contact are required for residents" };
@@ -443,6 +444,7 @@ export async function updateUserProfile(
       emergency_contact_name: residentEmergencyName,
       emergency_contact_phone: residentEmergencyPhone,
       emergency_contact_relationship: residentEmergencyRelationship || null,
+      force_photo: residentForcePhoto,
       status: "active" as const,
     };
 

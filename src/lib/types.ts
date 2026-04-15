@@ -19,7 +19,7 @@ export type ChoreSignoffStatus =
 
 export type IncidentSeverity = "minor" | "major" | "critical";
 
-export type LeaveRequestStatus = "pending" | "approved" | "denied" | "returned";
+export type LeaveRequestStatus = "pending_cover" | "pending_manager" | "pending_admin" | "approved" | "rejected" | "returned";
 
 export type PaymentType = "rent" | "deposit" | "fee" | "other";
 
@@ -27,7 +27,7 @@ export type PaymentMethod = "cash" | "check" | "money_order" | "venmo" | "zelle"
 
 export type PaymentStatus = "completed" | "pending" | "refunded" | "void";
 
-export type DemeritStatus = "active" | "resolved" | "appealed";
+export type DemeritStatus = "active" | "worked_off" | "resolved" | "appealed";
 
 // --- Database Row Types ---
 
