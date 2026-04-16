@@ -33,7 +33,7 @@ export default async function DisciplinePage() {
     .select("id, name")
     .eq("is_active", true)
     .order("name");
-  if (houseFilter) housesQuery = housesQuery.in("id", houseFilter);
+  if (houseFilter && houseFilter.length > 0) housesQuery = housesQuery.in("id", houseFilter);
   if (residentHouseId) housesQuery = housesQuery.eq("id", residentHouseId);
   const { data: houses } = await housesQuery;
 
@@ -43,7 +43,7 @@ export default async function DisciplinePage() {
     .select("id, full_name, house_id")
     .eq("status", "active")
     .order("full_name");
-  if (houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
+  if (houseFilter && houseFilter.length > 0) residentsQuery = residentsQuery.in("house_id", houseFilter);
   if (residentRecordId) residentsQuery = residentsQuery.eq("id", residentRecordId);
   const { data: residents } = await residentsQuery;
 
@@ -53,7 +53,7 @@ export default async function DisciplinePage() {
     .select("id, resident_id, house_id, reason, notes, category, status, auto_generated, created_at, resolved_at, resolution_note, photo_url")
     .order("created_at", { ascending: false })
     .limit(200);
-  if (houseFilter) demeritsQuery = demeritsQuery.in("house_id", houseFilter);
+  if (houseFilter && houseFilter.length > 0) demeritsQuery = demeritsQuery.in("house_id", houseFilter);
   if (residentRecordId) demeritsQuery = demeritsQuery.eq("resident_id", residentRecordId);
   const { data: demerits } = await demeritsQuery;
 
@@ -66,7 +66,7 @@ export default async function DisciplinePage() {
       .eq("is_active", true)
       .lte("end_date", today)
       .not("end_date", "is", null);
-    if (houseFilter) expireQuery = expireQuery.in("house_id", houseFilter);
+    if (houseFilter && houseFilter.length > 0) expireQuery = expireQuery.in("house_id", houseFilter);
     await expireQuery;
   }
 
@@ -76,7 +76,7 @@ export default async function DisciplinePage() {
     .select("*, resident:residents(full_name), house:houses(name)")
     .eq("is_active", true)
     .order("created_at", { ascending: false });
-  if (houseFilter) restrictionsQuery = restrictionsQuery.in("house_id", houseFilter);
+  if (houseFilter && houseFilter.length > 0) restrictionsQuery = restrictionsQuery.in("house_id", houseFilter);
   if (residentRecordId) restrictionsQuery = restrictionsQuery.eq("resident_id", residentRecordId);
   const { data: activeRestrictions } = await restrictionsQuery;
 
@@ -87,7 +87,7 @@ export default async function DisciplinePage() {
     .eq("is_active", false)
     .order("updated_at", { ascending: false })
     .limit(20);
-  if (houseFilter) pastRestrictionsQuery = pastRestrictionsQuery.in("house_id", houseFilter);
+  if (houseFilter && houseFilter.length > 0) pastRestrictionsQuery = pastRestrictionsQuery.in("house_id", houseFilter);
   if (residentRecordId) pastRestrictionsQuery = pastRestrictionsQuery.eq("resident_id", residentRecordId);
   const { data: pastRestrictions } = await pastRestrictionsQuery;
 
@@ -162,7 +162,7 @@ export default async function DisciplinePage() {
       .select("id, severity, category, description, occurred_at, photo_url, resident:residents(full_name), house:houses(name), reporter:users!reported_by(full_name)")
       .order("occurred_at", { ascending: false })
       .limit(100);
-    if (houseFilter) incidentsQuery = incidentsQuery.in("house_id", houseFilter);
+    if (houseFilter && houseFilter.length > 0) incidentsQuery = incidentsQuery.in("house_id", houseFilter);
     const { data: rawIncidents } = await incidentsQuery;
     incidents = (rawIncidents ?? []).map((inc) => ({
       id: inc.id as string,

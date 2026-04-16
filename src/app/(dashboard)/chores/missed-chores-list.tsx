@@ -38,7 +38,7 @@ export function MissedChoresList({ signoffs }: Props) {
                 <p className="font-medium">{ra?.chore?.name}</p>
                 <p className="text-xs text-muted-foreground">
                   {ra?.resident?.full_name} ·{" "}
-                  {new Date(s.sign_off_date).toLocaleDateString()} ·{" "}
+                  {new Date(s.sign_off_date + "T00:00:00").toLocaleDateString()} ·{" "}
                   <span className="capitalize">{s.day_of_week}</span> (Week{" "}
                   {s.week_number})
                 </p>
