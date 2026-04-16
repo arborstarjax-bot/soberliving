@@ -6,68 +6,105 @@ import { Check, X } from "lucide-react";
 import {
   approveCoverRequest,
   denyCoverRequest,
+  approveManagerRequest,
+  denyManagerRequest,
+  approveAdminRequest,
+  denyAdminRequest,
 } from "@/app/(dashboard)/leave-requests/actions";
 import { markNotificationRead } from "./actions";
 
+export type ApprovalStage = "cover" | "manager" | "admin";
+
 interface Props {
+  stage: ApprovalStage;
   leaveRequestId: string;
   notificationId: string;
 }
 
+// Copy + server actions per stage. Kept in a table so we don't duplicate
+// the whole component three times — the UX is identical at every stage.
+const STAGE_CONFIG: Record<
+  ApprovalStage,
+  {
+    approveLabel: string;
+    successText: string;
+    approve: (id: string) => Promise<{ error?: string }>;
+    deny: (id: string, note?: string) => Promise<{ error?: string }>;
+  }
+> = {
+  cover: {
+    approveLabel: "Accept Cover",
+    successText: "Cover accepted — forwarded to your house manager.",
+    approve: approveCoverRequest,
+    deny: denyCoverRequest,
+  },
+  manager: {
+    approveLabel: "Approve",
+    successText: "Approved — forwarded to admin for final review.",
+    approve: approveManagerRequest,
+    deny: denyManagerRequest,
+  },
+  admin: {
+    // Admin's approve is the terminal step. Even if the manager hasn't
+    // reviewed yet, the server action short-circuits and flips straight
+    // to `approved` (admin trumps manager).
+    approveLabel: "Approve",
+    successText: "Leave request approved.",
+    approve: approveAdminRequest,
+    deny: denyAdminRequest,
+  },
+};
+
 /**
- * Inline Accept / Decline controls for a `cover_request` notification.
- * Wraps the existing leave-request server actions so the resident can
- * respond without navigating to /leave-requests. Marks the notification
- * read on success so it stops nagging.
+ * Inline Approve / Deny controls rendered directly inside a leave-request
+ * notification. Saves the reviewer from navigating to /leave-requests.
+ * Each stage wires the matching pair of server actions.
  */
-export function CoverRequestActions({ leaveRequestId, notificationId }: Props) {
+export function CoverRequestActions({
+  stage,
+  leaveRequestId,
+  notificationId,
+}: Props) {
+  const cfg = STAGE_CONFIG[stage];
   const [isPending, startTransition] = useTransition();
   const [showDenyInput, setShowDenyInput] = useState(false);
   const [denyReason, setDenyReason] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [resolved, setResolved] = useState<"accepted" | "declined" | null>(
-    null
-  );
+  const [resolved, setResolved] = useState<"approved" | "denied" | null>(null);
 
   if (resolved) {
     return (
-      <p className="text-xs text-muted-foreground">
-        {resolved === "accepted"
-          ? "Cover accepted — forwarded to your house manager."
-          : "Cover declined."}
+      <p className="text-xs text-muted-foreground mt-2">
+        {resolved === "approved" ? cfg.successText : "Request denied."}
       </p>
     );
   }
 
-  function handleAccept() {
+  function handleApprove() {
     setError(null);
     startTransition(async () => {
-      const result = await approveCoverRequest(leaveRequestId);
+      const result = await cfg.approve(leaveRequestId);
       if (result?.error) {
         setError(result.error);
         return;
       }
-      // The card's Mark-read button does the same thing, but we do it
-      // here so the +N sidebar counter ticks down the moment the user
-      // clicks Accept instead of waiting for a second interaction.
+      // Mark-read so the +N sidebar counter updates right away and
+      // the reviewer doesn't have to click twice.
       await markNotificationRead(notificationId);
-      setResolved("accepted");
+      setResolved("approved");
     });
   }
 
   function handleDeny() {
     setError(null);
     startTransition(async () => {
-      const result = await denyCoverRequest(
-        leaveRequestId,
-        denyReason || undefined
-      );
+      const result = await cfg.deny(leaveRequestId, denyReason || undefined);
       if (result?.error) {
         setError(result.error);
         return;
       }
       await markNotificationRead(notificationId);
-      setResolved("declined");
+      setResolved("denied");
     });
   }
 
@@ -89,7 +126,7 @@ export function CoverRequestActions({ leaveRequestId, notificationId }: Props) {
             disabled={isPending}
             onClick={handleDeny}
           >
-            {isPending ? "…" : "Decline"}
+            {isPending ? "…" : "Deny"}
           </Button>
           <Button
             size="sm"
@@ -110,9 +147,9 @@ export function CoverRequestActions({ leaveRequestId, notificationId }: Props) {
             variant="default"
             className="h-8"
             disabled={isPending}
-            onClick={handleAccept}
+            onClick={handleApprove}
           >
-            <Check className="mr-1 h-3 w-3" /> Accept Cover
+            <Check className="mr-1 h-3 w-3" /> {cfg.approveLabel}
           </Button>
           <Button
             size="sm"
@@ -121,7 +158,7 @@ export function CoverRequestActions({ leaveRequestId, notificationId }: Props) {
             disabled={isPending}
             onClick={() => setShowDenyInput(true)}
           >
-            <X className="mr-1 h-3 w-3" /> Decline
+            <X className="mr-1 h-3 w-3" /> Deny
           </Button>
         </div>
       )}

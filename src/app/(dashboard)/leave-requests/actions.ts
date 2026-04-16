@@ -399,18 +399,33 @@ export async function approveAdminRequest(requestId: string) {
     .single();
 
   if (!request) return { error: "Request not found" };
-  if (request.status !== "pending_admin") return { error: "Request is not pending admin approval" };
+  // Admin trumps manager: allow final approval at either the manager or
+  // admin stage. If the admin is short-circuiting the manager step, we
+  // still stamp the manager_approved_at fields to the admin so the
+  // approval timeline reads sanely.
+  if (request.status !== "pending_admin" && request.status !== "pending_manager") {
+    return { error: "Request cannot be approved from its current status" };
+  }
+
+  const nowIso = new Date().toISOString();
+  const skippedManager = request.status === "pending_manager";
+
+  const updates: Record<string, unknown> = {
+    status: "approved",
+    admin_approved_at: nowIso,
+    admin_approved_by: user.id,
+    reviewed_by: user.id,
+    reviewed_at: nowIso,
+    updated_at: nowIso,
+  };
+  if (skippedManager) {
+    updates.house_manager_approved_at = nowIso;
+    updates.house_manager_approved_by = user.id;
+  }
 
   const { error } = await supabase
     .from("leave_requests")
-    .update({
-      status: "approved",
-      admin_approved_at: new Date().toISOString(),
-      admin_approved_by: user.id,
-      reviewed_by: user.id,
-      reviewed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
+    .update(updates)
     .eq("id", requestId);
 
   if (error) return { error: error.message };
@@ -424,7 +439,9 @@ export async function approveAdminRequest(requestId: string) {
     eventType: "leave_approved",
     entityType: "leave_request",
     entityId: requestId,
-    description: `Leave request final approval by ${user.full_name} for ${resident?.full_name}`,
+    description:
+      `Leave request final approval by admin ${user.full_name} for ${resident?.full_name}` +
+      (skippedManager ? " (skipped manager review)" : ""),
   });
 
   if (resident?.user_id) {
@@ -456,7 +473,11 @@ export async function denyAdminRequest(requestId: string, note?: string) {
     .single();
 
   if (!request) return { error: "Request not found" };
-  if (request.status !== "pending_admin") return { error: "Request is not pending admin approval" };
+  // Mirror the admin-trumps-manager approval path: admins can deny at
+  // either the manager or admin stage.
+  if (request.status !== "pending_admin" && request.status !== "pending_manager") {
+    return { error: "Request cannot be denied from its current status" };
+  }
 
   const resident = request.resident as unknown as { full_name: string; house_id: string; user_id: string | null } | null;
 

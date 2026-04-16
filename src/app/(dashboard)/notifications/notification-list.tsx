@@ -183,17 +183,37 @@ export function NotificationList({
                     <p className="text-xs text-muted-foreground mt-1">
                       {new Date(n.created_at).toLocaleString()}
                     </p>
-                    {/* Cover-request notifications are actionable. Let
-                        the resident accept or decline right here instead
-                        of forcing a trip to /leave-requests. */}
-                    {n.type === "cover_request" &&
-                      n.entity_type === "leave_request" &&
-                      n.entity_id && (
-                        <CoverRequestActions
-                          leaveRequestId={n.entity_id}
-                          notificationId={n.id}
-                        />
-                      )}
+                    {/* Leave-request approval notifications are
+                        actionable. Covering resident, house manager, and
+                        admin can each approve/deny their stage inline so
+                        they don't have to leave the Notifications page.
+                        Server-side RBAC in the action still enforces
+                        who may act at each stage. */}
+                    {n.entity_type === "leave_request" && n.entity_id && (
+                      <>
+                        {n.type === "cover_request" && (
+                          <CoverRequestActions
+                            stage="cover"
+                            leaveRequestId={n.entity_id}
+                            notificationId={n.id}
+                          />
+                        )}
+                        {n.type === "manager_approval" && (
+                          <CoverRequestActions
+                            stage="manager"
+                            leaveRequestId={n.entity_id}
+                            notificationId={n.id}
+                          />
+                        )}
+                        {n.type === "admin_approval" && (
+                          <CoverRequestActions
+                            stage="admin"
+                            leaveRequestId={n.entity_id}
+                            notificationId={n.id}
+                          />
+                        )}
+                      </>
+                    )}
                   </div>
                   <div className="flex items-center gap-1">
                     {!n.is_read && (
