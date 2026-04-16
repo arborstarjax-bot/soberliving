@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-const publicRoutes = ["/login", "/signup"];
+const publicRoutes = ["/login", "/signup", "/register", "/reset-password"];
 
 export default async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Allow public routes and static assets
+  // Skip proxy for static assets and API auth routes
   if (
-    publicRoutes.some((r) => pathname.startsWith(r)) ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api/auth") ||
     pathname.includes(".")
@@ -16,7 +15,13 @@ export default async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const res = NextResponse.next();
+  // Allow public routes without any auth check
+  if (publicRoutes.some((r) => pathname.startsWith(r))) {
+    return NextResponse.next();
+  }
+
+  // For protected routes, check auth
+  let supabaseResponse = NextResponse.next({ request: req });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -27,9 +32,13 @@ export default async function proxy(req: NextRequest) {
           return req.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            res.cookies.set(name, value, options);
-          });
+          cookiesToSet.forEach(({ name, value }) =>
+            req.cookies.set(name, value)
+          );
+          supabaseResponse = NextResponse.next({ request: req });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          );
         },
       },
     }
@@ -45,7 +54,7 @@ export default async function proxy(req: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  return res;
+  return supabaseResponse;
 }
 
 export const config = {
