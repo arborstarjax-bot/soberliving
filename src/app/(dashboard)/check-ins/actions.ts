@@ -160,7 +160,7 @@ export async function submitCheckIn(
       status: "completed",
       form_data: formData,
       completed_at: new Date().toISOString(),
-      pdf_storage_path: fileName,
+      pdf_storage_path: uploadError ? null : fileName,
       updated_at: new Date().toISOString(),
     })
     .eq("id", responseId);

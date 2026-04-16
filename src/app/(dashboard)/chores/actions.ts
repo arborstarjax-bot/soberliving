@@ -653,6 +653,12 @@ export async function markSignoffComplete(signoffId: string, photoUrl?: string) 
 
   if (!signoff) return { error: "Signoff not found" };
 
+  // Only allow marking signoffs that are still pending
+  const currentStatus = (signoff as unknown as { status: string }).status;
+  if (currentStatus !== "pending") {
+    return { error: "This signoff has already been submitted or reviewed" };
+  }
+
   const assignment = signoff.rotation_assignment as unknown as {
     resident_id: string;
     rotation: { house_id: string } | null;
