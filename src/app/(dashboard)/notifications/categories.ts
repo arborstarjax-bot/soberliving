@@ -9,6 +9,7 @@ export const NOTIFICATION_TYPE_TO_CATEGORY: Record<string, string> = {
   leave_approved: "Leave",
   leave_rejected: "Leave",
   leave_returned: "Leave",
+  leave_requested: "Leave",
   chore_reminder: "Chores",
   chore_assigned: "Chores",
   chore_completed: "Chores",
@@ -29,6 +30,9 @@ export const NOTIFICATION_TYPE_TO_CATEGORY: Record<string, string> = {
   bed_assigned: "Housing",
   bed_changed: "Housing",
   discharge: "Housing",
+  intake_submitted: "Housing",
+  intake_approved: "Housing",
+  intake_reopened: "Housing",
 };
 
 export const NOTIFICATION_CATEGORIES = [

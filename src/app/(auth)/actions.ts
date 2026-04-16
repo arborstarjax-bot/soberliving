@@ -165,10 +165,23 @@ export async function signup(
     };
   }
 
-  // If Supabase didn't auto-sign-in (email-confirm path), sign in now so
-  // the new user lands straight on /intake without a second round-trip.
-  // If signIn fails (confirm-email gate), surface a friendly message.
+  // If Supabase auto-signed the user in (Confirm email is OFF in this
+  // project), data.session is already populated and we can fall through
+  // to the /dashboard redirect. If not, the user's email still needs
+  // confirmation — do NOT attempt signInWithPassword here, since that
+  // would try to bypass the confirmation gate. Always surface the
+  // "check your email" message so the flow respects whatever the
+  // Supabase project's Confirm-email setting is.
   if (!data.session) {
+    if (!data.user.email_confirmed_at) {
+      return {
+        success:
+          "Account created. Please check your email to confirm your address, then sign in.",
+      };
+    }
+    // Edge case: email is already confirmed but Supabase didn't hand
+    // back a session (e.g. anonymous-to-permanent upgrade). Kick off a
+    // normal sign-in so the user lands on /intake on the next tick.
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -176,7 +189,7 @@ export async function signup(
     if (signInError) {
       return {
         success:
-          "Account created. Please check your email to confirm your address, then sign in.",
+          "Account created. Please sign in to continue.",
       };
     }
   }
