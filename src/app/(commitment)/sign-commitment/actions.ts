@@ -69,10 +69,13 @@ export async function signCommitment(
 
   if (updateError) {
     // Revert user flag since commitment update failed
-    await adminClient
+    const { error: revertError } = await adminClient
       .from("users")
       .update({ commitment_signed: false, updated_at: new Date().toISOString() })
       .eq("id", user.id);
+    if (revertError) {
+      console.error("CRITICAL: Failed to revert commitment_signed flag for user", user.id, revertError.message);
+    }
     return { error: updateError.message };
   }
 

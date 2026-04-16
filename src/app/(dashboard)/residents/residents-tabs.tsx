@@ -157,8 +157,8 @@ export function ResidentsTabs({
 
   // Build tabs: "All" + one per house
   const tabs = [
-    { value: 0, label: "All", houseId: null },
-    ...houses.map((h, i) => ({ value: i + 1, label: h.name, houseId: h.id })),
+    { value: "all", label: "All", houseId: null as string | null },
+    ...houses.map((h) => ({ value: h.id, label: h.name, houseId: h.id as string | null })),
   ];
 
   function filterByHouse(list: UnifiedPerson[], houseId: string | null) {
@@ -280,7 +280,7 @@ export function ResidentsTabs({
 
       {/* Residents view */}
       {topTab === "residents" && (
-        <Tabs defaultValue={0}>
+        <Tabs defaultValue="all">
           <TabsList>
             {tabs.map((tab) => {
               const count = tab.houseId

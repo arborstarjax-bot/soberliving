@@ -56,10 +56,10 @@ export function DisciplineTabs({
   demeritMatrixContent,
 }: DisciplineTabsProps) {
   return (
-    <Tabs defaultValue={0}>
+    <Tabs defaultValue="demerits">
       <TabsList>
-        <TabsTrigger value={0}>Demerits</TabsTrigger>
-        <TabsTrigger value={1}>
+        <TabsTrigger value="demerits">Demerits</TabsTrigger>
+        <TabsTrigger value="restrictions">
           Restrictions
           {activeRestrictions.length > 0 && (
             <Badge variant="destructive" className="ml-1.5 text-[10px] px-1.5 py-0">
@@ -70,14 +70,14 @@ export function DisciplineTabs({
       </TabsList>
 
       {/* Demerits Tab */}
-      <TabsContent value={0}>
+      <TabsContent value="demerits">
         <div className="space-y-6 pt-2">
           {demeritMatrixContent}
         </div>
       </TabsContent>
 
       {/* Restrictions Tab */}
-      <TabsContent value={1}>
+      <TabsContent value="restrictions">
         <div className="space-y-6 pt-2">
           {/* Add Restriction button */}
           {addRestrictionButton && (
