@@ -12,6 +12,7 @@ export async function createDemerit(
   formData: FormData
 ) {
   const user = await requireAuth();
+  if (user.role === "resident") return { error: "Not authorized" };
   const parsed = createDemeritSchema.safeParse({
     resident_id: formData.get("resident_id"),
     house_id: formData.get("house_id"),

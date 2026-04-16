@@ -659,7 +659,8 @@ export async function markSignoffComplete(signoffId: string, photoUrl?: string) 
   } | null;
 
   const houseId = assignment?.rotation?.house_id ?? "";
-  const today = new Date().toISOString().split("T")[0];
+  const todayUtc = new Date().toISOString().split("T")[0];
+  const yesterdayUtc = new Date(Date.now() - 86400000).toISOString().split("T")[0];
 
   if (user.role === "resident") {
     // Residents can only complete their own signoffs
@@ -674,8 +675,8 @@ export async function markSignoffComplete(signoffId: string, photoUrl?: string) 
       return { error: "Not authorized" };
     }
 
-    // Residents can only mark today's signoff
-    if (signoff.sign_off_date !== today) {
+    // Residents can only mark today's signoff (with ±1 day grace for timezone offset)
+    if (signoff.sign_off_date !== todayUtc && signoff.sign_off_date !== yesterdayUtc) {
       return { error: "You can only sign off on today's chore" };
     }
 

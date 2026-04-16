@@ -462,12 +462,21 @@ function AddDemeritDialog({
     }
   }
 
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
   function handleSubmit(formData: FormData) {
     startTransition(async () => {
-      // Submit demerit(s) — if count > 1, submit multiple for same incident
+      setSubmitError(null);
+      // Submit demerit(s) — call server action directly to properly await each
       const count = Math.max(1, Math.min(10, demeritCount));
+      let created = 0;
       for (let i = 0; i < count; i++) {
-        await createAction(formData);
+        const result = await createDemerit(undefined, formData);
+        if (result?.error) {
+          setSubmitError(`Created ${created} of ${count} demerits. Error: ${result.error}`);
+          return;
+        }
+        created++;
       }
 
       // If restriction checkbox is checked, also submit the restriction (after all demerits)
@@ -650,6 +659,9 @@ function AddDemeritDialog({
             )}
           </div>
 
+          {submitError && (
+            <p className="text-sm text-destructive">{submitError}</p>
+          )}
           {createState?.error && (
             <p className="text-sm text-destructive">{createState.error}</p>
           )}

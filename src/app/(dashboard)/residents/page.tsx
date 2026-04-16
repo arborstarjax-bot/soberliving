@@ -43,7 +43,7 @@ export default async function ResidentsPage() {
     full_name: string;
     email: string;
     is_active: boolean;
-    user_roles: Array<{ role: string }>;
+    user_roles: { role: string } | Array<{ role: string }> | null;
     manager_house_assignments: Array<{
       house_id: string;
       houses: { name: string } | null;
@@ -78,11 +78,13 @@ export default async function ResidentsPage() {
   // Normalize staff users — only admins and managers
   const normalizedStaff = rawStaffUsers
     .filter((u) => {
-      const role = u.user_roles?.[0]?.role ?? "resident";
+      const roles = u.user_roles;
+      const role = Array.isArray(roles) ? roles[0]?.role : roles?.role;
       return role === "admin" || role === "manager";
     })
     .map((u) => {
-      const role = u.user_roles?.[0]?.role ?? "resident";
+      const roles = u.user_roles;
+      const role = (Array.isArray(roles) ? roles[0]?.role : roles?.role) ?? "resident";
       const activeAssignments = (u.manager_house_assignments ?? []).filter(
         (a) => !a.unassigned_at
       );
