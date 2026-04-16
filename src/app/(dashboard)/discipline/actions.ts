@@ -7,7 +7,7 @@ import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { createDemeritSchema } from "@/lib/validations";
 import { getHouseYesterday, isoDateInTz, DEFAULT_TIMEZONE } from "@/lib/timezone";
-import { sendNotification } from "@/lib/notifications";
+import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 
 export async function createDemerit(
   _prevState: { error?: string } | undefined,
@@ -84,6 +84,19 @@ export async function createDemerit(
       entityId: data.id,
     });
   }
+
+  await notifyHouseStaff(
+    parsed.data.house_id,
+    {
+      type: "demerit_issued",
+      title: "Demerit Issued",
+      message: `${parsed.data.points}-point demerit issued to ${resident?.full_name ?? "resident"}: ${parsed.data.reason}`,
+      actionUrl: "/discipline",
+      entityType: "demerit",
+      entityId: data.id,
+    },
+    { excludeUserId: user.id }
+  );
 
   revalidatePath("/discipline");
   revalidatePath(`/residents/${parsed.data.resident_id}`);

@@ -122,6 +122,16 @@ update public.users u
   where account_status <> 'active'
     and u.created_at < now() - interval '1 minute';
 
+-- ---- Intake denial metadata ----
+-- Admin-only intake denial stores a reason + who/when, surfaced to the
+-- applicant on /application-denied. Reopen clears all three columns and
+-- flips account_status back to 'active'. Nullable because only rejected
+-- rows ever have values.
+alter table public.users
+  add column if not exists denial_reason text,
+  add column if not exists denied_at timestamptz,
+  add column if not exists denied_by uuid references public.users(id) on delete set null;
+
 -- Allow a newly-signed-up user to insert their own public.users row.
 -- Without this, self-signup fails under RLS because the only existing
 -- insert policy requires an admin role. This policy is narrowly scoped

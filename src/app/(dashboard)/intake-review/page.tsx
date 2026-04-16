@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { IntakeReviewForm } from "./intake-review-form";
 import { MarkCompleteButton } from "./mark-complete-button";
 import { DenyButton } from "./deny-button";
+import { ReopenButton } from "./reopen-button";
 
 type Tab = "pending" | "approved" | "denied";
 
@@ -28,7 +29,8 @@ export default async function IntakeReviewPage({
 }: {
   searchParams: Promise<{ tab?: string }>;
 }) {
-  await requireRole("admin", "manager");
+  const currentUser = await requireRole("admin", "manager");
+  const isAdmin = currentUser.role === "admin";
   const adminClient = createAdminClient();
 
   const params = await searchParams;
@@ -47,7 +49,7 @@ export default async function IntakeReviewPage({
       adminClient
         .from("users")
         .select(
-          "id, full_name, email, phone, intake_completed, commitment_signed, is_resident, is_active, account_status, created_at"
+          "id, full_name, email, phone, intake_completed, commitment_signed, is_resident, is_active, account_status, denial_reason, denied_at, created_at"
         )
         .eq("intake_completed", true)
         .order("created_at", { ascending: false }),
@@ -169,7 +171,9 @@ export default async function IntakeReviewPage({
                   <CardTitle>{user.full_name}</CardTitle>
                   <div className="flex items-center gap-2">
                     <Badge>Application Complete</Badge>
-                    <DenyButton userId={user.id} userName={user.full_name} />
+                    {isAdmin && (
+                      <DenyButton userId={user.id} userName={user.full_name} />
+                    )}
                   </div>
                 </div>
                 <p className="text-sm text-muted-foreground">
@@ -300,21 +304,39 @@ export default async function IntakeReviewPage({
             <div className="divide-y">
               {visibleUsers.map((user) => {
                 const intake = intakeMap.get(user.id);
+                const u = user as typeof user & {
+                  denial_reason?: string | null;
+                  denied_at?: string | null;
+                };
                 return (
                   <div
                     key={user.id}
-                    className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between opacity-80"
+                    className="flex flex-col gap-2 p-4 sm:flex-row sm:items-start sm:justify-between"
                   >
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <p className="font-medium">{user.full_name}</p>
                       <p className="text-sm text-muted-foreground">
                         {user.email}
                         {intake?.completed_at
                           ? ` • Applied ${new Date(intake.completed_at).toLocaleDateString()}`
                           : ""}
+                        {u.denied_at
+                          ? ` • Denied ${new Date(u.denied_at).toLocaleDateString()}`
+                          : ""}
                       </p>
+                      {u.denial_reason?.trim() && (
+                        <p className="mt-2 rounded-md border bg-muted/40 p-2 text-xs text-muted-foreground">
+                          <span className="font-medium text-foreground">Reason:</span>{" "}
+                          {u.denial_reason}
+                        </p>
+                      )}
                     </div>
-                    <Badge variant="destructive">Denied</Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="destructive">Denied</Badge>
+                      {isAdmin && (
+                        <ReopenButton userId={user.id} userName={user.full_name} />
+                      )}
+                    </div>
                   </div>
                 );
               })}

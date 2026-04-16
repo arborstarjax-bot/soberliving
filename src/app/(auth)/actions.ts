@@ -43,11 +43,11 @@ export async function login(
   const status = (profile as { account_status?: string } | null)
     ?.account_status;
   if (status === "rejected") {
-    await supabase.auth.signOut();
-    return {
-      error:
-        "Your application was not approved. Please contact an administrator.",
-    };
+    // Leave the session intact and route them to the application-denied
+    // page so they can see the reason staff recorded. That page has its
+    // own auth check and signout control — it doesn't require an active
+    // account to render.
+    redirect("/application-denied");
   }
 
   // Redirect based on role

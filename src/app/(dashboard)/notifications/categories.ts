@@ -17,6 +17,7 @@ export const NOTIFICATION_TYPE_TO_CATEGORY: Record<string, string> = {
   missed_chore: "Discipline",
   demerit_issued: "Discipline",
   demerit_worked_off: "Discipline",
+  warning_issued: "Discipline",
   restriction_created: "Discipline",
   restriction_lifted: "Discipline",
   incident_logged: "Incidents",

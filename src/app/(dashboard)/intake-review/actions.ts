@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth";
+import { requireAuth, requireRole } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
+import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 import { z } from "zod";
 
 const checkInRestrictionSchema = z.object({
@@ -188,6 +189,32 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     description: `${currentUser.full_name} completed intake review for ${targetUser.full_name} — assigned to ${house?.name || "house"}`,
   });
 
+  // Notify the applicant that their application was approved and there's
+  // a commitment waiting for their signature, plus admins + this house's
+  // managers for awareness. Skip the acting staff member.
+  await sendNotification({
+    userId: data.userId,
+    type: "intake_approved",
+    title: "Application Approved",
+    message: `Your application was approved. Please sign your house commitment to finalize your move-in at ${house?.name ?? "your assigned house"}.`,
+    actionUrl: "/sign-commitment",
+    entityType: "user",
+    entityId: data.userId,
+  });
+
+  await notifyHouseStaff(
+    data.houseId,
+    {
+      type: "intake_approved",
+      title: "Intake Application Approved",
+      message: `${currentUser.full_name} approved ${targetUser.full_name}'s application for ${house?.name ?? "this house"}.`,
+      actionUrl: "/intake-review?tab=approved",
+      entityType: "user",
+      entityId: data.userId,
+    },
+    { excludeUserId: currentUser.id }
+  );
+
   revalidatePath("/intake-review");
   revalidatePath("/users");
   revalidatePath("/residents");
@@ -238,9 +265,15 @@ export async function markIntakeComplete(userId: string) {
   return {};
 }
 
-export async function denyIntakeApplication(userId: string, reason?: string) {
-  const currentUser = await requireRole("admin", "manager");
+export async function denyIntakeApplication(userId: string, reason: string) {
+  // Denial is admin-only. Managers can assign/approve applicants but
+  // only admins can mark an application rejected (matches the user's
+  // policy: admin trumps manager on terminal actions).
+  const currentUser = await requireRole("admin");
   const adminClient = createAdminClient();
+
+  const trimmedReason = (reason ?? "").trim();
+  if (!trimmedReason) return { error: "A denial reason is required" };
 
   const { data: targetUser } = await adminClient
     .from("users")
@@ -253,12 +286,16 @@ export async function denyIntakeApplication(userId: string, reason?: string) {
     return { error: "Application is already denied" };
   }
 
-  // Soft delete: flip account_status so login rejects them. Intake form
-  // rows and the users row itself stay in place for audit history.
+  // Soft delete: flip account_status so login routes them to the
+  // application-denied page. Intake form rows stay in place for audit
+  // history, and the denial reason is surfaced to the applicant.
   const { error } = await adminClient
     .from("users")
     .update({
       account_status: "rejected",
+      denial_reason: trimmedReason,
+      denied_at: new Date().toISOString(),
+      denied_by: currentUser.id,
       updated_at: new Date().toISOString(),
     })
     .eq("id", userId);
@@ -270,9 +307,63 @@ export async function denyIntakeApplication(userId: string, reason?: string) {
     eventType: "intake_application_denied",
     entityType: "user",
     entityId: userId,
-    description:
-      `${currentUser.full_name} denied ${targetUser.full_name}'s intake application` +
-      (reason ? ` — ${reason}` : ""),
+    description: `${currentUser.full_name} denied ${targetUser.full_name}'s intake application — ${trimmedReason}`,
+  });
+
+  revalidatePath("/intake-review");
+  return {};
+}
+
+export async function reopenIntakeApplication(userId: string) {
+  // Reopen is admin-only — mirrors denial. Clears the rejection fields
+  // and returns the user's application to the Pending tab (no commitment
+  // row was ever created, so the partition logic picks it up again).
+  const currentUser = await requireRole("admin");
+  const adminClient = createAdminClient();
+
+  const { data: targetUser } = await adminClient
+    .from("users")
+    .select("id, full_name, account_status")
+    .eq("id", userId)
+    .single();
+
+  if (!targetUser) return { error: "User not found" };
+  if ((targetUser as { account_status?: string }).account_status !== "rejected") {
+    return { error: "Application is not in the denied state" };
+  }
+
+  const { error } = await adminClient
+    .from("users")
+    .update({
+      account_status: "active",
+      denial_reason: null,
+      denied_at: null,
+      denied_by: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", userId);
+
+  if (error) return { error: error.message };
+
+  await logActivity({
+    actorId: currentUser.id,
+    eventType: "intake_application_reopened",
+    entityType: "user",
+    entityId: userId,
+    description: `${currentUser.full_name} reopened ${targetUser.full_name}'s denied intake application`,
+  });
+
+  // Let the applicant know they can come back in. Their intake packet
+  // is preserved, so they land on the dashboard and staff reviews them
+  // from Intake Review's Pending tab.
+  await sendNotification({
+    userId,
+    type: "intake_reopened",
+    title: "Application Reopened",
+    message: "Your application has been reopened for review. Please log in to continue.",
+    actionUrl: "/dashboard",
+    entityType: "user",
+    entityId: userId,
   });
 
   revalidatePath("/intake-review");

@@ -6,7 +6,7 @@ import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { createIncidentSchema } from "@/lib/validations";
-import { sendNotification } from "@/lib/notifications";
+import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 
 export async function createIncident(
   _prevState: { error?: string } | undefined,

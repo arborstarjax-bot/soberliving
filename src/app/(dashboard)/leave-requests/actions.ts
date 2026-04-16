@@ -1,11 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
-import { sendNotification, sendNotificationToHouseManagers, sendNotificationToAdmins } from "@/lib/notifications";
+import { sendNotification, sendNotificationToHouseManagers, sendNotificationToAdmins, notifyHouseStaff } from "@/lib/notifications";
 import { z } from "zod";
 
 const createLeaveRequestSchema = z.object({
@@ -137,15 +137,35 @@ export async function createLeaveRequest(
     });
   }
 
+  // Notify admins + managers of this house that a new leave request was
+  // submitted. Manager approval still requires the covering resident to
+  // accept first, but staff get visibility from the moment it's created.
+  // Skip the requesting user in case they're also staff.
+  await notifyHouseStaff(
+    resident.house_id,
+    {
+      type: "leave_requested",
+      title: "New Leave Request",
+      message: `${resident.full_name} requested leave from ${departureDate} to ${expectedReturnDate}.`,
+      actionUrl: "/leave-requests",
+      entityType: "leave_request",
+      entityId: data.id,
+    },
+    { excludeUserId: user.id }
+  );
+
   revalidatePath("/leave-requests");
   return {};
 }
 
 export async function approveCoverRequest(requestId: string) {
   const user = await requireAuth();
-  const supabase = await createClient();
+  // RLS on leave_requests only lets the requester or staff read/update
+  // rows — the covering resident is neither, so we use the admin client
+  // and do the permission check ourselves.
+  const adminClient = createAdminClient();
 
-  const { data: request } = await supabase
+  const { data: request } = await adminClient
     .from("leave_requests")
     .select("*, resident:residents!leave_requests_resident_id_fkey(full_name, house_id), covering_resident:residents!leave_requests_covering_resident_id_fkey(user_id, full_name)")
     .eq("id", requestId)
@@ -166,7 +186,7 @@ export async function approveCoverRequest(requestId: string) {
     return { error: "Not authorized for this house" };
   }
 
-  const { error } = await supabase
+  const { error } = await adminClient
     .from("leave_requests")
     .update({
       status: "pending_manager",

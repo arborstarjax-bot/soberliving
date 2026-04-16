@@ -6,7 +6,7 @@ import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { createWarningSchema } from "@/lib/validations";
-import { sendNotification } from "@/lib/notifications";
+import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 
 export async function createWarning(
   _prevState: { error?: string } | undefined,
@@ -73,6 +73,19 @@ export async function createWarning(
       entityId: data.id,
     });
   }
+
+  await notifyHouseStaff(
+    parsed.data.house_id,
+    {
+      type: "warning_issued",
+      title: "Warning Issued",
+      message: `Warning issued to ${resident?.full_name ?? "resident"}: ${parsed.data.reason}`,
+      actionUrl: "/discipline",
+      entityType: "warning",
+      entityId: data.id,
+    },
+    { excludeUserId: user.id }
+  );
 
   revalidatePath("/discipline");
   revalidatePath(`/residents/${parsed.data.resident_id}`);
@@ -241,6 +254,19 @@ export async function issueChoreWarning(signoffId: string, extraNote?: string) {
     });
   }
 
+  await notifyHouseStaff(
+    ra.chore.house_id,
+    {
+      type: "warning_issued",
+      title: "Warning Issued",
+      message: `Warning issued to ${resident?.full_name ?? "resident"} for missing "${ra.chore.name}" on ${signoff.sign_off_date}.`,
+      actionUrl: "/discipline",
+      entityType: "warning",
+      entityId: warning.id,
+    },
+    { excludeUserId: user.id }
+  );
+
   revalidatePath("/discipline");
   revalidatePath("/chores");
   return {};
@@ -332,6 +358,19 @@ export async function issueChoreDemerit(signoffId: string, extraNote?: string) {
       entityId: demerit.id,
     });
   }
+
+  await notifyHouseStaff(
+    ra.chore.house_id,
+    {
+      type: "demerit_issued",
+      title: "Demerit Issued",
+      message: `1-point demerit issued to ${resident?.full_name ?? "resident"}: ${reason}`,
+      actionUrl: "/discipline",
+      entityType: "demerit",
+      entityId: demerit.id,
+    },
+    { excludeUserId: user.id }
+  );
 
   revalidatePath("/discipline");
   revalidatePath("/chores");

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
+import { notifyHouseStaff } from "@/lib/notifications";
 
 export async function saveIntakeProgress(formData: Record<string, unknown>, signatures: Record<string, string>) {
   const user = await requireAuth();
@@ -104,6 +105,28 @@ export async function submitIntakeForm(
     entityType: "user",
     entityId: user.id,
     description: `${fullName} completed the intake packet`,
+  });
+
+  // Notify staff that a new intake application is waiting for review.
+  // Admins always see it; managers only see it if the applicant has
+  // already been tied to one of their houses (e.g. via admin invite).
+  // Self-signup applicants have no house yet, so only admins get pinged.
+  const { data: userRow } = await adminClient
+    .from("users")
+    .select("pending_house_id")
+    .eq("id", user.id)
+    .single();
+  const pendingHouseId =
+    (userRow as { pending_house_id?: string | null } | null)?.pending_house_id ??
+    null;
+
+  await notifyHouseStaff(pendingHouseId, {
+    type: "intake_submitted",
+    title: "New Intake Application",
+    message: `${fullName} submitted their intake packet and is waiting for review.`,
+    actionUrl: "/intake-review",
+    entityType: "user",
+    entityId: user.id,
   });
 
   revalidatePath("/dashboard");
