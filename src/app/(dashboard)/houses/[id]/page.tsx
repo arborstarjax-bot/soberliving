@@ -26,63 +26,60 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
     redirect("/dashboard");
   }
 
-  const { data: house } = await supabase
-    .from("houses")
-    .select("*")
-    .eq("id", id)
-    .single();
+  // All of these are independent once we have the house id — batch them
+  // into a single Promise.all so the detail page renders in one DB
+  // round-trip instead of seven sequential ones.
+  const [
+    { data: house },
+    { data: rooms },
+    { data: residents },
+    { data: managerAssignments },
+    { data: activity },
+    { data: supplies },
+    { data: documents },
+  ] = await Promise.all([
+    supabase.from("houses").select("*").eq("id", id).single(),
+    supabase
+      .from("rooms")
+      .select(
+        "*, beds(*, bed_assignments(*, resident:residents(id, full_name, status)))"
+      )
+      .eq("house_id", id)
+      .eq("is_active", true)
+      .order("sort_order")
+      .order("name"),
+    supabase
+      .from("residents")
+      .select("id, full_name, status, move_in_date, sobriety_date")
+      .eq("house_id", id)
+      .eq("status", "active")
+      .order("full_name"),
+    supabase
+      .from("manager_house_assignments")
+      .select("user_id, users(full_name, email)")
+      .eq("house_id", id)
+      .is("unassigned_at", null),
+    supabase
+      .from("activity_log")
+      .select("id, event_type, description, created_at")
+      .eq("house_id", id)
+      .order("created_at", { ascending: false })
+      .limit(20),
+    supabase
+      .from("supply_items")
+      .select("id, name, is_in_stock, updated_at")
+      .eq("house_id", id)
+      .order("name"),
+    supabase
+      .from("house_documents")
+      .select(
+        "id, name, description, file_path, mime_type, size_bytes, created_at, uploader:users!uploaded_by(full_name)"
+      )
+      .eq("house_id", id)
+      .order("created_at", { ascending: false }),
+  ]);
 
   if (!house) redirect("/houses");
-
-  // Rooms with beds and assignments
-  const { data: rooms } = await supabase
-    .from("rooms")
-    .select(
-      "*, beds(*, bed_assignments(*, resident:residents(id, full_name, status)))"
-    )
-    .eq("house_id", id)
-    .eq("is_active", true)
-    .order("sort_order")
-    .order("name");
-
-  // Residents in this house
-  const { data: residents } = await supabase
-    .from("residents")
-    .select("id, full_name, status, move_in_date, sobriety_date")
-    .eq("house_id", id)
-    .eq("status", "active")
-    .order("full_name");
-
-  // Managers assigned to this house
-  const { data: managerAssignments } = await supabase
-    .from("manager_house_assignments")
-    .select("user_id, users(full_name, email)")
-    .eq("house_id", id)
-    .is("unassigned_at", null);
-
-  // Recent activity for this house
-  const { data: activity } = await supabase
-    .from("activity_log")
-    .select("id, event_type, description, created_at")
-    .eq("house_id", id)
-    .order("created_at", { ascending: false })
-    .limit(20);
-
-  // Supplies for this house
-  const { data: supplies } = await supabase
-    .from("supply_items")
-    .select("id, name, is_in_stock, updated_at")
-    .eq("house_id", id)
-    .order("name");
-
-  // Documents for this house
-  const { data: documents } = await supabase
-    .from("house_documents")
-    .select(
-      "id, name, description, file_path, mime_type, size_bytes, created_at, uploader:users!uploaded_by(full_name)"
-    )
-    .eq("house_id", id)
-    .order("created_at", { ascending: false });
 
   const canManage = user.role === "admin" || user.role === "manager";
 
