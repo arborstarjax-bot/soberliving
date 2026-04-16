@@ -497,6 +497,7 @@ function AddDemeritDialog({
           return;
         }
       }
+      onOpenChange(false);
     });
   }
 
