@@ -8,17 +8,14 @@ export default async function CheckInLayout({
 }) {
   const user = await requireAuth();
 
-  // Only residents should access the check-in form
-  if (user.role !== "resident") {
-    redirect("/dashboard");
-  }
-
-  // Must have completed intake + commitment first
-  if (!user.intake_completed) {
-    redirect("/intake");
-  }
-  if (!user.commitment_signed) {
-    redirect("/sign-commitment");
+  // Residents must complete intake + commitment before anything else
+  if (user.role === "resident") {
+    if (!user.intake_completed) {
+      redirect("/intake");
+    }
+    if (!user.commitment_signed) {
+      redirect("/sign-commitment");
+    }
   }
 
   return (
