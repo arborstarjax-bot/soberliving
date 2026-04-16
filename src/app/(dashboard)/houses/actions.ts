@@ -481,6 +481,10 @@ export async function toggleBedEmpty(bedId: string, houseId: string) {
 
   if (!bed) return { error: "Bed not found" };
 
+  // Verify the bed actually belongs to the claimed house
+  const actualHouseId = (bed.rooms as unknown as { house_id: string })?.house_id;
+  if (actualHouseId !== houseId) return { error: "Not authorized" };
+
   // Toggle: if label ends with " [Empty]", remove it; otherwise add it
   const emptyTag = " [Empty]";
   const isMarkedEmpty = bed.label.endsWith(emptyTag);

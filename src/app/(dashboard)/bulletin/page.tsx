@@ -45,8 +45,8 @@ export default async function BulletinPage() {
 
   // Determine which house IDs the user can see posts from
   let visibleHouseIds: string[] | null = null; // null = all
-  if (user.role === "resident" && postableHouses.length > 0) {
-    visibleHouseIds = postableHouses.map((h) => h.id);
+  if (user.role === "resident") {
+    visibleHouseIds = postableHouses.length > 0 ? postableHouses.map((h) => h.id) : [];
   } else if (user.role === "manager") {
     visibleHouseIds = houseFilter && houseFilter.length > 0 ? houseFilter : [];
   }
@@ -60,8 +60,11 @@ export default async function BulletinPage() {
     .limit(100);
 
   // Filter: show posts for user's houses + global posts (house_id IS NULL)
-  if (visibleHouseIds) {
+  if (visibleHouseIds && visibleHouseIds.length > 0) {
     postsQuery = postsQuery.or(`house_id.in.(${visibleHouseIds.join(",")}),house_id.is.null`);
+  } else if (visibleHouseIds) {
+    // Empty array = user has access to no houses, only show global posts
+    postsQuery = postsQuery.is("house_id", null);
   }
 
   const { data: posts } = await postsQuery;

@@ -169,7 +169,7 @@ export function OccupancyGrid({
                               <span className="flex items-center gap-0.5 ml-1">
                                 <EditBedDialog
                                   bedId={bed.id}
-                                  currentLabel={bed.label}
+                                  currentLabel={displayLabel}
                                 />
                                 <DeleteBedButton
                                   bedId={bed.id}
