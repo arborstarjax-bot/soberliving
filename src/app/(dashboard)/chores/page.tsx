@@ -181,11 +181,27 @@ export default async function ChoresPage() {
           <TabsList>
             <TabsTrigger value="rotation">Current Rotation</TabsTrigger>
             <TabsTrigger value="review">
-              Needs Review ({filteredPendingSignoffs.length})
+              Needs Review
+              {filteredPendingSignoffs.length > 0 && (
+                <Badge
+                  variant="default"
+                  className="ml-1.5 text-[10px] px-1.5 py-0"
+                >
+                  {filteredPendingSignoffs.length}
+                </Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger value="chore-list">Chore Lists</TabsTrigger>
             <TabsTrigger value="missed">
-              Missed ({filteredMissedSignoffs.length})
+              Missed
+              {filteredMissedSignoffs.length > 0 && (
+                <Badge
+                  variant="destructive"
+                  className="ml-1.5 text-[10px] px-1.5 py-0"
+                >
+                  {filteredMissedSignoffs.length}
+                </Badge>
+              )}
             </TabsTrigger>
           </TabsList>
 

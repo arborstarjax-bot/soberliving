@@ -104,13 +104,37 @@ export default async function LeaveRequestsPage() {
       <Tabs defaultValue="pending">
         <TabsList>
           <TabsTrigger value="pending">
-            Pending ({pendingAll.length})
+            Pending
+            {pendingAll.length > 0 && (
+              <Badge
+                variant="default"
+                className="ml-1.5 text-[10px] px-1.5 py-0"
+              >
+                {pendingAll.length}
+              </Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="approved">
-            Approved ({approved.length})
+            Approved
+            {approved.length > 0 && (
+              <Badge
+                variant="secondary"
+                className="ml-1.5 text-[10px] px-1.5 py-0"
+              >
+                {approved.length}
+              </Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="history">
-            History ({others.length})
+            History
+            {others.length > 0 && (
+              <Badge
+                variant="secondary"
+                className="ml-1.5 text-[10px] px-1.5 py-0"
+              >
+                {others.length}
+              </Badge>
+            )}
           </TabsTrigger>
         </TabsList>
 

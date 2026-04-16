@@ -130,9 +130,14 @@ export function NotificationList({
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="all">
             All
-            <span className="ml-1 text-[10px] text-muted-foreground">
-              {notifications.length}
-            </span>
+            {notifications.length > 0 && (
+              <Badge
+                variant="secondary"
+                className="ml-1.5 text-[10px] px-1.5 py-0"
+              >
+                {notifications.length}
+              </Badge>
+            )}
           </TabsTrigger>
           {categories.map((cat) => {
             const items = buckets.get(cat) ?? [];
@@ -140,14 +145,25 @@ export function NotificationList({
             return (
               <TabsTrigger key={cat} value={cat}>
                 {cat}
-                <span className="ml-1 text-[10px] text-muted-foreground">
-                  {items.length}
-                </span>
-                {unread > 0 && (
-                  <span className="ml-1 inline-flex items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-medium text-primary-foreground">
+                {/* Unread count takes priority (primary color) — staff
+                    care about "how many do I still need to read" more
+                    than total volume. Falls back to total count badge
+                    when everything is read. */}
+                {unread > 0 ? (
+                  <Badge
+                    variant="default"
+                    className="ml-1.5 text-[10px] px-1.5 py-0"
+                  >
                     {unread}
-                  </span>
-                )}
+                  </Badge>
+                ) : items.length > 0 ? (
+                  <Badge
+                    variant="secondary"
+                    className="ml-1.5 text-[10px] px-1.5 py-0"
+                  >
+                    {items.length}
+                  </Badge>
+                ) : null}
               </TabsTrigger>
             );
           })}
