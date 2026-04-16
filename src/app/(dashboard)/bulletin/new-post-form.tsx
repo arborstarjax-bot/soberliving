@@ -75,6 +75,7 @@ export function NewPostForm({ houses, userRole, singleHouse }: NewPostFormProps)
   );
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [state, action, isPending] = useActionState(
@@ -101,24 +102,27 @@ export function NewPostForm({ houses, userRole, singleHouse }: NewPostFormProps)
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
+    setUploadError(null);
     try {
-      const compressed = await compressImage(file);
+      let fileToUpload = file;
+      try {
+        fileToUpload = await compressImage(file);
+      } catch {
+        // compression failed, use original
+      }
       const fd = new FormData();
-      fd.append("file", compressed);
+      fd.append("file", fileToUpload);
       const result = await uploadBulletinPhoto(fd);
-      if (result.url) {
+      if (result.error) {
+        setUploadError(result.error);
+      } else if (result.url) {
         setPhotoUrl(result.url);
       }
-    } catch {
-      // Fall back to uploading original file if compression fails
-      const fd = new FormData();
-      fd.append("file", file);
-      const result = await uploadBulletinPhoto(fd);
-      if (result.url) {
-        setPhotoUrl(result.url);
-      }
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
     }
   }
 
@@ -230,7 +234,7 @@ export function NewPostForm({ houses, userRole, singleHouse }: NewPostFormProps)
                     variant="ghost"
                     size="sm"
                     className="h-6 w-6 p-0"
-                    onClick={() => setPhotoUrl(null)}
+                    onClick={() => { setPhotoUrl(null); setUploadError(null); }}
                   >
                     <X className="h-3 w-3" />
                   </Button>
@@ -244,7 +248,32 @@ export function NewPostForm({ houses, userRole, singleHouse }: NewPostFormProps)
               className="hidden"
               onChange={handleFileChange}
             />
+            {uploadError && (
+              <p className="text-sm text-destructive">{uploadError}</p>
+            )}
           </div>
+
+          {/* Full-size photo preview */}
+          {photoUrl && (
+            <div className="relative rounded-lg overflow-hidden border">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={photoUrl}
+                alt="Photo preview"
+                className="max-h-64 w-full object-cover"
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="absolute top-2 right-2 h-7 rounded-full"
+                onClick={() => { setPhotoUrl(null); setUploadError(null); }}
+              >
+                <X className="h-3 w-3 mr-1" />
+                Remove
+              </Button>
+            </div>
+          )}
 
           {state?.error && (
             <p className="text-sm text-destructive">{state.error}</p>
