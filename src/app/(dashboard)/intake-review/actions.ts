@@ -111,27 +111,28 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     residentId = newResident.id;
   }
 
-  // Create bed assignment (skip entirely if "None" / private-room case)
-  // First end any existing active bed assignment for this resident.
+  // End any existing active bed assignment for this resident, then create
+  // a fresh assignment on the selected bed. Intake requires a concrete
+  // bed (enforced by the `bedId: z.string().uuid()` schema), so there is
+  // no "no bed" code path here — bed-empty state is handled by the
+  // occupancy grid's "Mark Not Available" button instead.
   await adminClient
     .from("bed_assignments")
     .update({ end_date: new Date().toISOString().split("T")[0] })
     .eq("resident_id", residentId)
     .is("end_date", null);
 
-  if (data.bedId) {
-    const { error: bedError } = await adminClient
-      .from("bed_assignments")
-      .insert({
-        resident_id: residentId,
-        bed_id: data.bedId,
-        start_date: data.commitmentStartDate,
-        assigned_by: currentUser.id,
-      });
+  const { error: bedError } = await adminClient
+    .from("bed_assignments")
+    .insert({
+      resident_id: residentId,
+      bed_id: data.bedId,
+      start_date: data.commitmentStartDate,
+      assigned_by: currentUser.id,
+    });
 
-    if (bedError) {
-      return { error: `Bed assignment failed: ${bedError.message}` };
-    }
+  if (bedError) {
+    return { error: `Bed assignment failed: ${bedError.message}` };
   }
 
   // Create house commitment record

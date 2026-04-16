@@ -114,6 +114,15 @@ export async function signup(
     return { error: "Failed to create account" };
   }
 
+  // When Supabase has email confirmation enabled and the email is already
+  // registered, signUp() returns a fake user with `identities: []` and no
+  // error (intentional, to avoid email enumeration). Detect that case so we
+  // don't upsert over the existing profile and clobber their account_status
+  // or full_name — which would lock out the real user.
+  if (Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    return { error: "An account with this email already exists" };
+  }
+
   // Upsert the public.users profile with account_status='pending'.
   // Use the admin client so this works whether or not Supabase returned
   // a session (email-confirm mode) and regardless of the users-insert

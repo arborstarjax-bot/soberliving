@@ -32,15 +32,23 @@ const EVENT_TO_CATEGORY: Record<string, string> = {
   chore_approved: "Chores",
   chore_rejected: "Chores",
   chore_overridden: "Chores",
+  // Actual event_type written by chores/actions.ts override path.
+  chore_signoff_overridden: "Chores",
   chore_unassigned: "Chores",
   chore_rotated: "Chores",
+  // Actual event_type written by rotation shuffle path.
+  rotation_shuffled: "Chores",
   rotation_created: "Chores",
   incident_logged: "Incidents",
   demerit_issued: "Discipline",
   demerit_edited: "Discipline",
   demerit_deleted: "Discipline",
   demerit_worked_off: "Discipline",
+  // Actual event_type written when a demerit is worked off.
+  demerit_resolved: "Discipline",
   restriction_added: "Discipline",
+  // Actual event_type written by discipline/actions.ts.
+  restriction_created: "Discipline",
   restriction_lifted: "Discipline",
   restriction_deleted: "Discipline",
   leave_requested: "Leave",
@@ -52,9 +60,13 @@ const EVENT_TO_CATEGORY: Record<string, string> = {
   intake_marked_complete: "Intake",
   check_in_sent: "Check-Ins",
   check_in_submitted: "Check-Ins",
+  // Actual event_type written when a check-in is completed.
+  check_in_completed: "Check-Ins",
   house_created: "Houses",
   house_updated: "Houses",
   house_deleted: "Houses",
+  // Actual event_type written by houses/actions.ts delete path.
+  house_archived: "Houses",
   room_created: "Houses",
   room_updated: "Houses",
   room_deleted: "Houses",

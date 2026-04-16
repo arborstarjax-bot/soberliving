@@ -230,17 +230,23 @@ export async function loadStateOfHouseData(
       )
       .eq("house_id", houseId),
     supabase
+      // Filter by the demerit's own house_id (not the resident's current
+      // house) so demerits stay attached to the house where they were
+      // issued — otherwise transferring a resident silently moves their
+      // disciplinary history between houses' State of the House reports.
       .from("demerits")
       .select(
-        "id, status, reason, category, created_at, worked_off_at, residents!inner(house_id, full_name)"
+        "id, status, reason, category, created_at, worked_off_at, residents(full_name)"
       )
-      .eq("residents.house_id", houseId),
+      .eq("house_id", houseId),
     supabase
+      // Same reasoning as demerits above — restrictions carry their own
+      // house_id that reflects where they were issued.
       .from("restrictions")
       .select(
-        "id, is_active, description, start_date, end_date, created_at, residents!inner(house_id, full_name)"
+        "id, is_active, description, start_date, end_date, created_at, residents(full_name)"
       )
-      .eq("residents.house_id", houseId),
+      .eq("house_id", houseId),
     supabase
       .from("supply_items")
       .select("id, name, is_in_stock")
