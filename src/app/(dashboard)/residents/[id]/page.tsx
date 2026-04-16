@@ -11,6 +11,7 @@ import { ResidentNotes } from "./notes";
 import { ForcePhotoToggle } from "./force-photo-toggle";
 import { EditResidentForm } from "./edit-resident-form";
 import { DischargeDialog } from "./discharge-dialog";
+import { ChangeBedDialog, type BedOption } from "./change-bed-dialog";
 import { DocumentsList } from "@/components/documents-list";
 
 export default async function ResidentDetailPage(
@@ -132,6 +133,46 @@ export default async function ResidentDetailPage(
   const isStaff = user.role === "admin" || user.role === "manager";
   const canEdit = user.role === "admin" || (user.role === "manager" && canAccessHouse(user, resident.house_id));
 
+  // Beds in resident's house for the Change Bed dialog
+  let bedOptions: BedOption[] = [];
+  if (canEdit && resident.status === "active") {
+    const activeBedIds = new Set(activeBeds.map((ba) => ba.bed_id));
+    const { data: houseBeds } = await supabase
+      .from("beds")
+      .select(
+        "id, label, is_active, room:rooms!inner(name, house_id), bed_assignments(id, end_date)"
+      )
+      .eq("room.house_id", resident.house_id)
+      .eq("is_active", true);
+    bedOptions = ((houseBeds ?? []) as unknown as {
+      id: string;
+      label: string;
+      room: { name: string } | null;
+      bed_assignments: { end_date: string | null }[];
+    }[])
+      .map((b) => ({
+        id: b.id,
+        label: b.label,
+        roomName: b.room?.name ?? "",
+        isOccupied: (b.bed_assignments ?? []).some((ba) => ba.end_date === null),
+        isCurrent: activeBedIds.has(b.id),
+      }))
+      .sort(
+        (a, b) =>
+          a.roomName.localeCompare(b.roomName) || a.label.localeCompare(b.label)
+      );
+  }
+
+  const currentBedLabel =
+    activeBeds.length > 0
+      ? activeBeds
+          .map(
+            (ba) =>
+              `${(ba.bed as { room: { name: string } })?.room?.name} — ${(ba.bed as { label: string })?.label}`
+          )
+          .join(", ")
+      : null;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -182,7 +223,7 @@ export default async function ResidentDetailPage(
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Room / Bed</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-2">
             {activeBeds.length > 0 ? (
               activeBeds.map((ba) => (
                 <p key={ba.id} className="text-sm">
@@ -191,7 +232,17 @@ export default async function ResidentDetailPage(
                 </p>
               ))
             ) : (
-              <p className="text-sm text-muted-foreground">Unassigned</p>
+              <p className="text-sm text-muted-foreground">
+                No specific bed assigned
+              </p>
+            )}
+            {canEdit && resident.status === "active" && (
+              <ChangeBedDialog
+                residentId={id}
+                houseId={resident.house_id}
+                beds={bedOptions}
+                currentBedLabel={currentBedLabel}
+              />
             )}
           </CardContent>
         </Card>

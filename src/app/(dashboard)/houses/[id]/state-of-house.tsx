@@ -66,7 +66,12 @@ export function StateOfHouseView({
         <Tabs value={range}>
           <TabsList className="flex-wrap h-auto">
             {RANGE_OPTIONS.map((opt) => (
-              <TabsTrigger key={opt.value} value={opt.value} render={<Link href={buildHref(opt.value)} />}>
+              <TabsTrigger
+                key={opt.value}
+                value={opt.value}
+                nativeButton={false}
+                render={<Link href={buildHref(opt.value)} />}
+              >
                 {opt.label}
               </TabsTrigger>
             ))}

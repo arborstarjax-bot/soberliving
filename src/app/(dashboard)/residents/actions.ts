@@ -356,6 +356,110 @@ export async function assignBed(
   return {};
 }
 
+/**
+ * Change a resident's current bed.
+ *
+ * - Vacates any active bed assignment(s) for the resident.
+ * - If `bedId` is provided, assigns them to that bed.
+ * - If `bedId` is null/empty, the resident is left with no specific bed
+ *   (i.e., occupying the room as a "private room" / no bed association).
+ */
+export async function changeResidentBed(
+  residentId: string,
+  bedId: string | null,
+  houseId: string
+) {
+  const user = await requireAuth();
+
+  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+    return { error: "Not authorized" };
+  }
+
+  const supabase = await createClient();
+
+  // If a target bed is specified, make sure it's free first so we don't
+  // vacate the resident and then fail to reassign.
+  if (bedId) {
+    const { data: occupied } = await supabase
+      .from("bed_assignments")
+      .select("id, resident_id")
+      .eq("bed_id", bedId)
+      .is("end_date", null)
+      .maybeSingle();
+
+    if (occupied && occupied.resident_id !== residentId) {
+      return { error: "This bed is already occupied" };
+    }
+    if (occupied && occupied.resident_id === residentId) {
+      // Resident is already in that bed — nothing to do.
+      return {};
+    }
+  }
+
+  const today = new Date().toISOString().split("T")[0];
+
+  // Vacate any active beds for this resident.
+  const { error: vacateError } = await supabase
+    .from("bed_assignments")
+    .update({ end_date: today })
+    .eq("resident_id", residentId)
+    .is("end_date", null);
+
+  if (vacateError) return { error: vacateError.message };
+
+  const { data: resident } = await supabase
+    .from("residents")
+    .select("full_name")
+    .eq("id", residentId)
+    .single();
+
+  if (bedId) {
+    const { data, error } = await supabase
+      .from("bed_assignments")
+      .insert({
+        resident_id: residentId,
+        bed_id: bedId,
+        start_date: today,
+        assigned_by: user.id,
+      })
+      .select("id")
+      .single();
+
+    if (error) return { error: error.message };
+
+    const { data: bed } = await supabase
+      .from("beds")
+      .select("label, room:rooms(name)")
+      .eq("id", bedId)
+      .single();
+
+    await logActivity({
+      houseId,
+      residentId,
+      actorId: user.id,
+      eventType: "bed_assigned",
+      entityType: "bed_assignment",
+      entityId: data.id,
+      description: `${resident?.full_name} moved to ${(bed?.room as unknown as { name: string } | null)?.name} / ${bed?.label} by ${user.full_name}`,
+      metadata: { bed_id: bedId },
+    });
+  } else {
+    await logActivity({
+      houseId,
+      residentId,
+      actorId: user.id,
+      eventType: "bed_vacated",
+      entityType: "resident",
+      entityId: residentId,
+      description: `${resident?.full_name} set to no specific bed (private room) by ${user.full_name}`,
+    });
+  }
+
+  revalidatePath(`/houses/${houseId}`);
+  revalidatePath(`/residents/${residentId}`);
+  return {};
+}
+
 export async function vacateBed(assignmentId: string) {
   const user = await requireAuth();
   const supabase = await createClient();
