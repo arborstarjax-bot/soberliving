@@ -16,8 +16,7 @@ const completeIntakeReviewSchema = z.object({
   userId: z.string().uuid(),
   houseId: z.string().uuid(),
   roomId: z.string().uuid(),
-  // bedId is optional — empty string ("" / undefined) means "private room / no specific bed".
-  bedId: z.string().uuid().optional().or(z.literal("")),
+  bedId: z.string().uuid(),
   paymentFrequency: z.enum(["weekly", "monthly"]),
   rentAmount: z.number().positive(),
   adminFee: z.number().min(0),

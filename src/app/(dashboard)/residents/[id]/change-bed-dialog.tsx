@@ -34,16 +34,24 @@ export function ChangeBedDialog({
   beds,
   currentBedLabel,
 }: Props) {
+  const currentId = beds.find((b) => b.isCurrent)?.id ?? "";
   const [open, setOpen] = useState(false);
-  const [selected, setSelected] = useState<string>("__none__");
+  const [selected, setSelected] = useState<string>(currentId);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
   function handleSave() {
     setError(null);
-    const bedId = selected === "__none__" ? null : selected;
+    if (!selected) {
+      setError("Please select a bed");
+      return;
+    }
+    if (selected === currentId) {
+      setOpen(false);
+      return;
+    }
     startTransition(async () => {
-      const result = await changeResidentBed(residentId, bedId, houseId);
+      const result = await changeResidentBed(residentId, selected, houseId);
       if (result?.error) {
         setError(result.error);
       } else {
@@ -59,7 +67,7 @@ export function ChangeBedDialog({
         setOpen(v);
         if (!v) {
           setError(null);
-          setSelected("__none__");
+          setSelected(currentId);
         }
       }}
     >
@@ -85,9 +93,7 @@ export function ChangeBedDialog({
               onChange={(e) => setSelected(e.target.value)}
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs focus:outline-none focus:ring-1"
             >
-              <option value="__none__">
-                None (private room / no specific bed)
-              </option>
+              <option value="">Select a bed...</option>
               {beds.map((b) => (
                 <option
                   key={b.id}
@@ -101,8 +107,9 @@ export function ChangeBedDialog({
               ))}
             </select>
             <p className="text-xs text-muted-foreground">
-              Choosing &quot;None&quot; vacates the current bed and leaves the
-              resident without a specific bed assignment.
+              To leave a bed empty without removing this resident, use the{" "}
+              <span className="font-medium">Mark empty</span> button on the
+              bed itself.
             </p>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}

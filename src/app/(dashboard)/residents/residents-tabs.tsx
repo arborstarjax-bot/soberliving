@@ -177,7 +177,10 @@ export function ResidentsTabs({
   unifiedPeople.sort((a, b) => a.sortOrder - b.sortOrder || a.full_name.localeCompare(b.full_name));
 
   const activePeople = unifiedPeople.filter((p) => p.status === "active");
-  const otherPeople = unifiedPeople.filter((p) => p.status !== "active");
+  const onLeavePeople = unifiedPeople.filter((p) => p.status === "on_leave");
+  const dischargedPeople = unifiedPeople.filter(
+    (p) => p.status === "discharged"
+  );
 
   // Build tabs: "All" + one per house
   const tabs = [
@@ -314,6 +317,42 @@ export function ResidentsTabs({
               </Badge>
             )}
           </button>
+          <button
+            onClick={() => setTopTab("on_leave")}
+            className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors flex items-center gap-1.5 ${
+              topTab === "on_leave"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            On Leave
+            {onLeavePeople.length > 0 && (
+              <Badge
+                variant={topTab === "on_leave" ? "secondary" : "outline"}
+                className="text-[10px] px-1.5 py-0"
+              >
+                {onLeavePeople.length}
+              </Badge>
+            )}
+          </button>
+          <button
+            onClick={() => setTopTab("discharged")}
+            className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors flex items-center gap-1.5 ${
+              topTab === "discharged"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            Discharged
+            {dischargedPeople.length > 0 && (
+              <Badge
+                variant={topTab === "discharged" ? "secondary" : "outline"}
+                className="text-[10px] px-1.5 py-0"
+              >
+                {dischargedPeople.length}
+              </Badge>
+            )}
+          </button>
         </div>
       )}
 
@@ -347,8 +386,7 @@ export function ResidentsTabs({
 
           {tabs.map((tab) => {
             const houseActive = filterByHouse(activePeople, tab.houseId);
-            const houseOther = filterByHouse(otherPeople, tab.houseId);
-            const isEmpty = houseActive.length === 0 && houseOther.length === 0;
+            const isEmpty = houseActive.length === 0;
 
             return (
               <TabsContent key={tab.value} value={tab.value}>
@@ -363,28 +401,37 @@ export function ResidentsTabs({
                       </CardContent>
                     </Card>
                   ) : (
-                    <>
-                      {houseActive.length > 0 && (
-                        <div className="space-y-2">
-                          {houseActive.map(renderPersonCard)}
-                        </div>
-                      )}
-
-                      {houseOther.length > 0 && (
-                        <div className="space-y-2">
-                          <h2 className="text-lg font-semibold text-muted-foreground">
-                            Discharged / On Leave
-                          </h2>
-                          {houseOther.map(renderPersonCard)}
-                        </div>
-                      )}
-                    </>
+                    <div className="space-y-2">
+                      {houseActive.map(renderPersonCard)}
+                    </div>
                   )}
                 </div>
               </TabsContent>
             );
           })}
         </Tabs>
+      )}
+
+      {/* On Leave view */}
+      {topTab === "on_leave" && (
+        <StatusPeopleTabs
+          tabs={tabs}
+          people={onLeavePeople}
+          filterByHouse={filterByHouse}
+          renderPersonCard={renderPersonCard}
+          emptyLabel="No residents currently on leave."
+        />
+      )}
+
+      {/* Discharged view */}
+      {topTab === "discharged" && (
+        <StatusPeopleTabs
+          tabs={tabs}
+          people={dischargedPeople}
+          filterByHouse={filterByHouse}
+          renderPersonCard={renderPersonCard}
+          emptyLabel="No discharged residents."
+        />
       )}
 
       {/* Intake view */}
@@ -517,5 +564,63 @@ export function ResidentsTabs({
         </div>
       )}
     </div>
+  );
+}
+
+interface StatusPeopleTabsProps {
+  tabs: { value: string; label: string; houseId: string | null }[];
+  people: UnifiedPerson[];
+  filterByHouse: (list: UnifiedPerson[], houseId: string | null) => UnifiedPerson[];
+  renderPersonCard: (p: UnifiedPerson) => React.ReactNode;
+  emptyLabel: string;
+}
+
+function StatusPeopleTabs({
+  tabs,
+  people,
+  filterByHouse,
+  renderPersonCard,
+  emptyLabel,
+}: StatusPeopleTabsProps) {
+  return (
+    <Tabs defaultValue="all">
+      <TabsList>
+        {tabs.map((tab) => {
+          const count = filterByHouse(people, tab.houseId).length;
+          return (
+            <TabsTrigger key={tab.value} value={tab.value}>
+              {tab.label}
+              {count > 0 && (
+                <Badge
+                  variant="secondary"
+                  className="ml-1.5 text-[10px] px-1.5 py-0"
+                >
+                  {count}
+                </Badge>
+              )}
+            </TabsTrigger>
+          );
+        })}
+      </TabsList>
+      {tabs.map((tab) => {
+        const items = filterByHouse(people, tab.houseId);
+        return (
+          <TabsContent key={tab.value} value={tab.value}>
+            <div className="pt-2">
+              {items.length === 0 ? (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <Users className="mx-auto h-12 w-12 text-muted-foreground/50" />
+                    <p className="mt-4 text-muted-foreground">{emptyLabel}</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-2">{items.map(renderPersonCard)}</div>
+              )}
+            </div>
+          </TabsContent>
+        );
+      })}
+    </Tabs>
   );
 }
