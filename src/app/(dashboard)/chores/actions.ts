@@ -995,6 +995,19 @@ export async function redoSignoff(signoffId: string, photoUrl?: string) {
 
   if (error) return { error: error.message };
 
+  // Notify house managers when a resident resubmits a signoff for review
+  const houseId = assignment?.rotation?.house_id ?? "";
+  if (houseId) {
+    await sendNotificationToHouseManagers(houseId, {
+      type: "chore_submitted",
+      title: "Chore Resubmitted for Review",
+      message: `${user.full_name} resubmitted a chore for review after rejection.`,
+      actionUrl: "/chores",
+      entityType: "chore_signoff",
+      entityId: signoffId,
+    });
+  }
+
   revalidatePath("/chores");
   return {};
 }

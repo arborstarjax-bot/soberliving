@@ -16,7 +16,7 @@ ALTER TABLE public.chore_signoffs
 
 -- 4. Add signoff_id FK to demerits table (links auto-demerits to missed signoffs)
 ALTER TABLE public.demerits
-  ADD COLUMN IF NOT EXISTS signoff_id uuid;
+  ADD COLUMN IF NOT EXISTS signoff_id uuid UNIQUE;
 
 DO $$
 BEGIN
