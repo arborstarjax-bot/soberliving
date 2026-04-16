@@ -27,6 +27,7 @@ import {
   NOTIFICATION_CATEGORIES,
   NOTIFICATION_TYPE_TO_CATEGORY,
 } from "./categories";
+import { CoverRequestActions } from "./cover-request-actions";
 
 interface Notification {
   id: string;
@@ -36,6 +37,8 @@ interface Notification {
   action_url: string | null;
   is_read: boolean;
   created_at: string;
+  entity_type: string | null;
+  entity_id: string | null;
 }
 
 function getCategory(type: string): string {
@@ -180,6 +183,17 @@ export function NotificationList({
                     <p className="text-xs text-muted-foreground mt-1">
                       {new Date(n.created_at).toLocaleString()}
                     </p>
+                    {/* Cover-request notifications are actionable. Let
+                        the resident accept or decline right here instead
+                        of forcing a trip to /leave-requests. */}
+                    {n.type === "cover_request" &&
+                      n.entity_type === "leave_request" &&
+                      n.entity_id && (
+                        <CoverRequestActions
+                          leaveRequestId={n.entity_id}
+                          notificationId={n.id}
+                        />
+                      )}
                   </div>
                   <div className="flex items-center gap-1">
                     {!n.is_read && (
