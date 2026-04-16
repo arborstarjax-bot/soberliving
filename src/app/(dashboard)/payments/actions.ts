@@ -47,7 +47,7 @@ export async function createPayment(
     .insert({
       ...parsed.data,
       recorded_by: user.id,
-      paid_at: parsed.data.paid_at || new Date().toISOString(),
+      paid_at: parsed.data.status === "completed" ? (parsed.data.paid_at || new Date().toISOString()) : (parsed.data.paid_at || null),
     })
     .select("id")
     .single();

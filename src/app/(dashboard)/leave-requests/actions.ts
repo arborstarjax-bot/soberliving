@@ -501,11 +501,15 @@ export async function markLeaveReturned(requestId: string) {
 
   const { data: request } = await supabase
     .from("leave_requests")
-    .select("resident_id, resident:residents!leave_requests_resident_id_fkey(full_name, house_id)")
+    .select("status, resident_id, resident:residents!leave_requests_resident_id_fkey(full_name, house_id)")
     .eq("id", requestId)
     .single();
 
   if (!request) return { error: "Request not found" };
+
+  // Only approved requests can be marked as returned
+  const requestStatus = (request as unknown as { status: string }).status;
+  if (requestStatus !== "approved") return { error: "Only approved requests can be marked as returned" };
 
   const resident = request.resident as unknown as { full_name: string; house_id: string } | null;
   const houseId = resident?.house_id ?? "";

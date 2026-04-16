@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useActionState } from "react";
+import { useState, useTransition } from "react";
 import { compressImage } from "@/lib/compress-image";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -407,7 +407,6 @@ function AddDemeritDialog({
   residents: Resident[];
   preselectedResident: Resident | null;
 }) {
-  const [createState, , createPending] = useActionState(createDemerit, undefined);
   const [selectedResident, setSelectedResident] = useState("");
   const [addRestriction, setAddRestriction] = useState(false);
   const [restrictionType, setRestrictionType] = useState("custom");
@@ -666,11 +665,8 @@ function AddDemeritDialog({
           {submitError && (
             <p className="text-sm text-destructive">{submitError}</p>
           )}
-          {createState?.error && (
-            <p className="text-sm text-destructive">{createState.error}</p>
-          )}
-          <Button type="submit" className="w-full" disabled={createPending || isPending || uploading}>
-            {createPending || isPending
+          <Button type="submit" className="w-full" disabled={isPending || uploading}>
+            {isPending
               ? "Issuing..."
               : addRestriction
                 ? `Issue ${demeritCount > 1 ? `${demeritCount} Demerits` : "Demerit"} + Restriction`
