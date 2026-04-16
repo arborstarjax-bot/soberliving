@@ -3,6 +3,8 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { BulletinFeed } from "./bulletin-feed";
 import { NewPostForm } from "./new-post-form";
+import { Pagination } from "@/components/pagination";
+import { getPageParams, buildPaginationMeta } from "@/lib/pagination";
 
 /** Parse photo_url field — handles both legacy single URL and new JSON array format */
 function parsePhotoUrls(raw: string | null): string[] {
@@ -18,10 +20,17 @@ function parsePhotoUrls(raw: string | null): string[] {
   return [raw];
 }
 
-export default async function BulletinPage() {
+interface BulletinPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function BulletinPage({ searchParams }: BulletinPageProps) {
   const user = await requireAuth();
   const supabase = createAdminClient();
   const houseFilter = getAccessibleHouseFilter(user);
+
+  const params = await searchParams;
+  const { page, offset, pageSize } = getPageParams(params);
 
   // Determine which houses the user can post to
   let postableHouses: { id: string; name: string }[] = [];
@@ -65,23 +74,51 @@ export default async function BulletinPage() {
     visibleHouseIds = houseFilter && houseFilter.length > 0 ? houseFilter : [];
   }
 
-  // Fetch posts with author role info and house name
-  let postsQuery = supabase
-    .from("bulletin_posts")
-    .select("*, author:users!author_id(full_name, user_roles(role)), house:houses(name)")
-    .order("is_pinned", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(100);
+  // Fetch pinned and non-pinned posts separately so pinned posts always
+  // show at the top regardless of which page the user is on, and only
+  // the non-pinned tail is paginated (20 per page).
+  const pinnedSelect =
+    "*, author:users!author_id(full_name, user_roles(role)), house:houses(name)";
 
-  // Filter: show posts for user's houses + global posts (house_id IS NULL)
+  let pinnedQuery = supabase
+    .from("bulletin_posts")
+    .select(pinnedSelect)
+    .eq("is_pinned", true)
+    .order("created_at", { ascending: false });
+
+  let nonPinnedQuery = supabase
+    .from("bulletin_posts")
+    .select(pinnedSelect, { count: "exact" })
+    .eq("is_pinned", false)
+    .order("created_at", { ascending: false })
+    .range(offset, offset + pageSize - 1);
+
+  // Filter: show posts for user's houses + global posts (house_id IS NULL).
+  // Applied identically to both pinned and non-pinned queries.
   if (visibleHouseIds && visibleHouseIds.length > 0) {
-    postsQuery = postsQuery.or(`house_id.in.(${visibleHouseIds.join(",")}),house_id.is.null`);
+    const orFilter = `house_id.in.(${visibleHouseIds.join(",")}),house_id.is.null`;
+    pinnedQuery = pinnedQuery.or(orFilter);
+    nonPinnedQuery = nonPinnedQuery.or(orFilter);
   } else if (visibleHouseIds) {
-    // Empty array = user has access to no houses, only show global posts
-    postsQuery = postsQuery.is("house_id", null);
+    // Empty array = user has access to no houses, only show global posts.
+    pinnedQuery = pinnedQuery.is("house_id", null);
+    nonPinnedQuery = nonPinnedQuery.is("house_id", null);
   }
 
-  const { data: posts } = await postsQuery;
+  const [pinnedRes, nonPinnedRes] = await Promise.all([
+    pinnedQuery,
+    nonPinnedQuery,
+  ]);
+
+  const pinnedPosts = pinnedRes.data ?? [];
+  const nonPinnedPosts = nonPinnedRes.data ?? [];
+  const posts = [...pinnedPosts, ...nonPinnedPosts];
+
+  const paginationMeta = buildPaginationMeta(
+    nonPinnedRes.count ?? 0,
+    page,
+    pageSize
+  );
 
   // Fetch likes and comments for all returned posts
   const postIds = (posts ?? []).map((p) => p.id as string);
@@ -181,6 +218,13 @@ export default async function BulletinPage() {
         posts={normalizedPosts}
         currentUserId={user.id}
         currentUserRole={user.role}
+      />
+
+      <Pagination
+        meta={paginationMeta}
+        basePath="/bulletin"
+        searchParams={params}
+        itemLabel="posts"
       />
     </div>
   );
