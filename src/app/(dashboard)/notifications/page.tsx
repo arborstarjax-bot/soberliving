@@ -70,6 +70,35 @@ export default async function NotificationsPage({ searchParams }: PageProps) {
 
   const meta = buildPaginationMeta(count ?? 0, page, pageSize);
 
+  // Batch-fetch the current status of every leave_request that any
+  // actionable notification on this page links to. We use this to
+  // replace stale Approve/Deny buttons on old notifications with a
+  // resolved-state badge (e.g. "Already approved", "Denied") once the
+  // underlying request has moved past that reviewer's stage.
+  const leaveIds = Array.from(
+    new Set(
+      (notifications ?? [])
+        .filter((n) => n.entity_type === "leave_request" && n.entity_id)
+        .map((n) => n.entity_id as string)
+    )
+  );
+  const leaveStatusMap: Record<
+    string,
+    { status: string; rejection_step: string | null }
+  > = {};
+  if (leaveIds.length > 0) {
+    const { data: leaves } = await supabase
+      .from("leave_requests")
+      .select("id, status, rejection_step")
+      .in("id", leaveIds);
+    for (const l of leaves ?? []) {
+      leaveStatusMap[l.id as string] = {
+        status: l.status as string,
+        rejection_step: (l.rejection_step as string | null) ?? null,
+      };
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -83,6 +112,7 @@ export default async function NotificationsPage({ searchParams }: PageProps) {
         activeTab={activeTab}
         meta={meta}
         searchParams={params}
+        leaveStatusMap={leaveStatusMap}
       />
     </div>
   );

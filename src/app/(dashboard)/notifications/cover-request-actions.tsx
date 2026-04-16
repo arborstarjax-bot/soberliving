@@ -19,6 +19,53 @@ interface Props {
   stage: ApprovalStage;
   leaveRequestId: string;
   notificationId: string;
+  // Current status of the underlying leave_request, queried server-side
+  // when the Notifications page loads. Used to decide whether this
+  // stage's Approve/Deny controls are still actionable or should be
+  // replaced with a resolved-state badge so old notifications don't
+  // expose stale actions after the request has moved on.
+  currentStatus?: string;
+  rejectionStep?: string | null;
+}
+
+// Each stage is only actionable while the underlying request is in its
+// matching pending state. Admin is additionally allowed to act on a
+// request still in pending_manager (admin-trumps-manager short-circuit
+// lives in the server action).
+function isStageActionable(
+  stage: ApprovalStage,
+  status: string | undefined
+): boolean {
+  if (!status) return true; // unknown — fall back to the old behavior
+  if (stage === "cover") return status === "pending_cover";
+  if (stage === "manager") return status === "pending_manager";
+  return status === "pending_admin" || status === "pending_manager";
+}
+
+// Human-readable label that replaces Approve/Deny when the stage is no
+// longer actionable. Mirrors the lifecycle of the leave_request.
+function resolvedLabel(
+  stage: ApprovalStage,
+  status: string,
+  rejectionStep: string | null
+): { label: string; tone: "approved" | "denied" | "neutral" } {
+  if (status === "approved") return { label: "Approved", tone: "approved" };
+  if (status === "returned") return { label: "Returned", tone: "approved" };
+  if (status === "cancelled") return { label: "Cancelled", tone: "neutral" };
+  if (status === "rejected") {
+    if (rejectionStep === "cover") return { label: "Cover declined", tone: "denied" };
+    if (rejectionStep === "manager") return { label: "Denied by manager", tone: "denied" };
+    if (rejectionStep === "admin") return { label: "Denied by admin", tone: "denied" };
+    return { label: "Denied", tone: "denied" };
+  }
+  // Still pending, but at a later stage than this notification covers.
+  if (stage === "cover" && (status === "pending_manager" || status === "pending_admin")) {
+    return { label: "Cover accepted", tone: "approved" };
+  }
+  if (stage === "manager" && status === "pending_admin") {
+    return { label: "Approved by manager", tone: "approved" };
+  }
+  return { label: status, tone: "neutral" };
 }
 
 // Copy + server actions per stage. Kept in a table so we don't duplicate
@@ -64,6 +111,8 @@ export function CoverRequestActions({
   stage,
   leaveRequestId,
   notificationId,
+  currentStatus,
+  rejectionStep = null,
 }: Props) {
   const cfg = STAGE_CONFIG[stage];
   const [isPending, startTransition] = useTransition();
@@ -77,6 +126,30 @@ export function CoverRequestActions({
       <p className="text-xs text-muted-foreground mt-2">
         {resolved === "approved" ? cfg.successText : "Request denied."}
       </p>
+    );
+  }
+
+  // If the underlying leave request has moved past this reviewer's stage
+  // (e.g. the admin already approved, or another reviewer denied), show
+  // the resolved state instead of stale Approve/Deny buttons. Old
+  // notifications stay on the page but accurately reflect the current
+  // lifecycle of the request.
+  if (currentStatus && !isStageActionable(stage, currentStatus)) {
+    const { label, tone } = resolvedLabel(stage, currentStatus, rejectionStep);
+    const toneClass =
+      tone === "approved"
+        ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-400"
+        : tone === "denied"
+          ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-400"
+          : "border-border bg-muted text-muted-foreground";
+    return (
+      <div className="mt-2">
+        <span
+          className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${toneClass}`}
+        >
+          {label}
+        </span>
+      </div>
     );
   }
 

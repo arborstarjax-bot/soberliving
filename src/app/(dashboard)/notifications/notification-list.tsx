@@ -80,11 +80,17 @@ function buildTabHref(
   return qs ? `/notifications?${qs}` : "/notifications";
 }
 
+interface LeaveStatus {
+  status: string;
+  rejection_step: string | null;
+}
+
 interface NotificationListProps {
   notifications: Notification[];
   activeTab: string;
   meta: PaginationMeta;
   searchParams: Record<string, string | string[] | undefined>;
+  leaveStatusMap?: Record<string, LeaveStatus>;
 }
 
 export function NotificationList({
@@ -92,6 +98,7 @@ export function NotificationList({
   activeTab,
   meta,
   searchParams,
+  leaveStatusMap = {},
 }: NotificationListProps) {
   const [isPending, startTransition] = useTransition();
   const unreadOnPage = notifications.filter((n) => !n.is_read).length;
@@ -196,6 +203,10 @@ export function NotificationList({
                             stage="cover"
                             leaveRequestId={n.entity_id}
                             notificationId={n.id}
+                            currentStatus={leaveStatusMap[n.entity_id]?.status}
+                            rejectionStep={
+                              leaveStatusMap[n.entity_id]?.rejection_step ?? null
+                            }
                           />
                         )}
                         {n.type === "manager_approval" && (
@@ -203,6 +214,10 @@ export function NotificationList({
                             stage="manager"
                             leaveRequestId={n.entity_id}
                             notificationId={n.id}
+                            currentStatus={leaveStatusMap[n.entity_id]?.status}
+                            rejectionStep={
+                              leaveStatusMap[n.entity_id]?.rejection_step ?? null
+                            }
                           />
                         )}
                         {n.type === "admin_approval" && (
@@ -210,6 +225,10 @@ export function NotificationList({
                             stage="admin"
                             leaveRequestId={n.entity_id}
                             notificationId={n.id}
+                            currentStatus={leaveStatusMap[n.entity_id]?.status}
+                            rejectionStep={
+                              leaveStatusMap[n.entity_id]?.rejection_step ?? null
+                            }
                           />
                         )}
                       </>
