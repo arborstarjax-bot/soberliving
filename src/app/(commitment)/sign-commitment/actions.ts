@@ -42,6 +42,20 @@ export async function signCommitment(
     return { error: "Commitment not found or already signed" };
   }
 
+  // Mark commitment_signed on user FIRST — if this fails the commitment
+  // stays pending_resident_signature and the user can retry.
+  const { error: userError } = await adminClient
+    .from("users")
+    .update({
+      commitment_signed: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", user.id);
+
+  if (userError) {
+    return { error: userError.message };
+  }
+
   // Update commitment with resident signature
   const { error: updateError } = await adminClient
     .from("house_commitments")
@@ -54,6 +68,11 @@ export async function signCommitment(
     .eq("id", commitmentId);
 
   if (updateError) {
+    // Revert user flag since commitment update failed
+    await adminClient
+      .from("users")
+      .update({ commitment_signed: false, updated_at: new Date().toISOString() })
+      .eq("id", user.id);
     return { error: updateError.message };
   }
 
@@ -84,15 +103,6 @@ export async function signCommitment(
       .update({ pdf_storage_path: fileName })
       .eq("id", commitmentId);
   }
-
-  // Mark commitment_signed on user
-  await adminClient
-    .from("users")
-    .update({
-      commitment_signed: true,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", user.id);
 
   await logActivity({
     actorId: user.id,

@@ -88,6 +88,7 @@ export async function updateHouse(houseId: string, formData: FormData) {
 
   revalidatePath(`/houses/${houseId}`);
   revalidatePath("/houses");
+  return {};
 }
 
 export async function archiveHouse(houseId: string) {

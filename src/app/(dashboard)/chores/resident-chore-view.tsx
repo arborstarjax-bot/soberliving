@@ -237,7 +237,12 @@ function ResidentSignoffButton({ signoffId, forcePhoto }: { signoffId: string; f
         setError(uploadResult.error);
         return;
       }
-      await handleSignoff(uploadResult.url);
+      // Call server action directly instead of handleSignoff to avoid nested startTransition
+      const result = await markSignoffComplete(signoffId, uploadResult.url);
+      if (result?.error) {
+        setError(result.error);
+        setShowPhotoUpload(false);
+      }
     });
   }
 
