@@ -311,11 +311,6 @@ export function ResidentsTabs({
             }`}
           >
             Check Ins
-            {checkInBatches.length > 0 && (
-              <Badge variant={topTab === "checkins" ? "secondary" : "outline"} className="text-[10px] px-1.5 py-0">
-                {checkInBatches.length}
-              </Badge>
-            )}
           </button>
           <button
             onClick={() => setTopTab("on_leave")}
@@ -344,14 +339,6 @@ export function ResidentsTabs({
             }`}
           >
             Discharged
-            {dischargedPeople.length > 0 && (
-              <Badge
-                variant={topTab === "discharged" ? "secondary" : "outline"}
-                className="text-[10px] px-1.5 py-0"
-              >
-                {dischargedPeople.length}
-              </Badge>
-            )}
           </button>
         </div>
       )}
