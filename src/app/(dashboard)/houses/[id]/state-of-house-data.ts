@@ -108,6 +108,12 @@ export interface DateRange {
   startIso: string | null; // null = no lower bound (all-time "To Date")
   endIso: string; // inclusive end, ISO date
   label: string;
+  // Timezone used when the range was built. Threaded into isIn() so that
+  // date-only record values (YYYY-MM-DD) are normalized against the same
+  // local midnight the range boundaries were computed from. Without this,
+  // a resident who moved in on the boundary day in a PT house would be
+  // dropped because UTC midnight (00:00Z) is before PT midnight (07:00Z).
+  timezone: string;
 }
 
 export function resolveRange(
@@ -130,6 +136,7 @@ export function resolveRange(
         startIso: startOfDayInTz(todayStr, timezone),
         endIso,
         label: "Today",
+        timezone,
       };
     }
     case "month": {
@@ -147,6 +154,7 @@ export function resolveRange(
         startIso: startOfDayInTz(firstOfMonth, timezone),
         endIso,
         label: `${monthLabel} to date`,
+        timezone,
       };
     }
     case "90d": {
@@ -158,6 +166,7 @@ export function resolveRange(
         startIso: start.toISOString(),
         endIso,
         label: "Last 90 days",
+        timezone,
       };
     }
     case "6mo": {
@@ -167,6 +176,7 @@ export function resolveRange(
         startIso: start.toISOString(),
         endIso,
         label: "Last 6 months",
+        timezone,
       };
     }
     case "1y": {
@@ -176,6 +186,7 @@ export function resolveRange(
         startIso: start.toISOString(),
         endIso,
         label: "Last 12 months",
+        timezone,
       };
     }
     case "custom": {
@@ -195,6 +206,7 @@ export function resolveRange(
         label: `${
           customStart || "All time"
         } – ${customEnd || getHouseToday(timezone)}`,
+        timezone,
       };
     }
     case "all_time":
@@ -202,17 +214,23 @@ export function resolveRange(
     default:
       // "to_date" kept as a synonym so any bookmarked or old-format URLs
       // (from before the rename) still resolve to the same all-time view.
-      return { startIso: null, endIso, label: "All time" };
+      return { startIso: null, endIso, label: "All time", timezone };
   }
 }
 
 function isIn(dateStr: string | null | undefined, range: DateRange): boolean {
   if (!dateStr) return false;
-  // Normalize date-only strings ("YYYY-MM-DD") to a full ISO timestamp so
-  // lexicographic comparison against range.startIso / range.endIso is correct.
-  // Without this, "2026-03-01" < "2026-03-01T00:00:00.000Z" is true, which
-  // incorrectly excludes records that fall exactly on the range start date.
-  const normalized = dateStr.length === 10 ? `${dateStr}T00:00:00.000Z` : dateStr;
+  // Normalize date-only strings ("YYYY-MM-DD") using the house's local
+  // midnight, not UTC midnight. The range boundaries (range.startIso /
+  // range.endIso) are built via startOfDayInTz / endOfDayInTz using the
+  // house timezone, so a date-only value must be anchored in the same
+  // timezone or the boundary comparison is off by the UTC offset. E.g.
+  // for a PT house on 2026-04-16 the "Today" range starts at
+  // 2026-04-16T07:00:00.000Z. Normalizing a move_in_date of "2026-04-16"
+  // to UTC midnight (00:00:00Z) would be < 07:00:00Z and the record
+  // would silently disappear from the report.
+  const normalized =
+    dateStr.length === 10 ? startOfDayInTz(dateStr, range.timezone) : dateStr;
   if (range.startIso && normalized < range.startIso) return false;
   if (normalized > range.endIso) return false;
   return true;

@@ -7,7 +7,7 @@ import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { createDemeritSchema } from "@/lib/validations";
 import { getHouseYesterday, isoDateInTz, DEFAULT_TIMEZONE } from "@/lib/timezone";
-import { sendNotification, sendNotificationToHouseManagers } from "@/lib/notifications";
+import { sendNotification } from "@/lib/notifications";
 
 export async function createDemerit(
   _prevState: { error?: string } | undefined,
@@ -216,6 +216,17 @@ export async function markDemeritWorkedOff(
   return {};
 }
 
+/**
+ * Flag past-due pending signoffs as `missed` so they show up in the
+ * Missed Chores action list on the Chores page. Staff then decides
+ * per-row whether to issue a Warning or a Demerit (see
+ * warning-actions.ts). No auto-demerits — the old behavior penalized
+ * residents before staff had a chance to review context.
+ *
+ * Kept under the original `generateMissedChoreDemerits` export name
+ * so existing callers (chores page auto-run, discipline UI button)
+ * don't break; the return shape is unchanged.
+ */
 export async function generateMissedChoreDemerits(houseId?: string) {
   const user = await requireAuth();
   if (user.role === "resident") return { error: "Not authorized" };
@@ -225,13 +236,11 @@ export async function generateMissedChoreDemerits(houseId?: string) {
 
   const supabase = await createClient();
 
-  // When no houseId is provided, iterate per-house to use each house's timezone
   if (!houseId) {
-    let housesQuery = supabase
+    const { data: allHouses } = await supabase
       .from("houses")
       .select("id")
       .eq("is_active", true);
-    const { data: allHouses } = await housesQuery;
     let totalCount = 0;
     for (const house of allHouses ?? []) {
       if (user.role !== "admin" && !canAccessHouse(user, house.id)) continue;
@@ -243,7 +252,6 @@ export async function generateMissedChoreDemerits(houseId?: string) {
     return { count: totalCount };
   }
 
-  // Single-house path: use the house's timezone
   const { data: houseRow } = await supabase
     .from("houses")
     .select("timezone")
@@ -252,15 +260,13 @@ export async function generateMissedChoreDemerits(houseId?: string) {
   const houseTz = houseRow?.timezone ?? DEFAULT_TIMEZONE;
   const yesterdayStr = getHouseYesterday(houseTz);
 
-  // Find pending signoffs whose date has passed (they are missed).
-  // Also pull created_at so we can filter out back-filled rows that were
-  // inserted after their sign_off_date — those come from mid-cycle
-  // reassigns / rotation reshuffles and must NOT auto-demerit the new
-  // assignee for days they weren't on the rotation.
+  // Pending signoffs whose date has already passed. created_at lets us
+  // skip back-fills (signoffs inserted mid-cycle, after the sign_off_date
+  // had already passed) that would otherwise get flagged as missed.
   const { data: missedSignoffs } = await supabase
     .from("chore_signoffs")
     .select(
-      "id, sign_off_date, created_at, rotation_assignment:chore_rotation_assignments(resident_id, chore:chores(name, house_id))"
+      "id, sign_off_date, created_at, rotation_assignment:chore_rotation_assignments(chore:chores(house_id))"
     )
     .eq("status", "pending")
     .lte("sign_off_date", yesterdayStr);
@@ -272,16 +278,11 @@ export async function generateMissedChoreDemerits(houseId?: string) {
   let count = 0;
   for (const signoff of missedSignoffs) {
     const ra = signoff.rotation_assignment as unknown as {
-      resident_id: string;
-      chore: { name: string; house_id: string } | null;
+      chore: { house_id: string } | null;
     } | null;
-
     if (!ra?.chore) continue;
     if (ra.chore.house_id !== houseId) continue;
 
-    // Defensive guard against mid-cycle back-fills: if the signoff row
-    // was created after the sign_off_date, the resident wasn't on this
-    // chore on that day — skip it instead of issuing a demerit.
     const createdDate = signoff.created_at
       ? isoDateInTz(signoff.created_at as string, houseTz)
       : null;
@@ -289,73 +290,82 @@ export async function generateMissedChoreDemerits(houseId?: string) {
       continue;
     }
 
-    const effectiveHouseId = ra.chore.house_id;
-
-    // Duplicate prevention: check if a demerit already exists for this signoff
-    const { data: existingDemerit } = await supabase
-      .from("demerits")
-      .select("id")
-      .eq("signoff_id", signoff.id)
-      .maybeSingle();
-
-    if (existingDemerit) continue; // Already processed
-
-    // Mark signoff as missed
-    await supabase
+    const { error: flagError } = await supabase
       .from("chore_signoffs")
       .update({ status: "missed", updated_at: new Date().toISOString() })
       .eq("id", signoff.id);
 
-    // Create a demerit with signoff_id FK for linkage
-    const { data: demerit } = await supabase
-      .from("demerits")
-      .insert({
-        resident_id: ra.resident_id,
-        house_id: effectiveHouseId,
-        points: 1,
-        reason: `Missed chore: ${ra.chore.name} on ${signoff.sign_off_date}`,
-        category: "Missed Chore",
-        issued_by: user.id,
-        signoff_id: signoff.id,
-      })
-      .select("id")
-      .single();
-
-    if (demerit) {
-      count++;
-      await logActivity({
-        houseId: effectiveHouseId,
-        residentId: ra.resident_id,
-        actorId: user.id,
-        eventType: "demerit_issued",
-        entityType: "demerit",
-        entityId: demerit.id,
-        description: `Auto-demerit: missed chore "${ra.chore.name}" on ${signoff.sign_off_date}`,
-      });
-
-      // Notify the resident about the auto-demerit
-      const { data: residentUser } = await supabase
-        .from("residents")
-        .select("user_id")
-        .eq("id", ra.resident_id)
-        .single();
-
-      if (residentUser?.user_id) {
-        await sendNotification({
-          userId: residentUser.user_id,
-          type: "missed_chore",
-          title: "Missed Chore Demerit",
-          message: `You received a demerit for missing "${ra.chore.name}" on ${signoff.sign_off_date}.`,
-          actionUrl: "/chores",
-          entityType: "demerit",
-          entityId: demerit.id,
-        });
-      }
-    }
+    if (!flagError) count++;
   }
 
   revalidatePath("/discipline");
   revalidatePath("/chores");
+  return { count };
+}
+
+/**
+ * One-shot cleanup for demerits auto-issued by the previous (broken)
+ * auto-enforce job. Finds demerits whose linked signoff was created
+ * AFTER its sign_off_date (i.e. back-filled from a mid-cycle reassign /
+ * rotate) and deletes them. Returns the number of demerits removed.
+ */
+export async function cleanupBackfilledAutoDemerits() {
+  const user = await requireAuth();
+  if (user.role !== "admin" && user.role !== "manager") {
+    return { error: "Not authorized" };
+  }
+
+  const supabase = await createClient();
+
+  // Pull candidates: demerits linked to a signoff (auto-issued path).
+  const { data: candidates } = await supabase
+    .from("demerits")
+    .select("id, house_id, resident_id, signoff_id, signoff:chore_signoffs!signoff_id(id, sign_off_date, created_at)")
+    .not("signoff_id", "is", null);
+
+  if (!candidates || candidates.length === 0) return { count: 0 };
+
+  // Load each house's tz lazily — most setups have few houses.
+  const tzCache = new Map<string, string>();
+  async function tzFor(hid: string): Promise<string> {
+    if (tzCache.has(hid)) return tzCache.get(hid) as string;
+    const { data } = await supabase.from("houses").select("timezone").eq("id", hid).single();
+    const tz = data?.timezone ?? DEFAULT_TIMEZONE;
+    tzCache.set(hid, tz);
+    return tz;
+  }
+
+  let count = 0;
+  for (const d of candidates) {
+    const houseId = (d as unknown as { house_id: string }).house_id;
+    if (user.role !== "admin" && !canAccessHouse(user, houseId)) continue;
+
+    const s = (d as unknown as {
+      signoff: { sign_off_date: string; created_at: string | null } | null;
+    }).signoff;
+    if (!s?.sign_off_date || !s.created_at) continue;
+
+    const tz = await tzFor(houseId);
+    const createdDate = isoDateInTz(s.created_at, tz);
+    if (createdDate <= s.sign_off_date) continue; // legit missed chore, leave it
+
+    const demeritId = (d as unknown as { id: string }).id;
+    const { error: delErr } = await supabase.from("demerits").delete().eq("id", demeritId);
+    if (delErr) continue;
+
+    count++;
+    await logActivity({
+      houseId,
+      residentId: (d as unknown as { resident_id: string }).resident_id,
+      actorId: user.id,
+      eventType: "demerit_deleted",
+      entityType: "demerit",
+      entityId: demeritId,
+      description: `Back-filled auto-demerit removed by ${user.full_name} (signoff was created after its sign_off_date)`,
+    });
+  }
+
+  revalidatePath("/discipline");
   return { count };
 }
 

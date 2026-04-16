@@ -223,6 +223,15 @@ export const createDemeritSchema = z.object({
   category: z.string().optional(),
 });
 
+// --- Warnings (no points; documentation + notification only) ---
+
+export const createWarningSchema = z.object({
+  resident_id: z.string().uuid("Resident is required"),
+  house_id: z.string().uuid("House is required"),
+  reason: z.string().min(1, "Reason is required"),
+  category: z.string().optional(),
+});
+
 export const resolveDemeritSchema = z.object({
   demerit_id: z.string().uuid(),
   resolution_note: z.string().optional(),

@@ -4,6 +4,9 @@ import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { CreateRestrictionDialog } from "./create-restriction-dialog";
 import { DemeritMatrix } from "./demerit-matrix";
 import { DisciplineTabs } from "./discipline-tabs";
+import { CreateWarningDialog } from "./create-warning-dialog";
+import { WarningsList } from "./warnings-list";
+import { CleanupBackfilledDemeritsButton } from "./cleanup-backfilled-demerits-button";
 import { CreateIncidentDialog } from "../incidents/create-incident-dialog";
 
 export default async function DisciplinePage() {
@@ -83,6 +86,19 @@ export default async function DisciplinePage() {
   if (houseFilter && houseFilter.length > 0) demeritsQuery = demeritsQuery.in("house_id", houseFilter);
   if (residentRecordId) demeritsQuery = demeritsQuery.eq("resident_id", residentRecordId);
 
+  // Warnings are a separate, no-points disciplinary record. Fetched
+  // alongside demerits so the Warnings tab on this page can render the
+  // house-scoped list in the same round-trip as everything else.
+  let warningsQuery = adminClient
+    .from("warnings")
+    .select(
+      "id, resident_id, house_id, reason, notes, category, photo_url, signoff_id, created_at, resident:residents(full_name), house:houses(name), issuer:users!issued_by(full_name)"
+    )
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (houseFilter && houseFilter.length > 0) warningsQuery = warningsQuery.in("house_id", houseFilter);
+  if (residentRecordId) warningsQuery = warningsQuery.eq("resident_id", residentRecordId);
+
   let activeRestrictionsQuery = adminClient
     .from("restrictions")
     .select("*, resident:residents(full_name), house:houses(name)")
@@ -104,15 +120,42 @@ export default async function DisciplinePage() {
     { data: houses },
     { data: residents },
     { data: demerits },
+    { data: warnings },
     { data: activeRestrictions },
     { data: pastRestrictions },
   ] = await Promise.all([
     housesQuery,
     residentsQuery,
     demeritsQuery,
+    warningsQuery,
     activeRestrictionsQuery,
     pastRestrictionsQuery,
   ]);
+
+  // Normalize warnings: flatten the joined resident / house / issuer arrays
+  // (Supabase returns them as single-element arrays on some joins) so the
+  // client component can treat each warning as a flat record.
+  const normalizedWarnings = (warnings ?? []).map((w) => {
+    const resident = Array.isArray(w.resident) ? w.resident[0] : w.resident;
+    const house = Array.isArray(w.house) ? w.house[0] : w.house;
+    const issuer = Array.isArray(w.issuer) ? w.issuer[0] : w.issuer;
+    return {
+      id: w.id as string,
+      resident_id: w.resident_id as string,
+      house_id: w.house_id as string,
+      reason: w.reason as string,
+      category: (w.category as string) ?? null,
+      notes: (w.notes as string) ?? null,
+      photo_url: (w.photo_url as string) ?? null,
+      signoff_id: (w.signoff_id as string) ?? null,
+      created_at: w.created_at as string,
+      resident_name:
+        (resident as { full_name?: string } | null)?.full_name ?? "Unknown",
+      house_name: (house as { name?: string } | null)?.name ?? "",
+      issuer_name:
+        (issuer as { full_name?: string } | null)?.full_name ?? "Unknown",
+    };
+  });
 
   // Normalize restriction data for client component
   const normalizedActiveRestrictions = (activeRestrictions ?? []).map((r) => ({
@@ -221,6 +264,21 @@ export default async function DisciplinePage() {
         pastRestrictions={normalizedPastRestrictions}
         addRestrictionButton={addRestrictionButton}
         demeritMatrixContent={demeritMatrixContent}
+        warningsContent={
+          <div className="space-y-4">
+            {isStaff && (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <CleanupBackfilledDemeritsButton />
+                <CreateWarningDialog
+                  houses={houses ?? []}
+                  residents={residents ?? []}
+                />
+              </div>
+            )}
+            <WarningsList warnings={normalizedWarnings} canEdit={isStaff} />
+          </div>
+        }
+        warningsCount={normalizedWarnings.length}
         incidents={incidents}
         addIncidentButton={addIncidentButton}
       />

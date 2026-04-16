@@ -94,13 +94,21 @@ create policy "house_documents_storage_delete"
   on storage.objects for delete to authenticated
   using (bucket_id = 'house-documents');
 
--- ---- Account status for self-signup approval flow ----
--- Open signup creates a users row with account_status = 'pending'.
--- Admins approve or reject from the admin panel. Existing rows are
--- backfilled to 'active' so current accounts are not interrupted.
+-- ---- Account status ----
+-- Column default is 'active' so any code path that inserts a user row
+-- without explicitly setting the column (e.g. admin-invite flow) lands
+-- on the correct status. Self-signup and admin-invite both explicitly
+-- write 'active' today; rejected intake applicants are flipped to
+-- 'rejected' via the intake-review Deny button.
 alter table public.users
-  add column if not exists account_status text not null default 'pending'
+  add column if not exists account_status text not null default 'active'
     check (account_status in ('pending', 'active', 'rejected'));
+
+-- If the column was added by an earlier run of this migration (when the
+-- default was 'pending'), coerce the default to 'active' now. No-op if
+-- it is already 'active'.
+alter table public.users
+  alter column account_status set default 'active';
 
 -- Backfill: any users row that already existed before this column was
 -- added (i.e. created more than a minute ago) is treated as an existing,
@@ -174,3 +182,47 @@ create index if not exists idx_demerits_resident_created_desc
 -- Restrictions: active restrictions per house.
 create index if not exists idx_restrictions_house_active
   on public.restrictions (house_id, is_active);
+
+-- ---- Warnings (formal, documented warnings without points) ----
+-- First-class disciplinary concept alongside demerits. Used for missed
+-- chores and behavior issues that warrant documentation but not points.
+-- Issuing a warning sends the resident a notification so they know what
+-- needs to be corrected. Mirrors the demerits schema (minus points) so
+-- the two can share patterns. signoff_id links a warning to the missed
+-- chore it was issued for, if applicable.
+create table if not exists public.warnings (
+  id uuid primary key default uuid_generate_v4(),
+  resident_id uuid not null references public.residents(id) on delete cascade,
+  house_id uuid not null references public.houses(id) on delete cascade,
+  reason text not null,
+  category text,
+  notes text,
+  photo_url text,
+  signoff_id uuid references public.chore_signoffs(id) on delete set null,
+  issued_by uuid references public.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_warnings_house_created_desc
+  on public.warnings (house_id, created_at desc);
+create index if not exists idx_warnings_resident_created_desc
+  on public.warnings (resident_id, created_at desc);
+create index if not exists idx_warnings_signoff_id
+  on public.warnings (signoff_id) where signoff_id is not null;
+
+alter table public.warnings enable row level security;
+
+drop policy if exists "warnings_select" on public.warnings;
+create policy "warnings_select"
+  on public.warnings for select to authenticated using (true);
+
+drop policy if exists "warnings_mutate" on public.warnings;
+create policy "warnings_mutate"
+  on public.warnings for all to authenticated
+  using (
+    exists (select 1 from public.user_roles ur where ur.user_id = auth.uid() and ur.role in ('admin','manager'))
+  )
+  with check (
+    exists (select 1 from public.user_roles ur where ur.user_id = auth.uid() and ur.role in ('admin','manager'))
+  );

@@ -60,6 +60,9 @@ export async function createUser(
       email: parsed.data.email,
       full_name: parsed.data.full_name || parsed.data.email.split("@")[0],
       phone: parsed.data.phone ?? null,
+      // Admin-invited users are pre-approved; mark active so they aren't
+      // blocked by the getSessionUser account_status gate.
+      account_status: "active",
       ...(houseId ? { pending_house_id: houseId } : {}),
     });
 

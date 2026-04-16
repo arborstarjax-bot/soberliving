@@ -220,11 +220,17 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
         currentUserRole={user.role}
       />
 
+      {/*
+        Pagination meta is scoped to NON-PINNED posts only — pinned posts
+        are rendered above and repeated on every page. The `itemLabel`
+        reflects that so the summary row matches what's actually being
+        paged through (e.g. "Showing 1–20 of 80 non-pinned posts").
+      */}
       <Pagination
         meta={paginationMeta}
         basePath="/bulletin"
         searchParams={params}
-        itemLabel="posts"
+        itemLabel={`non-pinned post${paginationMeta.total === 1 ? "" : "s"}`}
       />
     </div>
   );

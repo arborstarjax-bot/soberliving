@@ -58,6 +58,8 @@ interface DisciplineTabsProps {
   pastRestrictions: PastRestriction[];
   addRestrictionButton: ReactNode;
   demeritMatrixContent: ReactNode;
+  warningsContent?: ReactNode;
+  warningsCount?: number;
   incidents?: Incident[];
   addIncidentButton?: ReactNode;
 }
@@ -68,6 +70,8 @@ export function DisciplineTabs({
   pastRestrictions,
   addRestrictionButton,
   demeritMatrixContent,
+  warningsContent,
+  warningsCount = 0,
   incidents = [],
   addIncidentButton,
 }: DisciplineTabsProps) {
@@ -75,6 +79,14 @@ export function DisciplineTabs({
     <Tabs defaultValue="demerits">
       <TabsList>
         <TabsTrigger value="demerits">Demerits</TabsTrigger>
+        <TabsTrigger value="warnings">
+          Warnings
+          {warningsCount > 0 && (
+            <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5 py-0">
+              {warningsCount}
+            </Badge>
+          )}
+        </TabsTrigger>
         <TabsTrigger value="restrictions">
           Restrictions
           {activeRestrictions.length > 0 && (
@@ -100,6 +112,11 @@ export function DisciplineTabs({
         <div className="space-y-6 pt-2">
           {demeritMatrixContent}
         </div>
+      </TabsContent>
+
+      {/* Warnings Tab */}
+      <TabsContent value="warnings">
+        <div className="space-y-6 pt-2">{warningsContent}</div>
       </TabsContent>
 
       {/* Restrictions Tab */}

@@ -278,7 +278,7 @@ export default async function ChoresPage() {
           </TabsContent>
 
           <TabsContent value="missed" className="mt-4">
-            <MissedChoresList signoffs={filteredMissedSignoffs} />
+            <MissedChoresList signoffs={filteredMissedSignoffs} canAct={isStaff} />
           </TabsContent>
         </Tabs>
       )}

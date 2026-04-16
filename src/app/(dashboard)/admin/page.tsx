@@ -205,17 +205,29 @@ export default async function AdminPage() {
   const activeDemerits = (demerits ?? []).filter((d) => d.status === "active");
 
   // --- Pending intake applications (admin only) ---
+  // Mirror the intake-review page's "Pending" partition: applicant has
+  // submitted intake but has NOT been reviewed yet (no house_commitments
+  // row). Users who already have a commitment are in the Approved tab
+  // waiting for their signature — they should not bump this banner count.
   let pendingIntakeCount = 0;
   if (isAdmin) {
     const adminClient = createAdminClient();
-    const { count } = await adminClient
-      .from("users")
-      .select("id", { count: "exact", head: true })
-      .eq("intake_completed", true)
-      .eq("commitment_signed", false)
-      .eq("is_active", true)
-      .neq("account_status", "rejected");
-    pendingIntakeCount = count ?? 0;
+    const [{ data: intakeUsers }, { data: commitments }] = await Promise.all([
+      adminClient
+        .from("users")
+        .select("id")
+        .eq("intake_completed", true)
+        .eq("commitment_signed", false)
+        .eq("is_active", true)
+        .neq("account_status", "rejected"),
+      adminClient.from("house_commitments").select("user_id"),
+    ]);
+    const reviewedUserIds = new Set(
+      (commitments ?? []).map((c) => c.user_id as string)
+    );
+    pendingIntakeCount = (intakeUsers ?? []).filter(
+      (u) => !reviewedUserIds.has(u.id as string)
+    ).length;
   }
 
   return (
