@@ -4,10 +4,9 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { IntakeReviewForm } from "./intake-review-form";
 import { MarkCompleteButton } from "./mark-complete-button";
-import { DenyButton } from "./deny-button";
 import { ReopenButton } from "./reopen-button";
+import { ApplicationReview } from "./application-review";
 
 type Tab = "pending" | "approved" | "denied";
 
@@ -29,7 +28,10 @@ export default async function IntakeReviewPage({
 }: {
   searchParams: Promise<{ tab?: string }>;
 }) {
-  const currentUser = await requireRole("admin", "manager");
+  // Intake review is admin-only. Managers handle operational intake
+  // (in-person logistics, move-in day) but don't perform approve/deny
+  // or housing assignment on the platform.
+  const currentUser = await requireRole("admin");
   const isAdmin = currentUser.role === "admin";
   const adminClient = createAdminClient();
 
@@ -160,78 +162,23 @@ export default async function IntakeReviewPage({
           </CardContent>
         </Card>
       ) : tab === "pending" ? (
-        // Pending: full review card with the existing assignment form
+        // Pending: PDF-style review first; admin clicks Approve & Assign
+        // to reveal the housing/rent config form, or Deny (reason dialog).
         visibleUsers.map((user) => {
           const intake = intakeMap.get(user.id);
           const fd = (intake?.form_data ?? {}) as Record<string, unknown>;
           return (
             <Card key={user.id}>
-              <CardHeader>
-                <div className="flex items-center justify-between gap-3">
-                  <CardTitle>{user.full_name}</CardTitle>
-                  <div className="flex items-center gap-2">
-                    <Badge>Application Complete</Badge>
-                    {isAdmin && (
-                      <DenyButton userId={user.id} userName={user.full_name} />
-                    )}
-                  </div>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {user.email} {user.phone ? `• ${user.phone}` : ""}
-                  {intake?.completed_at
-                    ? ` • Submitted ${new Date(intake.completed_at).toLocaleDateString()}`
-                    : ""}
-                </p>
-              </CardHeader>
-              <CardContent>
-                {/* Intake Summary */}
-                <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Date of Birth:</span>{" "}
-                    <span className="font-medium">{(fd.date_of_birth as string) || "—"}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Gender:</span>{" "}
-                    <span className="font-medium">{(fd.gender as string) || "—"}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Phone:</span>{" "}
-                    <span className="font-medium">{(fd.phone as string) || user.phone || "—"}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Sobriety Date:</span>{" "}
-                    <span className="font-medium">{(fd.sobriety_date as string) || "—"}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Drug of Choice:</span>{" "}
-                    <span className="font-medium">{(fd.drug_of_choice as string) || "—"}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Emergency Contact:</span>{" "}
-                    <span className="font-medium">
-                      {(fd.emergency_contact_1_name as string) || "—"}
-                      {fd.emergency_contact_1_phone ? ` (${fd.emergency_contact_1_phone})` : ""}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Referral:</span>{" "}
-                    <span className="font-medium">{(fd.referral_source as string) || "—"}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">In Recovery Program:</span>{" "}
-                    <span className="font-medium">{(fd.in_recovery_program as string) || "—"}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Owns Vehicle:</span>{" "}
-                    <span className="font-medium">{(fd.owns_vehicle as string) || "—"}</span>
-                  </div>
-                </div>
-
-                {/* Assignment Form */}
-                <IntakeReviewForm
+              <CardContent className="pt-6">
+                <ApplicationReview
                   userId={user.id}
                   userName={user.full_name}
+                  email={user.email}
+                  phone={user.phone}
+                  submittedAt={intake?.completed_at ?? null}
                   houses={houses}
+                  isAdmin={isAdmin}
+                  formData={fd}
                 />
               </CardContent>
             </Card>

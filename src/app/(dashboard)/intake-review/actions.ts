@@ -30,7 +30,9 @@ const completeIntakeReviewSchema = z.object({
 });
 
 export async function completeIntakeReview(formData: z.infer<typeof completeIntakeReviewSchema>) {
-  const currentUser = await requireRole("admin", "manager");
+  // Intake is admin-only. Managers handle operational intake (in-person
+  // logistics, move-in day) but don't approve/deny or assign housing.
+  const currentUser = await requireRole("admin");
   const adminClient = createAdminClient();
 
   const parsed = completeIntakeReviewSchema.safeParse(formData);
@@ -223,7 +225,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
 }
 
 export async function markIntakeComplete(userId: string) {
-  const currentUser = await requireRole("admin", "manager");
+  const currentUser = await requireRole("admin");
   const adminClient = createAdminClient();
 
   const { data: targetUser } = await adminClient
@@ -371,7 +373,7 @@ export async function reopenIntakeApplication(userId: string) {
 }
 
 export async function getRoomsForHouse(houseId: string) {
-  await requireRole("admin", "manager");
+  await requireRole("admin");
   const adminClient = createAdminClient();
 
   const { data: rooms } = await adminClient

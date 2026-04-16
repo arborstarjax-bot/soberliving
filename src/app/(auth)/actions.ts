@@ -49,6 +49,14 @@ export async function login(
     // account to render.
     redirect("/application-denied");
   }
+  if (status && status !== "active") {
+    // Catch any unexpected non-active status (e.g. a lingering 'pending'
+    // from before the gate was removed). Without this, getSessionUser
+    // returns null and requireAuth bounces them back to /login with a
+    // valid session cookie — infinite loop.
+    await supabase.auth.signOut();
+    return { error: "Your account is not active. Please contact an administrator." };
+  }
 
   // Redirect based on role
   const { data: roleRecord } = await supabase

@@ -7,8 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Users } from "lucide-react";
 import Link from "next/link";
 import { DeleteResidentButton } from "./delete-resident-button";
-import { IntakeReviewForm } from "../intake-review/intake-review-form";
 import { MarkCompleteButton } from "../intake-review/mark-complete-button";
+import { ApplicationReview } from "../intake-review/application-review";
 import { SendCheckInDialog } from "./check-ins/send-checkin-dialog";
 import { CheckInList } from "./check-ins/checkin-list";
 
@@ -287,21 +287,23 @@ export function ResidentsTabs({
           >
             Residents
           </button>
-          <button
-            onClick={() => setTopTab("intake")}
-            className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors flex items-center gap-1.5 ${
-              topTab === "intake"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted"
-            }`}
-          >
-            Intake
-            {intakeCount > 0 && (
-              <Badge variant={topTab === "intake" ? "secondary" : "destructive"} className="text-[10px] px-1.5 py-0">
-                {intakeCount}
-              </Badge>
-            )}
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setTopTab("intake")}
+              className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors flex items-center gap-1.5 ${
+                topTab === "intake"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              Intake
+              {intakeCount > 0 && (
+                <Badge variant={topTab === "intake" ? "secondary" : "destructive"} className="text-[10px] px-1.5 py-0">
+                  {intakeCount}
+                </Badge>
+              )}
+            </button>
+          )}
           <button
             onClick={() => setTopTab("checkins")}
             className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors flex items-center gap-1.5 ${
@@ -467,76 +469,22 @@ export function ResidentsTabs({
               </CardContent>
             </Card>
           ) : (
-            intakePending.map((user) => {
-              const fd = user.intakeFormData;
-              return (
-                <Card key={user.id}>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle>{user.full_name}</CardTitle>
-                      <Badge>Application Complete</Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {user.email} {user.phone ? `• ${user.phone}` : ""}
-                      {user.completedAt
-                        ? ` • Completed ${new Date(user.completedAt).toLocaleDateString()}`
-                        : ""}
-                    </p>
-                  </CardHeader>
-                  <CardContent>
-                    {/* Intake Summary */}
-                    <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">Date of Birth:</span>{" "}
-                        <span className="font-medium">{(fd.date_of_birth as string) || "—"}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Gender:</span>{" "}
-                        <span className="font-medium">{(fd.gender as string) || "—"}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Phone:</span>{" "}
-                        <span className="font-medium">{(fd.phone as string) || user.phone || "—"}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Sobriety Date:</span>{" "}
-                        <span className="font-medium">{(fd.sobriety_date as string) || "—"}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Drug of Choice:</span>{" "}
-                        <span className="font-medium">{(fd.drug_of_choice as string) || "—"}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Emergency Contact:</span>{" "}
-                        <span className="font-medium">
-                          {(fd.emergency_contact_1_name as string) || "—"}
-                          {fd.emergency_contact_1_phone ? ` (${fd.emergency_contact_1_phone})` : ""}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Referral:</span>{" "}
-                        <span className="font-medium">{(fd.referral_source as string) || "—"}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">In Recovery Program:</span>{" "}
-                        <span className="font-medium">{(fd.in_recovery_program as string) || "—"}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Owns Vehicle:</span>{" "}
-                        <span className="font-medium">{(fd.owns_vehicle as string) || "—"}</span>
-                      </div>
-                    </div>
-
-                    {/* Assignment Form */}
-                    <IntakeReviewForm
-                      userId={user.id}
-                      userName={user.full_name}
-                      houses={housesWithAddress}
-                    />
-                  </CardContent>
-                </Card>
-              );
-            })
+            intakePending.map((user) => (
+              <Card key={user.id}>
+                <CardContent className="pt-6">
+                  <ApplicationReview
+                    userId={user.id}
+                    userName={user.full_name}
+                    email={user.email}
+                    phone={user.phone}
+                    submittedAt={user.completedAt}
+                    houses={housesWithAddress}
+                    isAdmin={isAdmin}
+                    formData={user.intakeFormData}
+                  />
+                </CardContent>
+              </Card>
+            ))
           )}
         </div>
       )}

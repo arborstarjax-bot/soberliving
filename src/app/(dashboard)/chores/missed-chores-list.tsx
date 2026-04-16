@@ -27,8 +27,12 @@ interface Props {
 }
 
 export function MissedChoresList({ signoffs, canAct = false }: Props) {
-  const [pending, startTransition] = useTransition();
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+  // Track pending ids as a Set so concurrent clicks on different rows
+  // each keep their own spinner/disabled state instead of stomping a
+  // single pendingId. Previous single-string version cleared row A's
+  // disabled state the moment row B was clicked.
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [errors, setErrors] = useState<Record<string, string | null>>({});
   const [done, setDone] = useState<Record<string, "warning" | "demerit">>({});
 
@@ -44,7 +48,11 @@ export function MissedChoresList({ signoffs, canAct = false }: Props) {
     id: string,
     kind: "warning" | "demerit"
   ) {
-    setPendingId(id);
+    setPendingIds((s) => {
+      const next = new Set(s);
+      next.add(id);
+      return next;
+    });
     setErrors((e) => ({ ...e, [id]: null }));
     startTransition(async () => {
       const result =
@@ -56,7 +64,11 @@ export function MissedChoresList({ signoffs, canAct = false }: Props) {
       } else {
         setDone((d) => ({ ...d, [id]: kind }));
       }
-      setPendingId(null);
+      setPendingIds((s) => {
+        const next = new Set(s);
+        next.delete(id);
+        return next;
+      });
     });
   }
 
@@ -64,7 +76,7 @@ export function MissedChoresList({ signoffs, canAct = false }: Props) {
     <div className="space-y-2">
       {signoffs.map((s) => {
         const ra = s.rotation_assignment;
-        const isPending = pending && pendingId === s.id;
+        const isPending = pendingIds.has(s.id);
         const issued = done[s.id];
         const err = errors[s.id];
         return (
