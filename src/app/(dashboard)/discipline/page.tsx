@@ -12,6 +12,20 @@ export default async function DisciplinePage() {
 
   const isStaff = user.role === "admin" || user.role === "manager";
 
+  // For residents, find their resident record to scope queries to their own data
+  let residentRecordId: string | null = null;
+  let residentHouseId: string | null = null;
+  if (user.role === "resident") {
+    const { data: myResident } = await supabase
+      .from("residents")
+      .select("id, house_id")
+      .eq("user_id", user.id)
+      .eq("status", "active")
+      .maybeSingle();
+    residentRecordId = myResident?.id ?? null;
+    residentHouseId = myResident?.house_id ?? null;
+  }
+
   // Get houses
   let housesQuery = supabase
     .from("houses")
@@ -19,15 +33,17 @@ export default async function DisciplinePage() {
     .eq("is_active", true)
     .order("name");
   if (houseFilter) housesQuery = housesQuery.in("id", houseFilter);
+  if (residentHouseId) housesQuery = housesQuery.eq("id", residentHouseId);
   const { data: houses } = await housesQuery;
 
-  // Get residents
+  // Get residents — for residents, only show themselves
   let residentsQuery = supabase
     .from("residents")
     .select("id, full_name, house_id")
     .eq("status", "active")
     .order("full_name");
   if (houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
+  if (residentRecordId) residentsQuery = residentsQuery.eq("id", residentRecordId);
   const { data: residents } = await residentsQuery;
 
   // Get demerits (select only needed columns to avoid body size limit)
@@ -37,6 +53,7 @@ export default async function DisciplinePage() {
     .order("created_at", { ascending: false })
     .limit(200);
   if (houseFilter) demeritsQuery = demeritsQuery.in("house_id", houseFilter);
+  if (residentRecordId) demeritsQuery = demeritsQuery.eq("resident_id", residentRecordId);
   const { data: demerits } = await demeritsQuery;
 
   // Auto-expire restrictions past their end date (staff only, house-scoped)
@@ -59,6 +76,7 @@ export default async function DisciplinePage() {
     .eq("is_active", true)
     .order("created_at", { ascending: false });
   if (houseFilter) restrictionsQuery = restrictionsQuery.in("house_id", houseFilter);
+  if (residentRecordId) restrictionsQuery = restrictionsQuery.eq("resident_id", residentRecordId);
   const { data: activeRestrictions } = await restrictionsQuery;
 
   // Get recently lifted/expired restrictions
@@ -69,6 +87,7 @@ export default async function DisciplinePage() {
     .order("updated_at", { ascending: false })
     .limit(20);
   if (houseFilter) pastRestrictionsQuery = pastRestrictionsQuery.in("house_id", houseFilter);
+  if (residentRecordId) pastRestrictionsQuery = pastRestrictionsQuery.eq("resident_id", residentRecordId);
   const { data: pastRestrictions } = await pastRestrictionsQuery;
 
   // Normalize restriction data for client component

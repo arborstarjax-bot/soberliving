@@ -67,7 +67,7 @@ const NAV_ITEMS: NavItem[] = [
     label: "Discipline",
     href: "/discipline",
     icon: ShieldAlert,
-    roles: ["admin", "manager"],
+    roles: ["admin", "manager", "resident"],
   },
   {
     label: "Leave Requests",

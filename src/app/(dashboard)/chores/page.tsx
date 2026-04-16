@@ -11,6 +11,8 @@ import { RotationBoard } from "./rotation-board";
 import { ChoreListManager } from "./chore-list-manager";
 import { SignoffReviewList } from "./signoff-review-list";
 import { ResidentChoreView } from "./resident-chore-view";
+import { MissedChoresList } from "./missed-chores-list";
+import { generateMissedChoreDemerits } from "../discipline/actions";
 
 export default async function ChoresPage() {
   const user = await requireAuth();
@@ -71,7 +73,16 @@ export default async function ChoresPage() {
       resident: Array.isArray(e.resident) ? e.resident[0] ?? null : e.resident,
     }));
 
-  // Get signoffs needing review
+  // Auto-enforce missed chores (staff only, runs on page load)
+  if (isStaff) {
+    try {
+      await generateMissedChoreDemerits();
+    } catch {
+      // Non-critical — don't block page render
+    }
+  }
+
+  // Get signoffs needing review (include photo_url and completion_note)
   const pendingSignoffsQuery = supabase
     .from("chore_signoffs")
     .select(
@@ -80,6 +91,28 @@ export default async function ChoresPage() {
     .eq("status", "completed_pending_review")
     .order("sign_off_date", { ascending: true });
   const { data: pendingSignoffs } = await pendingSignoffsQuery;
+
+  // Get missed signoffs for the Missed tab
+  let missedSignoffsQuery = supabase
+    .from("chore_signoffs")
+    .select(
+      "*, rotation_assignment:chore_rotation_assignments(resident:residents(full_name), chore:chores(name, house_id))"
+    )
+    .eq("status", "missed")
+    .order("sign_off_date", { ascending: false })
+    .limit(100);
+  const { data: missedSignoffs } = await missedSignoffsQuery;
+
+  // Filter missed signoffs by house access
+  let filteredMissedSignoffs = missedSignoffs ?? [];
+  if (houseFilter) {
+    filteredMissedSignoffs = filteredMissedSignoffs.filter((s) => {
+      const ra = s.rotation_assignment as {
+        chore: { house_id: string };
+      };
+      return houseFilter.includes(ra?.chore?.house_id);
+    });
+  }
 
   // Filter pending signoffs by house access
   let filteredPendingSignoffs = pendingSignoffs ?? [];
@@ -151,6 +184,9 @@ export default async function ChoresPage() {
               Needs Review ({filteredPendingSignoffs.length})
             </TabsTrigger>
             <TabsTrigger value="chore-list">Chore Lists</TabsTrigger>
+            <TabsTrigger value="missed">
+              Missed ({filteredMissedSignoffs.length})
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="rotation" className="mt-4">
@@ -214,6 +250,10 @@ export default async function ChoresPage() {
               residents={residents ?? []}
               exclusions={normalizedExclusions}
             />
+          </TabsContent>
+
+          <TabsContent value="missed" className="mt-4">
+            <MissedChoresList signoffs={filteredMissedSignoffs} />
           </TabsContent>
         </Tabs>
       )}

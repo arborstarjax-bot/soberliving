@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, useRef } from "react";
-import { markSignoffComplete, uploadChorePhoto } from "./actions";
+import { markSignoffComplete, redoSignoff, uploadChorePhoto } from "./actions";
 import { compressImage } from "@/lib/compress-image";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -50,9 +50,29 @@ function getCurrentWeekNumber(cycleStartDate: string): number {
   return Math.max(1, weekNum);
 }
 
-function getTodayDayOfWeek(): string {
+function getTodayDayOfWeek(timezone?: string): string {
   const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  if (timezone) {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      weekday: "long",
+    });
+    return formatter.format(new Date()).toLowerCase();
+  }
   return days[new Date().getDay()];
+}
+
+function getTodayDate(timezone?: string): string {
+  if (timezone) {
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    return formatter.format(new Date());
+  }
+  return new Date().toISOString().split("T")[0];
 }
 
 export function ResidentChoreView({ rotations, userResidentId, forcePhoto }: Props) {
@@ -69,6 +89,7 @@ export function ResidentChoreView({ rotations, userResidentId, forcePhoto }: Pro
   }
 
   const todayDay = getTodayDayOfWeek();
+  const todayDate = getTodayDate();
 
   return (
     <div className="space-y-6">
@@ -173,6 +194,9 @@ export function ResidentChoreView({ rotations, userResidentId, forcePhoto }: Pro
                               signoff &&
                               signoff.status === "pending" &&
                               isToday;
+                            const canRedo =
+                              signoff &&
+                              signoff.status === "rejected";
 
                             return (
                               <td
@@ -184,8 +208,14 @@ export function ResidentChoreView({ rotations, userResidentId, forcePhoto }: Pro
                                     signoffId={signoff.id}
                                     forcePhoto={forcePhoto}
                                   />
+                                ) : canRedo ? (
+                                  <ResidentRedoButton
+                                    signoffId={signoff.id}
+                                    forcePhoto={forcePhoto}
+                                    rejectionNote={(signoff as unknown as { rejection_note?: string }).rejection_note}
+                                  />
                                 ) : signoff ? (
-                                  <SignoffCell signoff={signoff} />
+                                  <SignoffCell signoff={signoff} todayDate={todayDate} />
                                 ) : (
                                   "—"
                                 )}
@@ -304,12 +334,117 @@ function ResidentSignoffButton({ signoffId, forcePhoto }: { signoffId: string; f
   );
 }
 
+function ResidentRedoButton({ signoffId, forcePhoto, rejectionNote }: { signoffId: string; forcePhoto?: boolean; rejectionNote?: string }) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [showPhotoUpload, setShowPhotoUpload] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleRedo(photoUrl?: string) {
+    setError(null);
+    startTransition(async () => {
+      const result = await redoSignoff(signoffId, photoUrl);
+      if (result?.error) {
+        setError(result.error);
+        setShowPhotoUpload(false);
+      }
+    });
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const raw = e.target.files?.[0];
+    if (!raw) return;
+    setError(null);
+
+    const { compressImage } = await import("@/lib/compress-image");
+    startTransition(async () => {
+      const file = await compressImage(raw);
+      const formData = new FormData();
+      formData.append("file", file);
+      const uploadResult = await uploadChorePhoto(formData);
+      if (uploadResult.error) {
+        setError(uploadResult.error);
+        return;
+      }
+      const result = await redoSignoff(signoffId, uploadResult.url);
+      if (result?.error) {
+        setError(result.error);
+        setShowPhotoUpload(false);
+      }
+    });
+  }
+
+  if (forcePhoto && showPhotoUpload) {
+    return (
+      <div className="space-y-1">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={pending}
+          className="h-7 text-xs gap-1"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <Camera className="h-3 w-3" />
+          {pending ? "Uploading\u2026" : "Take Photo"}
+        </Button>
+        <button
+          type="button"
+          className="block text-[10px] text-muted-foreground hover:underline"
+          onClick={() => setShowPhotoUpload(false)}
+        >
+          Cancel
+        </button>
+        {error && <p className="text-[10px] text-destructive">{error}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      {rejectionNote && (
+        <p className="text-[10px] text-destructive" title={rejectionNote}>
+          Rejected: {rejectionNote.length > 20 ? rejectionNote.slice(0, 20) + "\u2026" : rejectionNote}
+        </p>
+      )}
+      <button
+        type="button"
+        disabled={pending}
+        className="inline-flex items-center justify-center h-8 px-2 rounded border border-orange-400 text-orange-600 hover:bg-orange-50 transition-colors text-xs font-medium"
+        title="Redo this chore"
+        onClick={() => {
+          if (forcePhoto) {
+            setShowPhotoUpload(true);
+          } else {
+            handleRedo();
+          }
+        }}
+      >
+        {pending ? "\u2026" : "Redo"}
+      </button>
+      {error && (
+        <p className="text-[10px] text-destructive mt-0.5">{error}</p>
+      )}
+    </div>
+  );
+}
+
 function SignoffCell({
   signoff,
+  todayDate,
 }: {
   signoff: { id: string; status: string; sign_off_date: string };
+  todayDate?: string;
 }) {
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayDate ?? new Date().toISOString().split("T")[0];
   const isFuture = signoff.sign_off_date > today;
 
   if (signoff.status === "approved") {

@@ -6,6 +6,8 @@ import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { createDemeritSchema } from "@/lib/validations";
+import { getHouseYesterday } from "@/lib/timezone";
+import { sendNotification, sendNotificationToHouseManagers } from "@/lib/notifications";
 
 export async function createDemerit(
   _prevState: { error?: string } | undefined,
@@ -202,11 +204,20 @@ export async function generateMissedChoreDemerits(houseId?: string) {
 
   const supabase = await createClient();
 
-  // Find missed chore signoffs that haven't had demerits generated yet
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split("T")[0];
+  // Use house timezone if available, otherwise default
+  let yesterdayStr: string;
+  if (houseId) {
+    const { data: houseRow } = await supabase
+      .from("houses")
+      .select("timezone")
+      .eq("id", houseId)
+      .single();
+    yesterdayStr = getHouseYesterday(houseRow?.timezone ?? "America/Los_Angeles");
+  } else {
+    yesterdayStr = getHouseYesterday();
+  }
 
+  // Find pending signoffs whose date has passed (they are missed)
   const { data: missedSignoffs } = await supabase
     .from("chore_signoffs")
     .select(
@@ -219,7 +230,6 @@ export async function generateMissedChoreDemerits(houseId?: string) {
     return { count: 0 };
   }
 
-  // Filter to the specified house (or all accessible houses) and mark as missed
   let count = 0;
   for (const signoff of missedSignoffs) {
     const ra = signoff.rotation_assignment as unknown as {
@@ -228,11 +238,19 @@ export async function generateMissedChoreDemerits(houseId?: string) {
     } | null;
 
     if (!ra?.chore) continue;
-    // If houseId provided, filter to that house; otherwise process all accessible houses
     if (houseId && ra.chore.house_id !== houseId) continue;
     if (!houseId && user.role !== "admin" && !canAccessHouse(user, ra.chore.house_id)) continue;
 
     const effectiveHouseId = ra.chore.house_id;
+
+    // Duplicate prevention: check if a demerit already exists for this signoff
+    const { data: existingDemerit } = await supabase
+      .from("demerits")
+      .select("id")
+      .eq("signoff_id", signoff.id)
+      .maybeSingle();
+
+    if (existingDemerit) continue; // Already processed
 
     // Mark signoff as missed
     await supabase
@@ -240,7 +258,7 @@ export async function generateMissedChoreDemerits(houseId?: string) {
       .update({ status: "missed", updated_at: new Date().toISOString() })
       .eq("id", signoff.id);
 
-    // Create a demerit for the missed chore
+    // Create a demerit with signoff_id FK for linkage
     const { data: demerit } = await supabase
       .from("demerits")
       .insert({
@@ -250,6 +268,7 @@ export async function generateMissedChoreDemerits(houseId?: string) {
         reason: `Missed chore: ${ra.chore.name} on ${signoff.sign_off_date}`,
         category: "Missed Chore",
         issued_by: user.id,
+        signoff_id: signoff.id,
       })
       .select("id")
       .single();
@@ -265,6 +284,25 @@ export async function generateMissedChoreDemerits(houseId?: string) {
         entityId: demerit.id,
         description: `Auto-demerit: missed chore "${ra.chore.name}" on ${signoff.sign_off_date}`,
       });
+
+      // Notify the resident about the auto-demerit
+      const { data: residentUser } = await supabase
+        .from("residents")
+        .select("user_id")
+        .eq("id", ra.resident_id)
+        .single();
+
+      if (residentUser?.user_id) {
+        await sendNotification({
+          userId: residentUser.user_id,
+          type: "missed_chore",
+          title: "Missed Chore Demerit",
+          message: `You received a demerit for missing "${ra.chore.name}" on ${signoff.sign_off_date}.`,
+          actionUrl: "/chores",
+          entityType: "demerit",
+          entityId: demerit.id,
+        });
+      }
     }
   }
 

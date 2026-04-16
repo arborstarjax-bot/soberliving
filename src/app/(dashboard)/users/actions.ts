@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth";
+import { requireAuth, requireRole } from "@/lib/auth";
+import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { createUserSchema, assignManagerSchema, updateUserProfileSchema } from "@/lib/validations";
 import { sendInviteEmail } from "@/lib/email";
@@ -11,7 +12,10 @@ export async function createUser(
   _prevState: { error?: string; inviteLink?: string } | undefined,
   formData: FormData
 ) {
-  const user = await requireRole("admin");
+  // Allow both admins and managers to invite residents
+  const user = await requireAuth();
+  if (user.role === "resident") return { error: "Not authorized" };
+
   const parsed = createUserSchema.safeParse({
     email: formData.get("email"),
     full_name: formData.get("full_name") || undefined,

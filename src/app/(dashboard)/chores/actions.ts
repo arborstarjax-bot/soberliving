@@ -13,6 +13,8 @@ import {
   assignRotationChoreSchema,
 } from "@/lib/validations";
 import { addDays, format } from "date-fns";
+import { getHouseToday, getHouseYesterday } from "@/lib/timezone";
+import { sendNotification, sendNotificationToHouseManagers } from "@/lib/notifications";
 
 // --- Chore Templates ---
 
@@ -665,8 +667,17 @@ export async function markSignoffComplete(signoffId: string, photoUrl?: string) 
   } | null;
 
   const houseId = assignment?.rotation?.house_id ?? "";
-  const todayUtc = new Date().toISOString().split("T")[0];
-  const yesterdayUtc = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+
+  // Look up house timezone for accurate date checks
+  const supabaseForTz = await createClient();
+  const { data: houseRow } = await supabaseForTz
+    .from("houses")
+    .select("timezone")
+    .eq("id", houseId)
+    .single();
+  const tz = houseRow?.timezone ?? "America/Los_Angeles";
+  const todayLocal = getHouseToday(tz);
+  const yesterdayLocal = getHouseYesterday(tz);
 
   if (user.role === "resident") {
     // Residents can only complete their own signoffs
@@ -681,8 +692,8 @@ export async function markSignoffComplete(signoffId: string, photoUrl?: string) 
       return { error: "Not authorized" };
     }
 
-    // Residents can only mark today's signoff (with ±1 day grace for timezone offset)
-    if (signoff.sign_off_date !== todayUtc && signoff.sign_off_date !== yesterdayUtc) {
+    // Residents can only mark today's signoff (with ±1 day grace)
+    if (signoff.sign_off_date !== todayLocal && signoff.sign_off_date !== yesterdayLocal) {
       return { error: "You can only sign off on today's chore" };
     }
 
@@ -713,6 +724,18 @@ export async function markSignoffComplete(signoffId: string, photoUrl?: string) 
     .eq("id", signoffId);
 
   if (error) return { error: error.message };
+
+  // Notify house managers when a resident submits a signoff for review
+  if (user.role === "resident" && houseId) {
+    await sendNotificationToHouseManagers(houseId, {
+      type: "chore_submitted",
+      title: "Chore Submitted for Review",
+      message: `${user.full_name} submitted a chore for review.`,
+      actionUrl: "/chores",
+      entityType: "chore_signoff",
+      entityId: signoffId,
+    });
+  }
 
   revalidatePath("/chores");
   return {};
@@ -786,6 +809,27 @@ export async function reviewSignoff(
       entityId: signoffId,
       description: `"${ra.chore?.name}" signoff ${action}d by ${user.full_name}`,
     });
+
+    // Notify the resident about the review result
+    const { data: residentUser } = await supabase
+      .from("residents")
+      .select("user_id")
+      .eq("id", ra.resident_id)
+      .single();
+
+    if (residentUser?.user_id) {
+      await sendNotification({
+        userId: residentUser.user_id,
+        type: action === "approve" ? "chore_approved" : "chore_rejected",
+        title: action === "approve" ? "Chore Approved" : "Chore Rejected",
+        message: action === "approve"
+          ? `Your "${ra.chore?.name}" chore was approved.`
+          : `Your "${ra.chore?.name}" chore was rejected.${rejectionNote ? ` Reason: ${rejectionNote}` : " Please redo it."}`,
+        actionUrl: "/chores",
+        entityType: "chore_signoff",
+        entityId: signoffId,
+      });
+    }
   }
 
   revalidatePath("/chores");
@@ -843,12 +887,38 @@ export async function overrideSignoffStatus(
     updateData.rejection_note = null;
   }
 
+  // If changing FROM missed to another status, auto-reverse the linked demerit
+  const oldStatus = (signoff as unknown as { status: string }).status;
+
   const { error } = await supabase
     .from("chore_signoffs")
     .update(updateData)
     .eq("id", signoffId);
 
   if (error) return { error: error.message };
+
+  if (oldStatus === "missed" && newStatus !== "missed") {
+    // Delete any auto-generated demerit linked to this signoff
+    const { data: linkedDemerits } = await supabase
+      .from("demerits")
+      .select("id")
+      .eq("signoff_id", signoffId);
+
+    if (linkedDemerits && linkedDemerits.length > 0) {
+      for (const d of linkedDemerits) {
+        await supabase.from("demerits").delete().eq("id", d.id);
+      }
+      await logActivity({
+        houseId,
+        residentId: ra?.resident_id,
+        actorId: user.id,
+        eventType: "demerit_auto_reversed",
+        entityType: "demerit",
+        entityId: signoffId,
+        description: `Auto-reversed demerit for "${ra?.chore?.name}" — signoff status changed from missed to ${newStatus}`,
+      });
+    }
+  }
 
   await logActivity({
     houseId,
@@ -859,6 +929,71 @@ export async function overrideSignoffStatus(
     entityId: signoffId,
     description: `"${ra?.chore?.name}" signoff status changed to ${newStatus} by ${user.full_name}`,
   });
+
+  revalidatePath("/chores");
+  revalidatePath("/discipline");
+  return {};
+}
+
+// --- Resident Redo After Rejection ---
+
+export async function redoSignoff(signoffId: string, photoUrl?: string) {
+  const user = await requireAuth();
+  if (user.role !== "resident") return { error: "Only residents can redo signoffs" };
+
+  const supabase = await createClient();
+
+  const { data: signoff } = await supabase
+    .from("chore_signoffs")
+    .select("id, status, sign_off_date, rotation_assignment_id, rotation_assignment:chore_rotation_assignments(resident_id, rotation:chore_rotations(house_id))")
+    .eq("id", signoffId)
+    .single();
+
+  if (!signoff) return { error: "Signoff not found" };
+  if ((signoff as unknown as { status: string }).status !== "rejected") {
+    return { error: "Only rejected signoffs can be redone" };
+  }
+
+  const assignment = signoff.rotation_assignment as unknown as {
+    resident_id: string;
+    rotation: { house_id: string } | null;
+  } | null;
+
+  // Verify this is the resident's own signoff
+  const { data: residentRecord } = await supabase
+    .from("residents")
+    .select("id, force_photo")
+    .eq("user_id", user.id)
+    .eq("status", "active")
+    .single();
+
+  if (!residentRecord || residentRecord.id !== assignment?.resident_id) {
+    return { error: "Not authorized" };
+  }
+
+  if (residentRecord.force_photo && !photoUrl) {
+    return { error: "Photo is required — please upload a photo before signing off" };
+  }
+
+  const updateData: Record<string, unknown> = {
+    status: "completed_pending_review",
+    completed_at: new Date().toISOString(),
+    reviewed_by: null,
+    reviewed_at: null,
+    rejection_note: null,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (photoUrl) {
+    updateData.photo_url = photoUrl;
+  }
+
+  const { error } = await supabase
+    .from("chore_signoffs")
+    .update(updateData)
+    .eq("id", signoffId);
+
+  if (error) return { error: error.message };
 
   revalidatePath("/chores");
   return {};
@@ -999,82 +1134,6 @@ export async function updateChoreSchedule(choreId: string, scheduledDays: string
     entityType: "chore",
     entityId: choreId,
     description: `Schedule updated for "${chore.name}" by ${user.full_name}: ${scheduledDays.join(", ") || "none"}`,
-  });
-
-  revalidatePath("/chores");
-  return {};
-}
-
-// --- Chore Completions ---
-
-export async function completeChore(
-  choreId: string,
-  residentId: string,
-  completionDate: string,
-  photoUrl?: string
-) {
-  const user = await requireAuth();
-  const supabase = await createClient();
-
-  const { data: chore } = await supabase
-    .from("chores")
-    .select("house_id, name")
-    .eq("id", choreId)
-    .single();
-
-  if (!chore) return { error: "Chore not found" };
-
-  const { data: resident } = await supabase
-    .from("residents")
-    .select("full_name, force_photo")
-    .eq("id", residentId)
-    .single();
-
-  if (!resident) return { error: "Resident not found" };
-
-  // Authorization check must come before force_photo check
-  if (user.role === "resident") {
-    const { data: myResident } = await supabase
-      .from("residents")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("status", "active")
-      .single();
-    if (!myResident || myResident.id !== residentId) {
-      return { error: "Not authorized" };
-    }
-  } else if (user.role !== "admin" && !canAccessHouse(user, chore.house_id)) {
-    return { error: "Not authorized" };
-  }
-
-  if (resident.force_photo && !photoUrl) {
-    return { error: "Photo is required — force photo is enabled for this resident" };
-  }
-
-  const { error } = await supabase
-    .from("chore_completions")
-    .insert({
-      chore_id: choreId,
-      resident_id: residentId,
-      completion_date: completionDate,
-      photo_url: photoUrl ?? null,
-      status: "completed",
-      completed_by: user.id,
-    });
-
-  if (error) {
-    if (error.code === "23505") return { error: "Chore already completed for this date" };
-    return { error: error.message };
-  }
-
-  await logActivity({
-    houseId: chore.house_id,
-    residentId,
-    actorId: user.id,
-    eventType: "chore_completed",
-    entityType: "chore_completion",
-    entityId: choreId,
-    description: `"${chore.name}" completed by ${resident.full_name} for ${completionDate}`,
   });
 
   revalidatePath("/chores");
