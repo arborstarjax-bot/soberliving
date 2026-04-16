@@ -23,6 +23,11 @@ export async function createUser(
   });
   const houseId = (formData.get("house_id") as string) || null;
 
+  // Managers can only assign residents to houses they manage
+  if (houseId && user.role !== "admin" && !canAccessHouse(user, houseId)) {
+    return { error: "Not authorized for this house" };
+  }
+
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
   const supabase = await createClient();
