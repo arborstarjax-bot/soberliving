@@ -647,7 +647,7 @@ export async function markSignoffComplete(signoffId: string, photoUrl?: string) 
   // Look up the signoff's assignment to verify authorization
   const { data: signoff } = await supabase
     .from("chore_signoffs")
-    .select("id, sign_off_date, rotation_assignment_id, rotation_assignment:chore_rotation_assignments(resident_id, rotation:chore_rotations(house_id))")
+    .select("id, status, sign_off_date, rotation_assignment_id, rotation_assignment:chore_rotation_assignments(resident_id, rotation:chore_rotations(house_id))")
     .eq("id", signoffId)
     .single();
 
