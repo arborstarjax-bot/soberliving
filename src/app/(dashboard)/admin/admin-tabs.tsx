@@ -1296,7 +1296,10 @@ function UserActionMenu({
           {currentRole !== "manager" && (
             <DropdownMenuItem
               disabled={isPending}
-              onClick={() => startTransition(() => { changeUserRole(userId, "manager"); })}
+              onClick={() => startTransition(async () => {
+                await changeUserRole(userId, "manager");
+                setShowHouseAssign(true);
+              })}
             >
               Set as Manager
             </DropdownMenuItem>
