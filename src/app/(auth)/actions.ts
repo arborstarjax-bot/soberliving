@@ -141,11 +141,17 @@ export async function signup(
     );
 
   if (profileError) {
+    // auth.signUp already committed the auth user. If we leave it in
+    // place the email is now "taken" but has no profile row, so the
+    // user can't re-register and can't log in either (getSessionUser
+    // returns null without a profile, which loops them back to
+    // /login). Roll the auth user back so they can retry.
+    await admin.auth.admin.deleteUser(data.user.id).catch(() => {});
     return {
       error:
         "Failed to create profile: " +
         profileError.message +
-        ". Please contact an administrator.",
+        ". Please try again.",
     };
   }
 
@@ -157,11 +163,15 @@ export async function signup(
     );
 
   if (roleError) {
+    // Same rollback reasoning as above — plus remove the half-written
+    // profile row so a retry starts from a clean slate.
+    await admin.from("users").delete().eq("id", data.user.id);
+    await admin.auth.admin.deleteUser(data.user.id).catch(() => {});
     return {
       error:
         "Failed to assign role: " +
         roleError.message +
-        ". Please contact an administrator.",
+        ". Please try again.",
     };
   }
 

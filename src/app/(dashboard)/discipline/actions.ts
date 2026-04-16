@@ -306,14 +306,18 @@ export async function generateMissedChoreDemerits(houseId?: string) {
     // Guard against a TOCTOU race: the resident may complete the
     // chore between the SELECT above and this UPDATE. Re-checking
     // status='pending' here means a completion that slipped in
-    // concurrently isn't clobbered back to 'missed'.
-    const { error: flagError } = await supabase
+    // concurrently isn't clobbered back to 'missed'. Select the row
+    // back so we only increment `count` when a row was actually
+    // flipped — otherwise a concurrent completion would silently
+    // inflate the "N flagged" number shown to staff.
+    const { data: updated, error: flagError } = await supabase
       .from("chore_signoffs")
       .update({ status: "missed", updated_at: new Date().toISOString() })
       .eq("id", signoff.id)
-      .eq("status", "pending");
+      .eq("status", "pending")
+      .select("id");
 
-    if (!flagError) count++;
+    if (!flagError && updated && updated.length > 0) count++;
   }
 
   revalidatePath("/discipline");
