@@ -105,12 +105,16 @@ export function startOfDayInTz(dateStr: string, timezone: string): string {
  * inclusive end of a custom date range.
  */
 export function endOfDayInTz(dateStr: string, timezone: string): string {
-  // Build end-of-day by taking the start of the next day and subtracting
-  // 1ms. This handles DST boundaries correctly — a 23-hour or 25-hour
-  // day still ends at the same wall-clock instant.
-  const start = new Date(startOfDayInTz(dateStr, timezone));
-  const nextDay = new Date(start.getTime() + 24 * 60 * 60 * 1000);
-  return new Date(nextDay.getTime() - 1).toISOString();
+  // End-of-day is 1ms before the start of the *next calendar day* in the
+  // same timezone. Computing that via `start + 24h` is wrong on DST
+  // transition days (a spring-forward day is 23h long, fall-back is 25h),
+  // so we bump the Y/M/D explicitly and re-call startOfDayInTz so DST is
+  // resolved per-day.
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const next = new Date(Date.UTC(y, m - 1, d + 1));
+  const nextStr = `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(next.getUTCDate()).padStart(2, "0")}`;
+  const nextStart = new Date(startOfDayInTz(nextStr, timezone));
+  return new Date(nextStart.getTime() - 1).toISOString();
 }
 
 /**
