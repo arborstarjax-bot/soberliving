@@ -270,10 +270,19 @@ export function StateOfHouseView({
         />
       </ExpandableSection>
 
-      {/* Discharges & Departures — flat */}
-      <SectionCard
+      {/* Discharges & Departures — click to expand the per-resident list. */}
+      <ExpandableSection
         title="Discharges & Departures"
         description="Residents who left during the selected period. Reasons, when recorded, are shown."
+        summary={
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Stat label="Discharged" value={data.discharges.length} />
+            <Stat
+              label="Voluntary departures"
+              value={data.voluntaryDepartures.length}
+            />
+          </div>
+        }
       >
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
@@ -333,7 +342,7 @@ export function StateOfHouseView({
             )}
           </div>
         </div>
-      </SectionCard>
+      </ExpandableSection>
 
       {/* Check-Ins — three separate expandable cards so each rating can be
           opened independently (per-resident detail with workplace for work). */}
