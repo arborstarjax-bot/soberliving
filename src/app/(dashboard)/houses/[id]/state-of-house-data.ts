@@ -1,4 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
+import {
+  DEFAULT_TIMEZONE,
+  endOfDayInTz,
+  getHouseFirstOfMonth,
+  getHouseToday,
+  startOfDayInTz,
+} from "@/lib/timezone";
 
 export interface StateOfHouseData {
   census: {
@@ -106,33 +113,46 @@ export interface DateRange {
 export function resolveRange(
   range: string,
   customStart: string,
-  customEnd: string
+  customEnd: string,
+  timezone: string = DEFAULT_TIMEZONE
 ): DateRange {
   const now = new Date();
-  const endIso = new Date().toISOString();
+  const endIso = now.toISOString();
 
   switch (range) {
     case "today": {
-      const start = new Date(now);
-      start.setHours(0, 0, 0, 0);
+      // Midnight in the HOUSE's timezone, not the server's. Without this,
+      // a house in PT would include late-yesterday-evening records in
+      // "Today" (since midnight UTC is 5–8pm local) and drop early-morning
+      // records that haven't reached UTC midnight yet.
+      const todayStr = getHouseToday(timezone);
       return {
-        startIso: start.toISOString(),
+        startIso: startOfDayInTz(todayStr, timezone),
         endIso,
         label: "Today",
       };
     }
     case "month": {
-      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const firstOfMonth = getHouseFirstOfMonth(timezone);
+      // Label uses the house's local month/year so e.g. PT houses
+      // crossing midnight UTC late on the 31st still read the correct
+      // month name.
+      const labelDate = new Date(`${firstOfMonth}T12:00:00Z`);
+      const monthLabel = new Intl.DateTimeFormat("en-US", {
+        timeZone: timezone,
+        month: "long",
+        year: "numeric",
+      }).format(labelDate);
       return {
-        startIso: start.toISOString(),
+        startIso: startOfDayInTz(firstOfMonth, timezone),
         endIso,
-        label: `${start.toLocaleString("default", {
-          month: "long",
-          year: "numeric",
-        })} to date`,
+        label: `${monthLabel} to date`,
       };
     }
     case "90d": {
+      // Relative durations (last N days/months/years) are anchored at
+      // "now" and don't need timezone adjustment — the window is the
+      // same whether we measure it in UTC or local time.
       const start = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
       return {
         startIso: start.toISOString(),
@@ -159,16 +179,22 @@ export function resolveRange(
       };
     }
     case "custom": {
-      const start = customStart ? new Date(customStart) : null;
-      const end = customEnd ? new Date(customEnd) : new Date();
-      // Push end to end of day so queries are inclusive
-      end.setHours(23, 59, 59, 999);
+      // customStart / customEnd come in as "YYYY-MM-DD" date-only strings
+      // from the <input type="date"> picker. Interpret them as local dates
+      // in the house's timezone so a user picking "April 16" gets their
+      // full calendar day in their own timezone, not server UTC.
+      const startIso = customStart
+        ? startOfDayInTz(customStart, timezone)
+        : null;
+      const endIso = customEnd
+        ? endOfDayInTz(customEnd, timezone)
+        : endOfDayInTz(getHouseToday(timezone), timezone);
       return {
-        startIso: start ? start.toISOString() : null,
-        endIso: end.toISOString(),
+        startIso,
+        endIso,
         label: `${
-          start ? start.toLocaleDateString() : "All time"
-        } – ${end.toLocaleDateString()}`,
+          customStart || "All time"
+        } – ${customEnd || getHouseToday(timezone)}`,
       };
     }
     case "all_time":

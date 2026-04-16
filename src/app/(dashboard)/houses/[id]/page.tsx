@@ -111,7 +111,9 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
   const startParam =
     typeof searchParams?.start === "string" ? searchParams.start : "";
   const endParam = typeof searchParams?.end === "string" ? searchParams.end : "";
-  const dateRange = resolveRange(rangeParam, startParam, endParam);
+  const houseTimezone =
+    (house as { timezone?: string | null }).timezone || undefined;
+  const dateRange = resolveRange(rangeParam, startParam, endParam, houseTimezone);
   const stateData = await loadStateOfHouseData(id, dateRange);
 
   const supplyItems: SupplyItem[] = (supplies ?? []).map((s) => ({

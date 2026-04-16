@@ -56,3 +56,71 @@ export function getHouseDayOfWeek(
   });
   return formatter.format(now).toLowerCase();
 }
+
+/**
+ * Returns the UTC ISO timestamp corresponding to 00:00:00 local-time on the
+ * given YYYY-MM-DD date in the given IANA timezone.
+ *
+ * Example: startOfDayInTz("2026-04-16", "America/Los_Angeles") returns
+ * "2026-04-16T07:00:00.000Z" (PDT = UTC-7).
+ *
+ * This is the helper State of the House uses so "Today"/"This Month"
+ * ranges line up with the house's calendar rather than the server's UTC
+ * day, which would otherwise drift by several hours.
+ */
+export function startOfDayInTz(dateStr: string, timezone: string): string {
+  // Start from UTC midnight of the target date, then figure out how that
+  // instant renders in the target timezone. The gap between the rendered
+  // wall-clock time and the intended local midnight is the timezone
+  // offset we need to subtract from UTC midnight.
+  const utcMidnight = new Date(`${dateStr}T00:00:00Z`);
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const parts = fmt.formatToParts(utcMidnight);
+  const map: Record<string, number> = {};
+  for (const p of parts) if (p.type !== "literal") map[p.type] = Number(p.value);
+  const renderedAsUTC = Date.UTC(
+    map.year,
+    map.month - 1,
+    map.day,
+    map.hour,
+    map.minute,
+    map.second
+  );
+  const offsetMs = renderedAsUTC - utcMidnight.getTime();
+  return new Date(utcMidnight.getTime() - offsetMs).toISOString();
+}
+
+/**
+ * Returns the UTC ISO timestamp corresponding to 23:59:59.999 local-time
+ * on the given YYYY-MM-DD date in the given IANA timezone. Used for the
+ * inclusive end of a custom date range.
+ */
+export function endOfDayInTz(dateStr: string, timezone: string): string {
+  // Build end-of-day by taking the start of the next day and subtracting
+  // 1ms. This handles DST boundaries correctly — a 23-hour or 25-hour
+  // day still ends at the same wall-clock instant.
+  const start = new Date(startOfDayInTz(dateStr, timezone));
+  const nextDay = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return new Date(nextDay.getTime() - 1).toISOString();
+}
+
+/**
+ * Returns the first day of the current month (YYYY-MM-01) in the given
+ * IANA timezone. Used by State of the House to compute the "This month
+ * to date" range anchor.
+ */
+export function getHouseFirstOfMonth(
+  timezone: string = DEFAULT_TIMEZONE
+): string {
+  const today = getHouseToday(timezone); // "YYYY-MM-DD"
+  return `${today.slice(0, 7)}-01`;
+}
