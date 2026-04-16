@@ -42,7 +42,23 @@ export default async function DisciplinePage() {
     }
   }
 
-  // Get houses
+  // The auto-expire UPDATE has to land BEFORE the restrictions SELECTs,
+  // because otherwise active-restrictions would still include
+  // past-their-end-date rows and past-restrictions would miss the
+  // ones we just flipped. Keep that serialized, but then fan out the
+  // rest of the page's queries in parallel.
+  const today = new Date().toISOString().split("T")[0];
+  let expireQuery = adminClient
+    .from("restrictions")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq("is_active", true)
+    .lte("end_date", today)
+    .not("end_date", "is", null);
+  if (houseFilter && houseFilter.length > 0) expireQuery = expireQuery.in("house_id", houseFilter);
+  if (residentRecordId) expireQuery = expireQuery.eq("resident_id", residentRecordId);
+  await expireQuery;
+
+  // Build the five independent read queries, then await them all at once.
   let housesQuery = adminClient
     .from("houses")
     .select("id, name")
@@ -50,9 +66,7 @@ export default async function DisciplinePage() {
     .order("name");
   if (houseFilter && houseFilter.length > 0) housesQuery = housesQuery.in("id", houseFilter);
   if (residentHouseId) housesQuery = housesQuery.eq("id", residentHouseId);
-  const { data: houses } = await housesQuery;
 
-  // Get residents — for residents, only show themselves
   let residentsQuery = adminClient
     .from("residents")
     .select("id, full_name, house_id")
@@ -60,9 +74,7 @@ export default async function DisciplinePage() {
     .order("full_name");
   if (houseFilter && houseFilter.length > 0) residentsQuery = residentsQuery.in("house_id", houseFilter);
   if (residentRecordId) residentsQuery = residentsQuery.eq("id", residentRecordId);
-  const { data: residents } = await residentsQuery;
 
-  // Get demerits (select only needed columns to avoid body size limit)
   let demeritsQuery = adminClient
     .from("demerits")
     .select("id, resident_id, house_id, reason, notes, category, status, auto_generated, created_at, resolved_at, resolution_note, photo_url")
@@ -70,33 +82,15 @@ export default async function DisciplinePage() {
     .limit(200);
   if (houseFilter && houseFilter.length > 0) demeritsQuery = demeritsQuery.in("house_id", houseFilter);
   if (residentRecordId) demeritsQuery = demeritsQuery.eq("resident_id", residentRecordId);
-  const { data: demerits } = await demeritsQuery;
 
-  // Auto-expire restrictions past their end date (runs for all users)
-  const today = new Date().toISOString().split("T")[0];
-  {
-    let expireQuery = adminClient
-      .from("restrictions")
-      .update({ is_active: false, updated_at: new Date().toISOString() })
-      .eq("is_active", true)
-      .lte("end_date", today)
-      .not("end_date", "is", null);
-    if (houseFilter && houseFilter.length > 0) expireQuery = expireQuery.in("house_id", houseFilter);
-    if (residentRecordId) expireQuery = expireQuery.eq("resident_id", residentRecordId);
-    await expireQuery;
-  }
-
-  // Get active restrictions
-  let restrictionsQuery = adminClient
+  let activeRestrictionsQuery = adminClient
     .from("restrictions")
     .select("*, resident:residents(full_name), house:houses(name)")
     .eq("is_active", true)
     .order("created_at", { ascending: false });
-  if (houseFilter && houseFilter.length > 0) restrictionsQuery = restrictionsQuery.in("house_id", houseFilter);
-  if (residentRecordId) restrictionsQuery = restrictionsQuery.eq("resident_id", residentRecordId);
-  const { data: activeRestrictions } = await restrictionsQuery;
+  if (houseFilter && houseFilter.length > 0) activeRestrictionsQuery = activeRestrictionsQuery.in("house_id", houseFilter);
+  if (residentRecordId) activeRestrictionsQuery = activeRestrictionsQuery.eq("resident_id", residentRecordId);
 
-  // Get recently lifted/expired restrictions
   let pastRestrictionsQuery = adminClient
     .from("restrictions")
     .select("*, resident:residents(full_name), house:houses(name)")
@@ -105,7 +99,20 @@ export default async function DisciplinePage() {
     .limit(20);
   if (houseFilter && houseFilter.length > 0) pastRestrictionsQuery = pastRestrictionsQuery.in("house_id", houseFilter);
   if (residentRecordId) pastRestrictionsQuery = pastRestrictionsQuery.eq("resident_id", residentRecordId);
-  const { data: pastRestrictions } = await pastRestrictionsQuery;
+
+  const [
+    { data: houses },
+    { data: residents },
+    { data: demerits },
+    { data: activeRestrictions },
+    { data: pastRestrictions },
+  ] = await Promise.all([
+    housesQuery,
+    residentsQuery,
+    demeritsQuery,
+    activeRestrictionsQuery,
+    pastRestrictionsQuery,
+  ]);
 
   // Normalize restriction data for client component
   const normalizedActiveRestrictions = (activeRestrictions ?? []).map((r) => ({

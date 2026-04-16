@@ -21,25 +21,22 @@ export default async function ChoresPage() {
 
   const isStaff = user.role === "admin" || user.role === "manager";
 
-  // Get houses
+  // houses / chores / rotations / residents / exclusions are all
+  // independent — fire them in parallel instead of serially.
   let housesQuery = supabase
     .from("houses")
     .select("id, name")
     .eq("is_active", true)
     .order("name");
   if (houseFilter) housesQuery = housesQuery.in("id", houseFilter);
-  const { data: houses } = await housesQuery;
 
-  // Get chores with tasks for all accessible houses
   let choresQuery = supabase
     .from("chores")
     .select("*, chore_tasks(*), days_of_week, cycle_weeks")
     .eq("is_active", true)
     .order("sort_order");
   if (houseFilter) choresQuery = choresQuery.in("house_id", houseFilter);
-  const { data: chores } = await choresQuery;
 
-  // Get current rotations
   let rotationsQuery = supabase
     .from("chore_rotations")
     .select(
@@ -47,21 +44,31 @@ export default async function ChoresPage() {
     )
     .eq("is_current", true);
   if (houseFilter) rotationsQuery = rotationsQuery.in("house_id", houseFilter);
-  const { data: rotations } = await rotationsQuery;
 
-  // Get residents for assignment
   let residentsQuery = supabase
     .from("residents")
     .select("id, full_name, house_id")
     .eq("status", "active")
     .order("full_name");
   if (houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
-  const { data: residents } = await residentsQuery;
 
-  // Get chore exclusions
-  const { data: exclusions } = await supabase
+  const exclusionsQuery = supabase
     .from("chore_exclusions")
     .select("id, chore_id, resident_id, reason, resident:residents(full_name)");
+
+  const [
+    { data: houses },
+    { data: chores },
+    { data: rotations },
+    { data: residents },
+    { data: exclusions },
+  ] = await Promise.all([
+    housesQuery,
+    choresQuery,
+    rotationsQuery,
+    residentsQuery,
+    exclusionsQuery,
+  ]);
 
   // Normalize exclusions: Supabase returns joined resident as array, flatten to object
   // Also filter by house access using the already-fetched chores list
@@ -82,7 +89,7 @@ export default async function ChoresPage() {
     }
   }
 
-  // Get signoffs needing review (include photo_url and completion_note)
+  // Pending and missed signoffs are independent reads — fan out.
   const pendingSignoffsQuery = supabase
     .from("chore_signoffs")
     .select(
@@ -90,10 +97,8 @@ export default async function ChoresPage() {
     )
     .eq("status", "completed_pending_review")
     .order("sign_off_date", { ascending: true });
-  const { data: pendingSignoffs } = await pendingSignoffsQuery;
 
-  // Get missed signoffs for the Missed tab
-  let missedSignoffsQuery = supabase
+  const missedSignoffsQuery = supabase
     .from("chore_signoffs")
     .select(
       "*, rotation_assignment:chore_rotation_assignments(resident:residents(full_name), chore:chores(name, house_id))"
@@ -101,7 +106,11 @@ export default async function ChoresPage() {
     .eq("status", "missed")
     .order("sign_off_date", { ascending: false })
     .limit(100);
-  const { data: missedSignoffs } = await missedSignoffsQuery;
+
+  const [
+    { data: pendingSignoffs },
+    { data: missedSignoffs },
+  ] = await Promise.all([pendingSignoffsQuery, missedSignoffsQuery]);
 
   // Filter missed signoffs by house access
   let filteredMissedSignoffs = missedSignoffs ?? [];

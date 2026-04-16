@@ -45,19 +45,31 @@ export default async function LeaveRequestsPage() {
     userResidentId = myResident?.id;
   }
 
+  // Leave requests and the residents list (for the create dialog) are
+  // independent of one another once we know the viewer's resident id.
+  // Build both queries and fire them in a single Promise.all.
   let query = supabase
     .from("leave_requests")
     .select("*, resident:residents!leave_requests_resident_id_fkey(id, full_name, house_id, user_id), covering_resident:residents!leave_requests_covering_resident_id_fkey(id, full_name, user_id)")
     .order("created_at", { ascending: false });
 
   if (user.role === "resident") {
-    // Residents see requests they made OR requests where they are the covering resident
     if (userResidentId) {
       query = query.or(`resident_id.eq.${userResidentId},covering_resident_id.eq.${userResidentId}`);
     }
   }
 
-  const { data: allRequests } = await query;
+  let residentsQuery = supabase
+    .from("residents")
+    .select("id, full_name, house_id")
+    .eq("status", "active")
+    .order("full_name");
+  if (houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
+
+  const [
+    { data: allRequests },
+    { data: residents },
+  ] = await Promise.all([query, residentsQuery]);
 
   let requests = allRequests ?? [];
   if (houseFilter && user.role !== "resident") {
@@ -74,15 +86,6 @@ export default async function LeaveRequestsPage() {
   const others = requests.filter(
     (r) => r.status === "rejected" || r.status === "returned"
   );
-
-  // Get residents for the create dialog
-  let residentsQuery = supabase
-    .from("residents")
-    .select("id, full_name, house_id")
-    .eq("status", "active")
-    .order("full_name");
-  if (houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
-  const { data: residents } = await residentsQuery;
 
   return (
     <div className="space-y-6">
