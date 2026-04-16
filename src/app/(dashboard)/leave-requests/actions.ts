@@ -224,9 +224,12 @@ export async function approveCoverRequest(requestId: string) {
 
 export async function denyCoverRequest(requestId: string, note?: string) {
   const user = await requireAuth();
-  const supabase = await createClient();
+  // Mirror approveCoverRequest: RLS on leave_requests only permits the
+  // requester or staff to read/update rows — the covering resident is
+  // neither, so use the admin client and enforce permission in code.
+  const adminClient = createAdminClient();
 
-  const { data: request } = await supabase
+  const { data: request } = await adminClient
     .from("leave_requests")
     .select("*, resident:residents!leave_requests_resident_id_fkey(full_name, house_id, user_id), covering_resident:residents!leave_requests_covering_resident_id_fkey(user_id)")
     .eq("id", requestId)
@@ -247,7 +250,7 @@ export async function denyCoverRequest(requestId: string, note?: string) {
     return { error: "Not authorized for this house" };
   }
 
-  const { error } = await supabase
+  const { error } = await adminClient
     .from("leave_requests")
     .update({
       status: "rejected",
