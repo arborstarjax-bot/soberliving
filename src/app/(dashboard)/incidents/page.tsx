@@ -5,22 +5,38 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle } from "lucide-react";
 import { CreateIncidentDialog } from "./create-incident-dialog";
+import { Pagination } from "@/components/pagination";
+import { getPageParams, buildPaginationMeta } from "@/lib/pagination";
 
-export default async function IncidentsPage() {
+interface IncidentsPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function IncidentsPage({ searchParams }: IncidentsPageProps) {
   const user = await requireAuth();
   const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
 
+  const params = await searchParams;
+  const { page, offset, pageSize } = getPageParams(params);
+
+  // Trimmed select list — was `*`, but the row only reads severity,
+  // description, category, and occurred_at plus the joined names.
   let query = supabase
     .from("incidents")
-    .select("*, resident:residents(full_name), house:houses(name), reporter:users!reported_by(full_name)")
-    .order("occurred_at", { ascending: false });
+    .select(
+      "id, severity, description, category, occurred_at, resident:residents(full_name), house:houses(name), reporter:users!reported_by(full_name)",
+      { count: "exact" }
+    )
+    .order("occurred_at", { ascending: false })
+    .range(offset, offset + pageSize - 1);
 
   if (houseFilter) {
     query = query.in("house_id", houseFilter);
   }
 
-  const { data: incidents } = await query;
+  const { data: incidents, count } = await query;
+  const meta = buildPaginationMeta(count ?? 0, page, pageSize);
 
   // Get houses and residents for the create dialog
   let housesQuery = supabase.from("houses").select("id, name").eq("is_active", true).order("name");
@@ -54,6 +70,7 @@ export default async function IncidentsPage() {
           </CardContent>
         </Card>
       ) : (
+        <>
         <div className="space-y-2">
           {(incidents ?? []).map((inc) => (
             <Card key={inc.id}>
@@ -73,7 +90,7 @@ export default async function IncidentsPage() {
                       {inc.severity}
                     </Badge>
                     <span className="font-medium text-sm">
-                      {(inc.resident as { full_name: string })?.full_name}
+                      {(inc.resident as unknown as { full_name: string } | null)?.full_name}
                     </span>
                   </div>
                   <span className="text-xs text-muted-foreground">
@@ -94,6 +111,13 @@ export default async function IncidentsPage() {
             </Card>
           ))}
         </div>
+        <Pagination
+          meta={meta}
+          basePath="/incidents"
+          searchParams={params}
+          itemLabel="incidents"
+        />
+        </>
       )}
     </div>
   );

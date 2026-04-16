@@ -132,3 +132,45 @@ create policy "Users can insert their own profile"
 update public.beds
   set label = regexp_replace(label, ' \[Empty\]$', ' [Not Available]')
   where label like '% [Empty]';
+
+-- ---- Pagination indexes ----
+-- The Activity Log, Notifications, Bulletin, and Incidents pages all
+-- paginate by (filter) + created_at DESC. Without these indexes the
+-- planner has to sort every matching row on each page load, which is
+-- fine at 100 rows and painful at 100k. Partial expressions match
+-- exactly the queries in the server page code so the planner actually
+-- picks them. All guarded by IF NOT EXISTS so the file stays idempotent.
+
+-- Activity Log: filtered by house_id + ordered by created_at desc.
+create index if not exists idx_activity_log_house_created_desc
+  on public.activity_log (house_id, created_at desc);
+
+-- Activity Log: per-event-type filter (category tabs).
+create index if not exists idx_activity_log_event_type_created_desc
+  on public.activity_log (event_type, created_at desc);
+
+-- Notifications: per-user feed + unread count.
+create index if not exists idx_notifications_user_created_desc
+  on public.notifications (user_id, created_at desc);
+create index if not exists idx_notifications_user_unread
+  on public.notifications (user_id) where is_read = false;
+
+-- Bulletin posts: pinned-first feed scoped to a set of houses.
+create index if not exists idx_bulletin_posts_pinned_created_desc
+  on public.bulletin_posts (is_pinned desc, created_at desc);
+create index if not exists idx_bulletin_posts_house_created_desc
+  on public.bulletin_posts (house_id, created_at desc);
+
+-- Incidents: house-scoped feed ordered by occurred_at desc.
+create index if not exists idx_incidents_house_occurred_desc
+  on public.incidents (house_id, occurred_at desc);
+
+-- Demerits: house-scoped, created_at desc (discipline page).
+create index if not exists idx_demerits_house_created_desc
+  on public.demerits (house_id, created_at desc);
+create index if not exists idx_demerits_resident_created_desc
+  on public.demerits (resident_id, created_at desc);
+
+-- Restrictions: active restrictions per house.
+create index if not exists idx_restrictions_house_active
+  on public.restrictions (house_id, is_active);
