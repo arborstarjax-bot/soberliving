@@ -101,15 +101,21 @@ export async function generateCheckInPdf(
   drawText(formData.current_step ? `Step ${formData.current_step}` : "—", 70, y);
   y -= 20;
 
-  // Q6: Work rating
-  drawText("6. How is work going?", 50, y, 10, true);
+  // Q6: Current job
+  drawText("6. What is your current job?", 50, y, 10, true);
+  y -= 15;
+  drawText(formData.current_job ?? "—", 70, y);
+  y -= 20;
+
+  // Q7: Work rating
+  drawText("7. How is work going?", 50, y, 10, true);
   y -= 15;
   drawText(`Rating: ${formData.work_rating ?? "—"} / 10`, 70, y);
   y -= 20;
 
-  // Q7: Feeling about JSL
+  // Q8: Feeling about JSL
   drawText(
-    "7. How are you feeling about being a resident at JSL?",
+    "8. How are you feeling about being a resident at JSL?",
     50,
     y,
     10,
@@ -119,9 +125,9 @@ export async function generateCheckInPdf(
   drawText(`Rating: ${formData.jsl_feeling_rating ?? "—"} / 10`, 70, y);
   y -= 20;
 
-  // Q8: Spiritual growth
+  // Q9: Spiritual growth
   drawText(
-    "8. What are you doing daily to grow spiritually?",
+    "9. What are you doing daily to grow spiritually?",
     50,
     y,
     10,
@@ -140,9 +146,9 @@ export async function generateCheckInPdf(
   );
   y -= 20;
 
-  // Q9: Questions/concerns
+  // Q10: Questions/concerns
   drawText(
-    "9. Do you have any questions or concerns I can help you with?",
+    "10. Do you have any questions or concerns I can help you with?",
     50,
     y,
     10,

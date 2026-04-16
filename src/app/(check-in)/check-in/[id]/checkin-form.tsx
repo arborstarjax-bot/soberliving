@@ -57,12 +57,12 @@ export function CheckInForm({
       return;
     }
     if (!formData.work_rating) {
-      setError("Please rate how work is going (Question 6).");
+      setError("Please rate how work is going (Question 7).");
       return;
     }
     if (!formData.jsl_feeling_rating) {
       setError(
-        "Please rate how you feel about being a resident at JSL (Question 7)."
+        "Please rate how you feel about being a resident at JSL (Question 8)."
       );
       return;
     }
@@ -243,10 +243,26 @@ export function CheckInForm({
         </CardContent>
       </Card>
 
-      {/* Q6: Work rating */}
+      {/* Q6: Current job */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">6. How is work going?</CardTitle>
+          <CardTitle className="text-base">
+            6. What is your current job?
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Input
+            value={formData.current_job ?? ""}
+            onChange={(e) => updateField("current_job", e.target.value)}
+            placeholder="e.g., Warehouse associate, Server, etc."
+          />
+        </CardContent>
+      </Card>
+
+      {/* Q7: Work rating */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">7. How is work going?</CardTitle>
           <p className="text-sm text-muted-foreground">
             1 = terrible, 10 = best
           </p>
@@ -260,11 +276,11 @@ export function CheckInForm({
         </CardContent>
       </Card>
 
-      {/* Q7: Feeling about JSL */}
+      {/* Q8: Feeling about JSL */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            7. How are you feeling about being a resident at JSL?
+            8. How are you feeling about being a resident at JSL?
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             1 = terrible, 10 = best
@@ -279,11 +295,11 @@ export function CheckInForm({
         </CardContent>
       </Card>
 
-      {/* Q8: Spiritual growth */}
+      {/* Q9: Spiritual growth */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            8. What are you doing daily to grow spiritually?
+            9. What are you doing daily to grow spiritually?
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             Check all that apply
@@ -310,11 +326,11 @@ export function CheckInForm({
         </CardContent>
       </Card>
 
-      {/* Q9: Questions/concerns */}
+      {/* Q10: Questions/concerns */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            9. Do you have any questions or concerns I can help you with?
+            10. Do you have any questions or concerns I can help you with?
           </CardTitle>
         </CardHeader>
         <CardContent>

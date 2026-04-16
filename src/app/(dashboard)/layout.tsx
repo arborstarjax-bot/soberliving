@@ -21,9 +21,9 @@ export default async function DashboardLayout({
     redirect("/sign-commitment");
   }
 
-  // Redirect any user who is a resident (including admins/managers marked as residents)
-  // and has a pending check-in — blocking task
-  if (user.is_resident) {
+  // Redirect ANY user who has a pending check-in (blocking task).
+  // This covers admins/managers who are also residents.
+  {
     const adminClient = createAdminClient();
     const { data: pendingCheckIn } = await adminClient
       .from("check_in_responses")
