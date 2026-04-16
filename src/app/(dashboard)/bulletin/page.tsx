@@ -47,8 +47,8 @@ export default async function BulletinPage() {
   let visibleHouseIds: string[] | null = null; // null = all
   if (user.role === "resident" && postableHouses.length > 0) {
     visibleHouseIds = postableHouses.map((h) => h.id);
-  } else if (user.role === "manager" && houseFilter && houseFilter.length > 0) {
-    visibleHouseIds = houseFilter;
+  } else if (user.role === "manager") {
+    visibleHouseIds = houseFilter && houseFilter.length > 0 ? houseFilter : [];
   }
 
   // Fetch posts with author role info and house name

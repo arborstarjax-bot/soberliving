@@ -449,6 +449,56 @@ export async function deleteBed(
   return {};
 }
 
+// --- Toggle Bed Empty ---
+
+export async function toggleBedEmpty(bedId: string, houseId: string) {
+  const user = await requireAuth();
+
+  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+    return { error: "Not authorized" };
+  }
+
+  const supabase = await createClient();
+
+  // Check if bed has an active resident assignment
+  const { data: activeAssignment } = await supabase
+    .from("bed_assignments")
+    .select("id")
+    .eq("bed_id", bedId)
+    .is("end_date", null)
+    .maybeSingle();
+
+  if (activeAssignment) {
+    return { error: "Cannot mark bed as empty while a resident is assigned" };
+  }
+
+  // Check current bed label to see if it's already marked empty
+  const { data: bed } = await supabase
+    .from("beds")
+    .select("label, room_id, rooms(house_id)")
+    .eq("id", bedId)
+    .single();
+
+  if (!bed) return { error: "Bed not found" };
+
+  // Toggle: if label ends with " [Empty]", remove it; otherwise add it
+  const emptyTag = " [Empty]";
+  const isMarkedEmpty = bed.label.endsWith(emptyTag);
+  const newLabel = isMarkedEmpty
+    ? bed.label.slice(0, -emptyTag.length)
+    : bed.label + emptyTag;
+
+  const { error } = await supabase
+    .from("beds")
+    .update({ label: newLabel })
+    .eq("id", bedId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath(`/houses/${houseId}`);
+  return {};
+}
+
 // --- Reorder Rooms ---
 
 export async function reorderRooms(houseId: string, roomIds: string[]) {

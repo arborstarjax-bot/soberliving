@@ -66,13 +66,16 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
   const roomsData = rooms ?? [];
   let totalBeds = 0;
   let occupiedBeds = 0;
+  let emptyBeds = 0;
   for (const room of roomsData) {
     for (const bed of room.beds ?? []) {
+      if (!bed.is_active) continue;
       totalBeds++;
       const hasActive = (bed.bed_assignments ?? []).some(
         (ba: { end_date: string | null }) => !ba.end_date
       );
       if (hasActive) occupiedBeds++;
+      else if (bed.label.endsWith(" [Empty]")) emptyBeds++;
     }
   }
 
@@ -102,6 +105,11 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
           <Badge variant="outline" className="text-base">
             {occupiedBeds}/{totalBeds} beds occupied
           </Badge>
+          {emptyBeds > 0 && (
+            <Badge variant="outline" className="text-base border-amber-400 text-amber-700">
+              {emptyBeds} empty
+            </Badge>
+          )}
         </div>
       </div>
 

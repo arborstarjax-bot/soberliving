@@ -29,24 +29,52 @@ export async function createBulletinPost(
 
   const adminClient = createAdminClient();
 
-  // Create one post per selected house; if no houses selected, create a single global post
-  const targets = houseIds.length > 0 ? houseIds : [null];
-  for (const houseId of targets) {
-    const { data, error } = await adminClient.from("bulletin_posts").insert({
-      author_id: user.id,
-      title: parsed.data.title,
-      content: parsed.data.content,
-      house_id: houseId,
-      photo_url: photoUrl,
-    }).select("id").single();
+  // Authorize house_ids: verify the user can post to each requested house
+  if (houseIds.length > 0) {
+    if (user.role === "resident") {
+      const { data: myResident } = await adminClient
+        .from("residents")
+        .select("house_id")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .maybeSingle();
+      const myHouseId = myResident?.house_id as string | null;
+      for (const hid of houseIds) {
+        if (hid !== myHouseId) return { error: "You can only post to your own house" };
+      }
+    } else if (user.role === "manager") {
+      for (const hid of houseIds) {
+        if (!user.assigned_house_ids.includes(hid)) {
+          return { error: "You can only post to your assigned houses" };
+        }
+      }
+    }
+    // admin can post to any house
+  }
 
-    if (error) return { error: error.message };
+  // Build rows for batch insert
+  const targets: (string | null)[] = houseIds.length > 0 ? houseIds : [null];
+  const rows = targets.map((houseId) => ({
+    author_id: user.id,
+    title: parsed.data.title,
+    content: parsed.data.content,
+    house_id: houseId,
+    photo_url: photoUrl,
+  }));
 
+  const { data: inserted, error } = await adminClient
+    .from("bulletin_posts")
+    .insert(rows)
+    .select("id");
+
+  if (error) return { error: error.message };
+
+  for (const row of inserted ?? []) {
     await logActivity({
       actorId: user.id,
       eventType: "bulletin_post_created",
       entityType: "bulletin",
-      entityId: data.id,
+      entityId: row.id,
       description: `${user.full_name} posted "${parsed.data.title}" to the bulletin board`,
     });
   }
@@ -206,8 +234,13 @@ export async function uploadBulletinPhoto(formData: FormData) {
 
   if (file.size > 5 * 1024 * 1024) return { error: "File too large (max 5MB)", url: null };
 
+  const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+  if (!allowedTypes.includes(file.type)) return { error: "Only image files are allowed", url: null };
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+  const allowedExts = ["jpg", "jpeg", "png", "gif", "webp"];
+  if (!allowedExts.includes(ext)) return { error: "Invalid file extension", url: null };
+
   const adminClient = createAdminClient();
-  const ext = file.name.split(".").pop() ?? "jpg";
   const path = `bulletin/${Date.now()}.${ext}`;
 
   const { error } = await adminClient.storage

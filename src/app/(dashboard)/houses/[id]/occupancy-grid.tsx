@@ -16,9 +16,9 @@ import {
 import type { UserRole } from "@/lib/types";
 import { AddBedDialog } from "./add-bed-dialog";
 import { AssignBedDialog } from "./assign-bed-dialog";
-import { updateRoom, deleteRoom, updateBed, deleteBed, reorderRooms } from "../actions";
+import { updateRoom, deleteRoom, updateBed, deleteBed, reorderRooms, toggleBedEmpty } from "../actions";
 import { vacateBed } from "../../residents/actions";
-import { Pencil, Trash2, ArrowUp, ArrowDown, UserX } from "lucide-react";
+import { Pencil, Trash2, ArrowUp, ArrowDown, UserX, BedDouble } from "lucide-react";
 
 interface BedAssignment {
   id: string;
@@ -146,6 +146,10 @@ export function OccupancyGrid({
                       (ba) => !ba.end_date
                     );
                     const isOccupied = !!activeAssignment;
+                    const isMarkedEmpty = bed.label.endsWith(" [Empty]");
+                    const displayLabel = isMarkedEmpty
+                      ? bed.label.slice(0, -" [Empty]".length)
+                      : bed.label;
 
                     return (
                       <div
@@ -153,12 +157,14 @@ export function OccupancyGrid({
                         className={`rounded-lg border p-3 ${
                           isOccupied
                             ? "border-primary/30 bg-primary/5"
-                            : "border-dashed border-muted-foreground/30"
+                            : isMarkedEmpty
+                              ? "border-amber-300 bg-amber-50"
+                              : "border-dashed border-muted-foreground/30"
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-sm font-medium flex items-center gap-1">
-                            {bed.label}
+                            {displayLabel}
                             {canManage && (
                               <span className="flex items-center gap-0.5 ml-1">
                                 <EditBedDialog
@@ -167,16 +173,16 @@ export function OccupancyGrid({
                                 />
                                 <DeleteBedButton
                                   bedId={bed.id}
-                                  bedLabel={bed.label}
+                                  bedLabel={displayLabel}
                                 />
                               </span>
                             )}
                           </span>
                           <Badge
-                            variant={isOccupied ? "default" : "secondary"}
-                            className="text-xs"
+                            variant={isOccupied ? "default" : isMarkedEmpty ? "outline" : "secondary"}
+                            className={`text-xs ${isMarkedEmpty ? "border-amber-400 text-amber-700 bg-amber-50" : ""}`}
                           >
-                            {isOccupied ? "Occupied" : "Available"}
+                            {isOccupied ? "Occupied" : isMarkedEmpty ? "Empty" : "Available"}
                           </Badge>
                         </div>
                         {isOccupied && activeAssignment?.resident ? (
@@ -188,18 +194,29 @@ export function OccupancyGrid({
                               <UnassignBedButton
                                 assignmentId={activeAssignment.id}
                                 residentName={activeAssignment.resident.full_name}
-                                bedLabel={bed.label}
+                                bedLabel={displayLabel}
                               />
                             )}
                           </div>
                         ) : canManage ? (
-                          <AssignBedDialog
-                            bedId={bed.id}
-                            bedLabel={bed.label}
-                            roomName={room.name}
-                            houseId={houseId}
-                            residents={residents}
-                          />
+                          <div className="flex items-center gap-2 mt-1">
+                            {!isMarkedEmpty && (
+                              <AssignBedDialog
+                                bedId={bed.id}
+                                bedLabel={displayLabel}
+                                roomName={room.name}
+                                houseId={houseId}
+                                residents={residents}
+                              />
+                            )}
+                            <ToggleBedEmptyButton
+                              bedId={bed.id}
+                              houseId={houseId}
+                              isMarkedEmpty={isMarkedEmpty}
+                            />
+                          </div>
+                        ) : isMarkedEmpty ? (
+                          <p className="text-xs text-amber-600 mt-1">This bed is currently empty</p>
                         ) : null}
                       </div>
                     );
@@ -464,6 +481,41 @@ function UnassignBedButton({
     >
       <UserX className="h-3 w-3" />
       {isPending ? "…" : "Unassign"}
+    </button>
+  );
+}
+
+// ─── Toggle Bed Empty Button ─────────────────────────────────
+
+function ToggleBedEmptyButton({
+  bedId,
+  houseId,
+  isMarkedEmpty,
+}: {
+  bedId: string;
+  houseId: string;
+  isMarkedEmpty: boolean;
+}) {
+  const [isPending, startTransition] = useTransition();
+
+  return (
+    <button
+      type="button"
+      disabled={isPending}
+      onClick={() =>
+        startTransition(() => {
+          toggleBedEmpty(bedId, houseId);
+        })
+      }
+      className={`inline-flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors disabled:opacity-50 ${
+        isMarkedEmpty
+          ? "text-amber-700 hover:text-foreground hover:bg-muted"
+          : "text-muted-foreground hover:text-amber-700 hover:bg-amber-50"
+      }`}
+      title={isMarkedEmpty ? "Mark as available" : "Mark as empty"}
+    >
+      <BedDouble className="h-3.5 w-3.5" />
+      {isPending ? "…" : isMarkedEmpty ? "Mark Available" : "Mark Empty"}
     </button>
   );
 }

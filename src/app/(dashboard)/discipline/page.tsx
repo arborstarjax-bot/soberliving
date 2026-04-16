@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { CreateRestrictionDialog } from "./create-restriction-dialog";
 import { DemeritMatrix } from "./demerit-matrix";
@@ -9,6 +9,7 @@ import { CreateIncidentDialog } from "../incidents/create-incident-dialog";
 export default async function DisciplinePage() {
   const user = await requireAuth();
   const supabase = await createClient();
+  const adminClient = createAdminClient();
   const houseFilter = getAccessibleHouseFilter(user);
 
   const isStaff = user.role === "admin" || user.role === "manager";
@@ -42,7 +43,7 @@ export default async function DisciplinePage() {
   }
 
   // Get houses
-  let housesQuery = supabase
+  let housesQuery = adminClient
     .from("houses")
     .select("id, name")
     .eq("is_active", true)
@@ -52,7 +53,7 @@ export default async function DisciplinePage() {
   const { data: houses } = await housesQuery;
 
   // Get residents — for residents, only show themselves
-  let residentsQuery = supabase
+  let residentsQuery = adminClient
     .from("residents")
     .select("id, full_name, house_id")
     .eq("status", "active")
@@ -62,7 +63,7 @@ export default async function DisciplinePage() {
   const { data: residents } = await residentsQuery;
 
   // Get demerits (select only needed columns to avoid body size limit)
-  let demeritsQuery = supabase
+  let demeritsQuery = adminClient
     .from("demerits")
     .select("id, resident_id, house_id, reason, notes, category, status, auto_generated, created_at, resolved_at, resolution_note, photo_url")
     .order("created_at", { ascending: false })
@@ -71,21 +72,22 @@ export default async function DisciplinePage() {
   if (residentRecordId) demeritsQuery = demeritsQuery.eq("resident_id", residentRecordId);
   const { data: demerits } = await demeritsQuery;
 
-  // Auto-expire restrictions past their end date (staff only, house-scoped)
+  // Auto-expire restrictions past their end date (runs for all users)
   const today = new Date().toISOString().split("T")[0];
-  if (isStaff) {
-    let expireQuery = supabase
+  {
+    let expireQuery = adminClient
       .from("restrictions")
       .update({ is_active: false, updated_at: new Date().toISOString() })
       .eq("is_active", true)
       .lte("end_date", today)
       .not("end_date", "is", null);
     if (houseFilter && houseFilter.length > 0) expireQuery = expireQuery.in("house_id", houseFilter);
+    if (residentRecordId) expireQuery = expireQuery.eq("resident_id", residentRecordId);
     await expireQuery;
   }
 
   // Get active restrictions
-  let restrictionsQuery = supabase
+  let restrictionsQuery = adminClient
     .from("restrictions")
     .select("*, resident:residents(full_name), house:houses(name)")
     .eq("is_active", true)
@@ -95,7 +97,7 @@ export default async function DisciplinePage() {
   const { data: activeRestrictions } = await restrictionsQuery;
 
   // Get recently lifted/expired restrictions
-  let pastRestrictionsQuery = supabase
+  let pastRestrictionsQuery = adminClient
     .from("restrictions")
     .select("*, resident:residents(full_name), house:houses(name)")
     .eq("is_active", false)
@@ -171,7 +173,7 @@ export default async function DisciplinePage() {
   }> = [];
 
   if (isStaff) {
-    let incidentsQuery = supabase
+    let incidentsQuery = adminClient
       .from("incidents")
       .select("id, severity, category, description, occurred_at, photo_url, resident:residents(full_name), house:houses(name), reporter:users!reported_by(full_name)")
       .order("occurred_at", { ascending: false })
