@@ -41,13 +41,14 @@ const TYPE_TO_CATEGORY: Record<string, string> = {
   leave_rejected: "Leave",
   leave_returned: "Leave",
   chore_reminder: "Chores",
+  chore_assigned: "Chores",
   chore_completed: "Chores",
   chore_approved: "Chores",
   chore_rejected: "Chores",
   missed_chore: "Discipline",
   demerit_issued: "Discipline",
   demerit_worked_off: "Discipline",
-  restriction_added: "Discipline",
+  restriction_created: "Discipline",
   restriction_lifted: "Discipline",
   incident_logged: "Incidents",
   check_in_sent: "Check-Ins",
@@ -55,6 +56,9 @@ const TYPE_TO_CATEGORY: Record<string, string> = {
   bulletin_post: "Bulletin",
   bulletin_comment: "Bulletin",
   bulletin_like: "Bulletin",
+  bed_assigned: "Housing",
+  bed_changed: "Housing",
+  discharge: "Housing",
 };
 
 function getCategory(type: string): string {

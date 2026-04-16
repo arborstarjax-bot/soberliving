@@ -211,7 +211,12 @@ export async function loadStateOfHouseData(
       .eq("house_id", houseId),
     supabase
       .from("rooms")
-      .select("id, beds(id, is_active, label, bed_assignments(end_date))")
+      // Include room.name and a resident join on bed_assignments so the
+      // Occupancy expansion can show "Room X / Bed Y — Resident Name" with
+      // a link to each resident's detail page.
+      .select(
+        "id, name, beds(id, is_active, label, bed_assignments(end_date, resident:residents(id, full_name)))"
+      )
       .eq("house_id", houseId)
       .eq("is_active", true),
     supabase
@@ -254,7 +259,12 @@ export async function loadStateOfHouseData(
   // Beds
   type RawBedAssignment = {
     end_date: string | null;
-    residents?: { id?: string; full_name?: string } | { id?: string; full_name?: string }[] | null;
+    // Supabase returns the aliased join as `resident` (see the rooms select
+    // above). Keep it as an object | array to handle both cardinalities.
+    resident?:
+      | { id?: string; full_name?: string }
+      | { id?: string; full_name?: string }[]
+      | null;
   };
   type RawBed = {
     id: string;
@@ -288,7 +298,7 @@ export async function loadStateOfHouseData(
       const displayLabel = cleanBedLabel(bed.label);
       if (activeAssignment) {
         occupiedBeds++;
-        const resRel = activeAssignment.residents;
+        const resRel = activeAssignment.resident;
         const res = Array.isArray(resRel) ? resRel[0] : resRel;
         occupiedBedDetails.push({
           bedId: bed.id,
