@@ -1153,6 +1153,36 @@ export async function updateChoreSchedule(choreId: string, scheduledDays: string
   return {};
 }
 
+/**
+ * Complete a chore by choreId + residentId + date.
+ * Finds the matching signoff record and delegates to markSignoffComplete.
+ * Used by the resident-facing chore-completion-form.
+ */
+export async function completeChore(
+  choreId: string,
+  residentId: string,
+  date: string,
+  photoUrl?: string
+): Promise<{ error?: string }> {
+  const supabase = await createClient();
+
+  // Find the signoff for this chore assignment on this date
+  const { data: signoff } = await supabase
+    .from("chore_signoffs")
+    .select("id, rotation_assignment:chore_rotation_assignments!inner(resident_id, rotation:chore_rotations!inner(house_id), chore_id)")
+    .eq("sign_off_date", date)
+    .eq("status", "pending")
+    .eq("rotation_assignment.resident_id", residentId)
+    .eq("rotation_assignment.chore_id", choreId)
+    .maybeSingle();
+
+  if (!signoff) {
+    return { error: "No pending signoff found for this chore today" };
+  }
+
+  return markSignoffComplete(signoff.id, photoUrl);
+}
+
 export async function uploadChorePhoto(formData: FormData): Promise<{ url?: string; error?: string }> {
   const user = await requireAuth();
   const supabase = await createClient();
