@@ -90,18 +90,22 @@ export async function updateResident(residentId: string, formData: FormData) {
     return { error: "Not authorized" };
   }
 
+  // Use null for cleared fields (empty string) vs undefined for absent fields
+  function fieldVal(key: string): string | null | undefined {
+    if (!formData.has(key)) return undefined; // field absent — don't update
+    const v = formData.get(key) as string;
+    return v === "" ? null : v; // empty string — clear to null
+  }
+
   const parsed = updateResidentSchema.safeParse({
-    full_name: formData.get("full_name") || undefined,
-    phone: formData.get("phone") || undefined,
-    email: formData.get("email") || undefined,
-    emergency_contact_name:
-      formData.get("emergency_contact_name") || undefined,
-    emergency_contact_phone:
-      formData.get("emergency_contact_phone") || undefined,
-    emergency_contact_relationship:
-      formData.get("emergency_contact_relationship") || undefined,
-    sobriety_date: formData.get("sobriety_date") || undefined,
-    notes: formData.get("notes") || undefined,
+    full_name: formData.get("full_name") || undefined, // name should never be cleared
+    phone: fieldVal("phone"),
+    email: fieldVal("email"),
+    emergency_contact_name: fieldVal("emergency_contact_name"),
+    emergency_contact_phone: fieldVal("emergency_contact_phone"),
+    emergency_contact_relationship: fieldVal("emergency_contact_relationship"),
+    sobriety_date: fieldVal("sobriety_date"),
+    notes: fieldVal("notes"),
   });
 
   if (!parsed.success) {

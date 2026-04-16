@@ -407,8 +407,7 @@ function AddDemeritDialog({
   residents: Resident[];
   preselectedResident: Resident | null;
 }) {
-  const [createState, createAction, createPending] = useActionState(createDemerit, undefined);
-  const [restrictionState, restrictionAction] = useActionState(createRestriction, undefined);
+  const [createState, , createPending] = useActionState(createDemerit, undefined);
   const [selectedResident, setSelectedResident] = useState("");
   const [addRestriction, setAddRestriction] = useState(false);
   const [restrictionType, setRestrictionType] = useState("custom");
@@ -492,7 +491,11 @@ function AddDemeritDialog({
         const notes = formData.get("restriction_notes") as string;
         if (notes) restrictionData.set("notes", notes);
         if (restrictionType === "house_commitment") restrictionData.set("is_house_commitment", "on");
-        await restrictionAction(restrictionData);
+        const restrictionResult = await createRestriction(undefined, restrictionData);
+        if (restrictionResult?.error) {
+          setSubmitError(`Demerits created. Restriction failed: ${restrictionResult.error}`);
+          return;
+        }
       }
     });
   }
@@ -664,9 +667,6 @@ function AddDemeritDialog({
           )}
           {createState?.error && (
             <p className="text-sm text-destructive">{createState.error}</p>
-          )}
-          {restrictionState?.error && (
-            <p className="text-sm text-destructive">Restriction: {restrictionState.error}</p>
           )}
           <Button type="submit" className="w-full" disabled={createPending || isPending || uploading}>
             {createPending || isPending

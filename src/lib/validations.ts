@@ -55,8 +55,17 @@ export const createResidentSchema = z.object({
   notes: z.string().optional(),
 });
 
-export const updateResidentSchema = createResidentSchema.partial().omit({
-  house_id: true,
+export const updateResidentSchema = z.object({
+  full_name: z.string().min(1).max(200).optional(),
+  date_of_birth: z.string().nullish(),
+  phone: z.string().max(20).nullish(),
+  email: z.string().email("Invalid email").nullish().or(z.literal("")),
+  emergency_contact_name: z.string().nullish(),
+  emergency_contact_phone: z.string().nullish(),
+  emergency_contact_relationship: z.string().nullish(),
+  sobriety_date: z.string().nullish(),
+  move_in_date: z.string().optional(),
+  notes: z.string().nullish(),
 });
 
 // --- Bed Assignments ---
