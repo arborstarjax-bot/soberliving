@@ -123,8 +123,13 @@ export function resolveRange(
 
 function isIn(dateStr: string | null | undefined, range: DateRange): boolean {
   if (!dateStr) return false;
-  if (range.startIso && dateStr < range.startIso) return false;
-  if (dateStr > range.endIso) return false;
+  // Normalize date-only strings ("YYYY-MM-DD") to a full ISO timestamp so
+  // lexicographic comparison against range.startIso / range.endIso is correct.
+  // Without this, "2026-03-01" < "2026-03-01T00:00:00.000Z" is true, which
+  // incorrectly excludes records that fall exactly on the range start date.
+  const normalized = dateStr.length === 10 ? `${dateStr}T00:00:00.000Z` : dateStr;
+  if (range.startIso && normalized < range.startIso) return false;
+  if (normalized > range.endIso) return false;
   return true;
 }
 

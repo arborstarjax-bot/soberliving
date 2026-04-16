@@ -125,12 +125,16 @@ export async function deleteHouseDocument(documentId: string) {
     return { error: "Not authorized" };
   }
 
-  await supabase.storage.from(BUCKET).remove([doc.file_path]);
+  // Delete the DB row first so a failed DB delete doesn't leave a dangling
+  // row pointing at a missing storage object. A failed storage delete after
+  // the row is gone just leaves an orphan blob, which is recoverable.
   const { error } = await supabase
     .from("house_documents")
     .delete()
     .eq("id", documentId);
   if (error) return { error: error.message };
+
+  await supabase.storage.from(BUCKET).remove([doc.file_path]);
 
   await logActivity({
     houseId: doc.house_id,
