@@ -5,7 +5,8 @@
 export async function generateCheckInPdf(
   formData: Record<string, string>,
   residentName: string,
-  houseName: string
+  houseName: string,
+  residentSignature?: string | null
 ): Promise<string> {
   const { PDFDocument, rgb, StandardFonts } = await import("pdf-lib");
   const pdf = await PDFDocument.create();
@@ -62,7 +63,7 @@ export async function generateCheckInPdf(
   drawText(`Rating: ${formData.meeting_rating ?? "—"} / 10`, 70, y);
   y -= 20;
 
-  // Q2: Mandatory meetings
+  // Q2: Mandatory meetings (checkboxes)
   drawText(
     "2. Of your 7 mandatory meetings a week, are you making at least one of the following?",
     50,
@@ -71,15 +72,13 @@ export async function generateCheckInPdf(
     true
   );
   y -= 15;
-  drawText(`Step Meeting: ${formData.step_meeting_count ?? "—"}`, 70, y);
+  const meetingItems = [];
+  if (formData.meeting_step === "true") meetingItems.push("Step Meeting");
+  if (formData.meeting_big_book === "true") meetingItems.push("Big Book Meeting");
+  if (formData.meeting_speaker === "true") meetingItems.push("Speaker Meeting");
   drawText(
-    `Big Book Meeting: ${formData.big_book_meeting_count ?? "—"}`,
-    220,
-    y
-  );
-  drawText(
-    `Speaker Meeting: ${formData.speaker_meeting_count ?? "—"}`,
-    400,
+    meetingItems.length > 0 ? meetingItems.join(", ") : "None selected",
+    70,
     y
   );
   y -= 20;
@@ -96,10 +95,10 @@ export async function generateCheckInPdf(
   drawText(formData.call_sponsor_frequency ?? "—", 70, y);
   y -= 20;
 
-  // Q5: Current step
+  // Q5: Current step (1-12)
   drawText("5. What step are you working on now?", 50, y, 10, true);
   y -= 15;
-  drawText(formData.current_step ?? "—", 70, y);
+  drawText(formData.current_step ? `Step ${formData.current_step}` : "—", 70, y);
   y -= 20;
 
   // Q6: Work rating
@@ -171,11 +170,37 @@ export async function generateCheckInPdf(
     y -= 30;
   }
 
-  // Staff signature line
+  // Resident signature
   drawLine(y + 5);
   y -= 15;
-  drawText("Staff signature: _________________________________", 50, y, 10, true);
-  y -= 30;
+  drawText("Resident Signature:", 50, y, 10, true);
+  y -= 10;
+
+  if (residentSignature) {
+    try {
+      // The signature is a data:image/png;base64,... URL
+      const base64Data = residentSignature.split(",")[1];
+      if (base64Data) {
+        const sigBytes = Uint8Array.from(atob(base64Data), (c) => c.charCodeAt(0));
+        const sigImage = await pdf.embedPng(sigBytes);
+        const sigDims = sigImage.scale(0.25);
+        const drawWidth = Math.min(sigDims.width, 200);
+        const drawHeight = (drawWidth / sigDims.width) * sigDims.height;
+        page.drawImage(sigImage, {
+          x: 70,
+          y: y - drawHeight,
+          width: drawWidth,
+          height: drawHeight,
+        });
+        y -= drawHeight + 10;
+      }
+    } catch {
+      // If signature embedding fails, just note it
+      drawText("[Signature on file]", 70, y - 15);
+      y -= 25;
+    }
+  }
+  y -= 10;
 
   // Completed timestamp
   drawText(

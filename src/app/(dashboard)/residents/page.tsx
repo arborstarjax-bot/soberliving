@@ -200,7 +200,6 @@ export default async function ResidentsPage() {
       status: string;
       completedAt: string | null;
       formData: Record<string, unknown> | null;
-      hasStaffSignature: boolean;
       houseId: string;
     }>;
   }> = [];

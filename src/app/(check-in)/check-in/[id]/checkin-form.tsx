@@ -4,9 +4,9 @@ import { useState, useTransition, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SignaturePad } from "@/components/signature-pad";
 import { submitCheckIn } from "@/app/(dashboard)/check-ins/actions";
 import { generateCheckInPdf } from "./generate-checkin-pdf";
 
@@ -29,6 +29,7 @@ export function CheckInForm({
       date: new Date().toLocaleDateString("en-US"),
     }
   );
+  const [signature, setSignature] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, startSubmitting] = useTransition();
 
@@ -65,13 +66,18 @@ export function CheckInForm({
       );
       return;
     }
+    if (!signature) {
+      setError("Please sign before submitting.");
+      return;
+    }
 
     startSubmitting(async () => {
       try {
         const pdfBase64 = await generateCheckInPdf(
           formData,
           residentName,
-          houseName
+          houseName,
+          signature
         );
         const result = await submitCheckIn(responseId, formData, pdfBase64);
         if (result?.error) {
@@ -137,58 +143,34 @@ export function CheckInForm({
         </CardContent>
       </Card>
 
-      {/* Q2: Mandatory meetings */}
+      {/* Q2: Mandatory meetings — checkboxes */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
             2. Of your 7 mandatory meetings a week, are you making at least one
             of the following?
           </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Check all that apply
+          </p>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="step_meeting_count">Step Meeting</Label>
-              <Input
-                id="step_meeting_count"
-                type="number"
-                min="0"
-                max="7"
-                value={formData.step_meeting_count ?? ""}
-                onChange={(e) =>
-                  updateField("step_meeting_count", e.target.value)
-                }
-                placeholder="0"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="big_book_meeting_count">Big Book Meeting</Label>
-              <Input
-                id="big_book_meeting_count"
-                type="number"
-                min="0"
-                max="7"
-                value={formData.big_book_meeting_count ?? ""}
-                onChange={(e) =>
-                  updateField("big_book_meeting_count", e.target.value)
-                }
-                placeholder="0"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="speaker_meeting_count">Speaker Meeting</Label>
-              <Input
-                id="speaker_meeting_count"
-                type="number"
-                min="0"
-                max="7"
-                value={formData.speaker_meeting_count ?? ""}
-                onChange={(e) =>
-                  updateField("speaker_meeting_count", e.target.value)
-                }
-                placeholder="0"
-              />
-            </div>
+        <CardContent>
+          <div className="flex flex-wrap gap-4">
+            <CheckboxItem
+              label="Step Meeting"
+              checked={formData.meeting_step === "true"}
+              onChange={() => toggleCheckbox("meeting_step")}
+            />
+            <CheckboxItem
+              label="Big Book Meeting"
+              checked={formData.meeting_big_book === "true"}
+              onChange={() => toggleCheckbox("meeting_big_book")}
+            />
+            <CheckboxItem
+              label="Speaker Meeting"
+              checked={formData.meeting_speaker === "true"}
+              onChange={() => toggleCheckbox("meeting_speaker")}
+            />
           </div>
         </CardContent>
       </Card>
@@ -238,7 +220,7 @@ export function CheckInForm({
         </CardContent>
       </Card>
 
-      {/* Q5: Current step */}
+      {/* Q5: Current step — dropdown 1-12 */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
@@ -246,11 +228,18 @@ export function CheckInForm({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Input
+          <select
             value={formData.current_step ?? ""}
             onChange={(e) => updateField("current_step", e.target.value)}
-            placeholder="e.g., Step 4"
-          />
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          >
+            <option value="">Select a step...</option>
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
+              <option key={n} value={String(n)}>
+                Step {n}
+              </option>
+            ))}
+          </select>
         </CardContent>
       </Card>
 
@@ -336,6 +325,19 @@ export function CheckInForm({
             }
             rows={4}
             placeholder="Type your questions or concerns here..."
+          />
+        </CardContent>
+      </Card>
+
+      {/* Resident Signature */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Resident Signature</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SignaturePad
+            label="Sign below to confirm your answers"
+            onSignatureChange={setSignature}
           />
         </CardContent>
       </Card>

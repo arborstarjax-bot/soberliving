@@ -1,18 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { SignaturePad } from "@/components/signature-pad";
-import { staffSignCheckIn } from "@/app/(dashboard)/check-ins/actions";
-import { ChevronDown, ChevronUp, CheckCircle, Clock, Pen } from "lucide-react";
+import { ChevronDown, ChevronUp, CheckCircle, Clock } from "lucide-react";
 
 interface CheckInResponseSummary {
   id: string;
@@ -20,7 +12,6 @@ interface CheckInResponseSummary {
   status: string;
   completedAt: string | null;
   formData: Record<string, unknown> | null;
-  hasStaffSignature: boolean;
   houseId: string;
 }
 
@@ -122,7 +113,6 @@ function ResponseRow({
   response: CheckInResponseSummary;
 }) {
   const [showDetail, setShowDetail] = useState(false);
-  const [showSignDialog, setShowSignDialog] = useState(false);
 
   const isCompleted = response.status === "completed";
 
@@ -150,21 +140,6 @@ function ResponseRow({
               })}
             </span>
           )}
-          {isCompleted && !response.hasStaffSignature && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setShowSignDialog(true)}
-            >
-              <Pen className="h-3 w-3 mr-1" />
-              Sign Off
-            </Button>
-          )}
-          {response.hasStaffSignature && (
-            <Badge variant="default" className="text-[10px]">
-              Staff Signed
-            </Badge>
-          )}
           {isCompleted && response.formData && (
             <Button
               size="sm"
@@ -187,15 +162,6 @@ function ResponseRow({
         <ResponseDetail formData={response.formData} />
       )}
 
-      {/* Staff sign dialog */}
-      {showSignDialog && (
-        <StaffSignDialog
-          responseId={response.id}
-          residentName={response.residentName}
-          open={showSignDialog}
-          onClose={() => setShowSignDialog(false)}
-        />
-      )}
     </>
   );
 }
@@ -236,7 +202,11 @@ function ResponseDetail({
       </div>
       <div>
         <span className="text-muted-foreground">2. Meetings —</span>{" "}
-        Step: {get("step_meeting_count")}, Big Book: {get("big_book_meeting_count")}, Speaker: {get("speaker_meeting_count")}
+        {[
+          formData.meeting_step === "true" && "Step Meeting",
+          formData.meeting_big_book === "true" && "Big Book Meeting",
+          formData.meeting_speaker === "true" && "Speaker Meeting",
+        ].filter(Boolean).join(", ") || "None selected"}
       </div>
       <div>
         <span className="text-muted-foreground">4. Call sponsor:</span>{" "}
@@ -244,7 +214,7 @@ function ResponseDetail({
       </div>
       <div>
         <span className="text-muted-foreground">5. Current step:</span>{" "}
-        {get("current_step")}
+        {formData.current_step ? `Step ${get("current_step")}` : "—"}
       </div>
       <div>
         <span className="text-muted-foreground">8. Spiritual growth:</span>{" "}
@@ -257,72 +227,5 @@ function ResponseDetail({
         </div>
       ) : null}
     </div>
-  );
-}
-
-// ─── Staff sign dialog ───────────────────────────────────────
-
-function StaffSignDialog({
-  responseId,
-  residentName,
-  open,
-  onClose,
-}: {
-  responseId: string;
-  residentName: string;
-  open: boolean;
-  onClose: () => void;
-}) {
-  const [signature, setSignature] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isSigning, startSigning] = useTransition();
-
-  function handleSign() {
-    if (!signature) {
-      setError("Please sign before submitting.");
-      return;
-    }
-
-    setError(null);
-    startSigning(async () => {
-      const result = await staffSignCheckIn(responseId, signature);
-      if (result.error) {
-        setError(result.error);
-      } else {
-        onClose();
-      }
-    });
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            Sign Off — {residentName}&apos;s Check-In
-          </DialogTitle>
-        </DialogHeader>
-
-        <SignaturePad
-          label="Staff Signature"
-          onSignatureChange={setSignature}
-        />
-
-        {error && (
-          <p className="text-sm text-destructive bg-destructive/10 p-2 rounded-md">
-            {error}
-          </p>
-        )}
-
-        <div className="flex justify-end gap-2 mt-2">
-          <Button variant="outline" onClick={onClose} disabled={isSigning}>
-            Cancel
-          </Button>
-          <Button onClick={handleSign} disabled={isSigning || !signature}>
-            {isSigning ? "Signing..." : "Submit Signature"}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }

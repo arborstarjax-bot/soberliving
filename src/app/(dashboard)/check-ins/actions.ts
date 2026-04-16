@@ -184,65 +184,6 @@ export async function submitCheckIn(
   return {};
 }
 
-/**
- * Staff signs a completed check-in during review.
- */
-export async function staffSignCheckIn(
-  responseId: string,
-  staffSignature: string
-) {
-  const user = await requireAuth();
-
-  if (user.role !== "admin" && user.role !== "manager") {
-    return { error: "Not authorized" };
-  }
-
-  const adminClient = createAdminClient();
-
-  const { data: response } = await adminClient
-    .from("check_in_responses")
-    .select("id, house_id, status, resident_id")
-    .eq("id", responseId)
-    .single();
-
-  if (!response) {
-    return { error: "Check-in not found" };
-  }
-
-  if (response.status !== "completed") {
-    return { error: "Check-in must be completed before staff can sign" };
-  }
-
-  if (user.role === "manager" && !canAccessHouse(user, response.house_id)) {
-    return { error: "Not authorized for this house" };
-  }
-
-  const { error } = await adminClient
-    .from("check_in_responses")
-    .update({
-      staff_signature: staffSignature,
-      staff_signed_by: user.id,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", responseId);
-
-  if (error) {
-    return { error: error.message };
-  }
-
-  await logActivity({
-    actorId: user.id,
-    residentId: response.resident_id,
-    houseId: response.house_id,
-    eventType: "check_in_staff_signed",
-    entityType: "check_in_response",
-    entityId: responseId,
-    description: `${user.full_name} signed off on resident check-in`,
-  });
-
-  revalidatePath("/residents");
-  return {};
-}
 
 /**
  * Get check-in batches for the Check Ins admin tab.
@@ -275,7 +216,7 @@ export async function getCheckInBatches() {
 
   const { data: responses } = await adminClient
     .from("check_in_responses")
-    .select("id, batch_id, status, resident_id, house_id, completed_at, form_data, staff_signature, staff_signed_by, resident:residents!check_in_responses_resident_id_fkey(full_name)")
+    .select("id, batch_id, status, resident_id, house_id, completed_at, form_data, resident:residents!check_in_responses_resident_id_fkey(full_name)")
     .in("batch_id", batchIds);
 
   // Get creator names
@@ -316,7 +257,6 @@ export async function getCheckInBatches() {
         status: r.status as string,
         completedAt: r.completed_at as string | null,
         formData: r.form_data as Record<string, unknown> | null,
-        hasStaffSignature: !!r.staff_signature,
         houseId: r.house_id as string,
       })),
     };
