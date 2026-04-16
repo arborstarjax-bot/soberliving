@@ -20,6 +20,10 @@ export interface StateOfHouseData {
       bedLabel: string;
       residentName: string;
       residentId: string | null;
+      // True when the bed is marked Not Available (no resident, but still
+      // held off the available pool). These render as "Bed N - Unavailable"
+      // in the Occupied list.
+      isUnavailable: boolean;
     }[];
     openBedDetails: {
       bedId: string;
@@ -276,7 +280,6 @@ export async function loadStateOfHouseData(
   const rooms = (roomsRes.data ?? []) as unknown as RawRoom[];
   let totalBeds = 0;
   let occupiedBeds = 0;
-  let emptyMarkedBeds = 0;
   const occupiedBedDetails: StateOfHouseData["census"]["occupiedBedDetails"] =
     [];
   const openBedDetails: StateOfHouseData["census"]["openBedDetails"] = [];
@@ -292,7 +295,7 @@ export async function loadStateOfHouseData(
       const activeAssignment = (bed.bed_assignments ?? []).find(
         (ba) => !ba.end_date
       );
-      const isEmpty =
+      const isUnavailable =
         bed.label.endsWith(" [Not Available]") ||
         bed.label.endsWith(" [Empty]");
       const displayLabel = cleanBedLabel(bed.label);
@@ -306,9 +309,22 @@ export async function loadStateOfHouseData(
           bedLabel: displayLabel,
           residentName: res?.full_name ?? "Unknown resident",
           residentId: res?.id ?? null,
+          isUnavailable: false,
         });
-      } else if (isEmpty) {
-        emptyMarkedBeds++;
+      } else if (isUnavailable) {
+        // Not Available beds count as occupied per house policy: they
+        // hold the bed off the available pool even though no resident
+        // is assigned. They show up in the Occupied list as
+        // "Bed N - Unavailable".
+        occupiedBeds++;
+        occupiedBedDetails.push({
+          bedId: bed.id,
+          roomName,
+          bedLabel: displayLabel,
+          residentName: "Unavailable",
+          residentId: null,
+          isUnavailable: true,
+        });
       } else {
         openBedDetails.push({
           bedId: bed.id,
@@ -318,7 +334,7 @@ export async function loadStateOfHouseData(
       }
     }
   }
-  const openBeds = totalBeds - occupiedBeds - emptyMarkedBeds;
+  const openBeds = totalBeds - occupiedBeds;
 
   // Discharges / departures (within range). Split by the explicit
   // `discharge_is_voluntary` flag set on the Discharge dialog.

@@ -224,7 +224,11 @@ export function StateOfHouseView({
                     <span className="text-xs text-muted-foreground">
                       {b.roomName} / {b.bedLabel}
                     </span>
-                    {b.residentId ? (
+                    {b.isUnavailable ? (
+                      <span className="font-medium text-amber-700">
+                        Unavailable
+                      </span>
+                    ) : b.residentId ? (
                       <Link
                         href={`/residents/${b.residentId}`}
                         className="font-medium hover:underline"

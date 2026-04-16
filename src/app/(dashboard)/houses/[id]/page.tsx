@@ -89,7 +89,10 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
   const roomsData = rooms ?? [];
   let totalBeds = 0;
   let occupiedBeds = 0;
-  let emptyBeds = 0;
+  // Not-Available beds count as occupied per house policy: they still
+  // hold the bed off the available pool and can't be filled until they're
+  // marked available again. We don't expose a separate "not available"
+  // count in the header.
   for (const room of roomsData) {
     for (const bed of room.beds ?? []) {
       if (!bed.is_active) continue;
@@ -97,12 +100,10 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
       const hasActive = (bed.bed_assignments ?? []).some(
         (ba: { end_date: string | null }) => !ba.end_date
       );
-      if (hasActive) occupiedBeds++;
-      else if (
+      const isUnavailable =
         bed.label.endsWith(" [Not Available]") ||
-        bed.label.endsWith(" [Empty]")
-      )
-        emptyBeds++;
+        bed.label.endsWith(" [Empty]");
+      if (hasActive || isUnavailable) occupiedBeds++;
     }
   }
 
@@ -185,11 +186,6 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
           <Badge variant="outline" className="text-base">
             {occupiedBeds}/{totalBeds} beds occupied
           </Badge>
-          {emptyBeds > 0 && (
-            <Badge variant="outline" className="text-base border-amber-400 text-amber-700">
-              {emptyBeds} not available
-            </Badge>
-          )}
         </div>
       </div>
 
