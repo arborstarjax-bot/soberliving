@@ -81,7 +81,7 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
 
     if (!houseId) return setError("Please select a house");
     if (!roomId) return setError("Please select a room");
-    if (!bedId) return setError("Please select a bed");
+    // bedId is optional: "None" indicates a private room / no specific bed assignment.
     if (!staffSignature) return setError("Staff signature is required");
 
     const rent = parseFloat(rentAmount);

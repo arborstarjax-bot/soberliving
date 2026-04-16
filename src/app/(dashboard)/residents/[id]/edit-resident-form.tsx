@@ -134,7 +134,6 @@ export function EditResidentForm({ residentId, resident, userId, currentRole, is
             <select
               id="role"
               name="role"
-              defaultValue={currentRole ?? "resident"}
               value={selectedRole}
               onChange={(e) => setSelectedRole(e.target.value)}
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"

@@ -16,7 +16,8 @@ const completeIntakeReviewSchema = z.object({
   userId: z.string().uuid(),
   houseId: z.string().uuid(),
   roomId: z.string().uuid(),
-  bedId: z.string().uuid(),
+  // bedId is optional — empty string ("" / undefined) means "private room / no specific bed".
+  bedId: z.string().uuid().optional().or(z.literal("")),
   paymentFrequency: z.enum(["weekly", "monthly"]),
   rentAmount: z.number().positive(),
   adminFee: z.number().min(0),
@@ -111,25 +112,27 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     residentId = newResident.id;
   }
 
-  // Create bed assignment
-  // First end any existing active bed assignment for this resident
+  // Create bed assignment (skip entirely if "None" / private-room case)
+  // First end any existing active bed assignment for this resident.
   await adminClient
     .from("bed_assignments")
     .update({ end_date: new Date().toISOString().split("T")[0] })
     .eq("resident_id", residentId)
     .is("end_date", null);
 
-  const { error: bedError } = await adminClient
-    .from("bed_assignments")
-    .insert({
-      resident_id: residentId,
-      bed_id: data.bedId,
-      start_date: data.commitmentStartDate,
-      assigned_by: currentUser.id,
-    });
+  if (data.bedId) {
+    const { error: bedError } = await adminClient
+      .from("bed_assignments")
+      .insert({
+        resident_id: residentId,
+        bed_id: data.bedId,
+        start_date: data.commitmentStartDate,
+        assigned_by: currentUser.id,
+      });
 
-  if (bedError) {
-    return { error: `Bed assignment failed: ${bedError.message}` };
+    if (bedError) {
+      return { error: `Bed assignment failed: ${bedError.message}` };
+    }
   }
 
   // Create house commitment record
@@ -140,7 +143,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
       resident_id: residentId,
       house_id: data.houseId,
       room_id: data.roomId,
-      bed_id: data.bedId,
+      bed_id: data.bedId || null,
       payment_frequency: data.paymentFrequency,
       rent_amount: data.rentAmount,
       admin_fee: data.adminFee,

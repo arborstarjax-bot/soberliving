@@ -11,9 +11,14 @@ import { OccupancyGrid } from "./occupancy-grid";
 import { AddRoomDialog } from "./add-room-dialog";
 import { EditHouseDialog } from "../edit-house-dialog";
 import { DeleteHouseDialog } from "../delete-house-dialog";
+import { SupplyList, type SupplyItem } from "./supply-list";
+import { DocumentsList, type HouseDocument } from "./documents-list";
+import { StateOfHouseView } from "./state-of-house";
+import { loadStateOfHouseData, resolveRange } from "./state-of-house-data";
 
 export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) {
   const { id } = await props.params;
+  const searchParams = await props.searchParams;
   const user = await requireAuth();
   const supabase = await createClient();
 
@@ -63,6 +68,24 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
     .order("created_at", { ascending: false })
     .limit(20);
 
+  // Supplies for this house
+  const { data: supplies } = await supabase
+    .from("supply_items")
+    .select("id, name, is_in_stock, updated_at")
+    .eq("house_id", id)
+    .order("name");
+
+  // Documents for this house
+  const { data: documents } = await supabase
+    .from("house_documents")
+    .select(
+      "id, name, description, file_path, mime_type, size_bytes, created_at, uploader:users!uploaded_by(full_name)"
+    )
+    .eq("house_id", id)
+    .order("created_at", { ascending: false });
+
+  const canManage = user.role === "admin" || user.role === "manager";
+
   const roomsData = rooms ?? [];
   let totalBeds = 0;
   let occupiedBeds = 0;
@@ -79,13 +102,53 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
     }
   }
 
+  // State-of-house params (controlled via URL so tabs work with server components)
+  const tabParam = typeof searchParams?.tab === "string" ? searchParams.tab : "occupancy";
+  const rangeParam =
+    typeof searchParams?.range === "string" ? searchParams.range : "to_date";
+  const startParam =
+    typeof searchParams?.start === "string" ? searchParams.start : "";
+  const endParam = typeof searchParams?.end === "string" ? searchParams.end : "";
+  const dateRange = resolveRange(rangeParam, startParam, endParam);
+  const stateData = await loadStateOfHouseData(id, dateRange);
+
+  const supplyItems: SupplyItem[] = (supplies ?? []).map((s) => ({
+    id: s.id,
+    name: s.name,
+    is_in_stock: s.is_in_stock,
+    updated_at: s.updated_at,
+  }));
+
+  const houseDocuments: HouseDocument[] = ((documents ?? []) as Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    file_path: string;
+    mime_type: string | null;
+    size_bytes: number | null;
+    created_at: string;
+    uploader: { full_name: string } | { full_name: string }[] | null;
+  }>).map((d) => {
+    const uploader = Array.isArray(d.uploader) ? d.uploader[0] ?? null : d.uploader;
+    return {
+      id: d.id,
+      name: d.name,
+      description: d.description,
+      file_path: d.file_path,
+      mime_type: d.mime_type,
+      size_bytes: d.size_bytes,
+      created_at: d.created_at,
+      uploader_name: uploader?.full_name ?? null,
+    };
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold">{house.name}</h1>
-            {(user.role === "admin" || user.role === "manager") && (
+            {canManage && (
               <>
                 <EditHouseDialog
                   houseId={house.id}
@@ -113,12 +176,19 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
         </div>
       </div>
 
-      <Tabs defaultValue="occupancy">
-        <TabsList>
+      <Tabs defaultValue={tabParam}>
+        <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="occupancy">Occupancy</TabsTrigger>
           <TabsTrigger value="residents">
             Residents ({residents?.length ?? 0})
           </TabsTrigger>
+          <TabsTrigger value="supplies">
+            Supplies ({supplyItems.length})
+          </TabsTrigger>
+          <TabsTrigger value="documents">
+            Documents ({houseDocuments.length})
+          </TabsTrigger>
+          <TabsTrigger value="state">State of the House</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
           <TabsTrigger value="info">Info</TabsTrigger>
         </TabsList>
@@ -169,6 +239,33 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
               No active residents in this house
             </p>
           )}
+        </TabsContent>
+
+        <TabsContent value="supplies" className="mt-4">
+          <SupplyList
+            houseId={id}
+            items={supplyItems}
+            canManage={canManage}
+          />
+        </TabsContent>
+
+        <TabsContent value="documents" className="mt-4">
+          <DocumentsList
+            houseId={id}
+            documents={houseDocuments}
+            canManage={canManage}
+          />
+        </TabsContent>
+
+        <TabsContent value="state" className="mt-4">
+          <StateOfHouseView
+            houseId={id}
+            range={rangeParam}
+            customStart={startParam}
+            customEnd={endParam}
+            rangeLabel={dateRange.label}
+            data={stateData}
+          />
         </TabsContent>
 
         <TabsContent value="activity" className="mt-4">
