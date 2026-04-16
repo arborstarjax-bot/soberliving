@@ -4,6 +4,7 @@ import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { CreateRestrictionDialog } from "./create-restriction-dialog";
 import { DemeritMatrix } from "./demerit-matrix";
 import { DisciplineTabs } from "./discipline-tabs";
+import { CreateIncidentDialog } from "../incidents/create-incident-dialog";
 
 export default async function DisciplinePage() {
   const user = await requireAuth();
@@ -142,13 +143,51 @@ export default async function DisciplinePage() {
     <CreateRestrictionDialog houses={houses ?? []} residents={residents ?? []} />
   ) : null;
 
+  // Fetch incidents for the Incidents tab (staff only)
+  let incidents: Array<{
+    id: string;
+    severity: string;
+    category: string | null;
+    description: string;
+    occurred_at: string;
+    photo_url: string | null;
+    resident_name: string;
+    house_name: string;
+    reporter_name: string;
+  }> = [];
+
+  if (isStaff) {
+    let incidentsQuery = supabase
+      .from("incidents")
+      .select("id, severity, category, description, occurred_at, photo_url, resident:residents(full_name), house:houses(name), reporter:users!reported_by(full_name)")
+      .order("occurred_at", { ascending: false })
+      .limit(100);
+    if (houseFilter) incidentsQuery = incidentsQuery.in("house_id", houseFilter);
+    const { data: rawIncidents } = await incidentsQuery;
+    incidents = (rawIncidents ?? []).map((inc) => ({
+      id: inc.id as string,
+      severity: inc.severity as string,
+      category: (inc.category as string) ?? null,
+      description: inc.description as string,
+      occurred_at: inc.occurred_at as string,
+      photo_url: (inc.photo_url as string) ?? null,
+      resident_name: (inc.resident as unknown as { full_name: string } | null)?.full_name ?? "Unknown",
+      house_name: (inc.house as unknown as { name: string } | null)?.name ?? "",
+      reporter_name: (inc.reporter as unknown as { full_name: string } | null)?.full_name ?? "Unknown",
+    }));
+  }
+
+  const addIncidentButton = isStaff ? (
+    <CreateIncidentDialog houses={houses ?? []} residents={residents ?? []} />
+  ) : null;
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold">Discipline</h1>
         <p className="text-muted-foreground">
-          Demerits, restrictions, and disciplinary records
+          Demerits, restrictions, incidents, and disciplinary records
         </p>
       </div>
 
@@ -159,6 +198,8 @@ export default async function DisciplinePage() {
         pastRestrictions={normalizedPastRestrictions}
         addRestrictionButton={addRestrictionButton}
         demeritMatrixContent={demeritMatrixContent}
+        incidents={incidents}
+        addIncidentButton={addIncidentButton}
       />
     </div>
   );

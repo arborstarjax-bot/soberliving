@@ -6,6 +6,12 @@ import { requireRole } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { z } from "zod";
 
+const checkInRestrictionSchema = z.object({
+  restriction_type: z.string().min(1),
+  description: z.string().min(1, "Restriction description is required"),
+  end_date: z.string().optional(),
+});
+
 const completeIntakeReviewSchema = z.object({
   userId: z.string().uuid(),
   houseId: z.string().uuid(),
@@ -19,6 +25,7 @@ const completeIntakeReviewSchema = z.object({
   commitmentTerm: z.string().min(1),
   notes: z.string().optional(),
   staffSignature: z.string().min(1, "Staff signature is required"),
+  checkInRestrictions: z.array(checkInRestrictionSchema).optional(),
 });
 
 export async function completeIntakeReview(formData: z.infer<typeof completeIntakeReviewSchema>) {
@@ -152,6 +159,24 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     return { error: `Commitment creation failed: ${commitError.message}` };
   }
 
+  // Create check-in restrictions if provided
+  if (data.checkInRestrictions && data.checkInRestrictions.length > 0) {
+    for (const restriction of data.checkInRestrictions) {
+      await adminClient
+        .from("restrictions")
+        .insert({
+          resident_id: residentId,
+          house_id: data.houseId,
+          restriction_type: restriction.restriction_type,
+          description: restriction.description,
+          start_date: data.commitmentStartDate,
+          end_date: restriction.end_date || null,
+          is_house_commitment: true,
+          created_by: currentUser.id,
+        });
+    }
+  }
+
   await logActivity({
     actorId: currentUser.id,
     eventType: "intake_review_completed",
@@ -163,6 +188,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
   revalidatePath("/intake-review");
   revalidatePath("/users");
   revalidatePath("/residents");
+  revalidatePath("/discipline");
   return {};
 }
 
@@ -220,5 +246,27 @@ export async function getRoomsForHouse(houseId: string) {
     .eq("is_active", true)
     .order("name");
 
-  return rooms ?? [];
+  // Get all active bed assignments for this house to determine occupied beds
+  const { data: activeBedAssignments } = await adminClient
+    .from("bed_assignments")
+    .select("bed_id")
+    .is("end_date", null);
+
+  const occupiedBedIds = new Set(
+    (activeBedAssignments ?? []).map((a) => a.bed_id)
+  );
+
+  // Filter beds: only include active beds that are NOT occupied
+  // Filter rooms: only include rooms that have at least one available bed
+  const roomsWithAvailability = (rooms ?? [])
+    .map((room) => ({
+      ...room,
+      beds: (room.beds ?? []).filter(
+        (bed: { id: string; label: string; is_active: boolean }) =>
+          bed.is_active && !occupiedBedIds.has(bed.id)
+      ),
+    }))
+    .filter((room) => room.beds.length > 0);
+
+  return roomsWithAvailability;
 }

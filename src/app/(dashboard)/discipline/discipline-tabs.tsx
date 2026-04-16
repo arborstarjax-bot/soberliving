@@ -4,7 +4,7 @@ import { type ReactNode } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ShieldAlert } from "lucide-react";
+import { ShieldAlert, AlertTriangle } from "lucide-react";
 import { LiftRestrictionButton, DeleteRestrictionButton } from "./lift-restriction-button";
 
 const RESTRICTION_TYPE_LABELS: Record<string, string> = {
@@ -40,12 +40,26 @@ interface PastRestriction {
   resident_name: string;
 }
 
+interface Incident {
+  id: string;
+  severity: string;
+  category: string | null;
+  description: string;
+  occurred_at: string;
+  photo_url: string | null;
+  resident_name: string;
+  house_name: string;
+  reporter_name: string;
+}
+
 interface DisciplineTabsProps {
   isStaff: boolean;
   activeRestrictions: ActiveRestriction[];
   pastRestrictions: PastRestriction[];
   addRestrictionButton: ReactNode;
   demeritMatrixContent: ReactNode;
+  incidents?: Incident[];
+  addIncidentButton?: ReactNode;
 }
 
 export function DisciplineTabs({
@@ -54,6 +68,8 @@ export function DisciplineTabs({
   pastRestrictions,
   addRestrictionButton,
   demeritMatrixContent,
+  incidents = [],
+  addIncidentButton,
 }: DisciplineTabsProps) {
   return (
     <Tabs defaultValue="demerits">
@@ -67,6 +83,16 @@ export function DisciplineTabs({
             </Badge>
           )}
         </TabsTrigger>
+        {isStaff && (
+          <TabsTrigger value="incidents">
+            Incidents
+            {incidents.length > 0 && (
+              <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5 py-0">
+                {incidents.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+        )}
       </TabsList>
 
       {/* Demerits Tab */}
@@ -181,6 +207,64 @@ export function DisciplineTabs({
           )}
         </div>
       </TabsContent>
+      {/* Incidents Tab */}
+      {isStaff && (
+        <TabsContent value="incidents">
+          <div className="space-y-4 pt-2">
+            {addIncidentButton && (
+              <div className="flex justify-end">
+                {addIncidentButton}
+              </div>
+            )}
+
+            {incidents.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <AlertTriangle className="mx-auto h-12 w-12 text-muted-foreground/50" />
+                  <p className="mt-4 text-muted-foreground">No incidents recorded</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-2">
+                {incidents.map((inc) => (
+                  <Card key={inc.id}>
+                    <CardContent className="py-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant={
+                              inc.severity === "critical"
+                                ? "destructive"
+                                : inc.severity === "major"
+                                  ? "secondary"
+                                  : "outline"
+                            }
+                            className="capitalize"
+                          >
+                            {inc.severity}
+                          </Badge>
+                          <span className="font-medium text-sm">
+                            {inc.resident_name}
+                          </span>
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(inc.occurred_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <p className="text-sm mt-1">{inc.description}</p>
+                      <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                        {inc.category && <span>Category: {inc.category}</span>}
+                        {inc.house_name && <span>· {inc.house_name}</span>}
+                        <span>· Reported by {inc.reporter_name}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        </TabsContent>
+      )}
     </Tabs>
   );
 }

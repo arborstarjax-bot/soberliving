@@ -7,6 +7,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SignaturePad } from "@/components/signature-pad";
 import { completeIntakeReview, getRoomsForHouse } from "./actions";
+import { Plus, Trash2 } from "lucide-react";
+
+interface CheckInRestriction {
+  restriction_type: string;
+  description: string;
+  end_date: string;
+}
 
 interface House {
   id: string;
@@ -46,6 +53,7 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
   );
   const [commitmentTerm, setCommitmentTerm] = useState("181 days");
   const [notes, setNotes] = useState("");
+  const [checkInRestrictions, setCheckInRestrictions] = useState<CheckInRestriction[]>([]);
   const [staffSignature, setStaffSignature] = useState<string | null>(null);
 
   async function handleHouseChange(newHouseId: string) {
@@ -95,6 +103,7 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
         commitmentTerm,
         notes: notes || undefined,
         staffSignature,
+        checkInRestrictions: checkInRestrictions.length > 0 ? checkInRestrictions : undefined,
       });
 
       if (result.error) {
@@ -267,6 +276,105 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
           placeholder="Add any notes about rent, payment arrangements, or special conditions..."
           rows={3}
         />
+      </div>
+
+      {/* Check-In Restrictions (non-disciplinary) */}
+      <div className="border-t pt-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-lg">Check-In Restrictions</h3>
+            <p className="text-sm text-muted-foreground">
+              Add intake restrictions for this new resident (non-disciplinary).
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              setCheckInRestrictions([
+                ...checkInRestrictions,
+                {
+                  restriction_type: "house_commitment",
+                  description: "",
+                  end_date: "",
+                },
+              ])
+            }
+          >
+            <Plus className="mr-1 h-4 w-4" />
+            Add Restriction
+          </Button>
+        </div>
+
+        {checkInRestrictions.map((r, idx) => (
+          <div key={idx} className="rounded-md border p-3 space-y-3 bg-muted/30">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Restriction {idx + 1}</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-destructive"
+                onClick={() =>
+                  setCheckInRestrictions(checkInRestrictions.filter((_, i) => i !== idx))
+                }
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Type</Label>
+                <select
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                  value={r.restriction_type}
+                  onChange={(e) => {
+                    const updated = [...checkInRestrictions];
+                    updated[idx] = { ...updated[idx], restriction_type: e.target.value };
+                    setCheckInRestrictions(updated);
+                  }}
+                >
+                  <option value="house_commitment">House Commitment (No Leave)</option>
+                  <option value="no_leave">No Leave</option>
+                  <option value="curfew">Curfew</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">End Date</Label>
+                <Input
+                  type="date"
+                  value={r.end_date}
+                  onChange={(e) => {
+                    const updated = [...checkInRestrictions];
+                    updated[idx] = { ...updated[idx], end_date: e.target.value };
+                    setCheckInRestrictions(updated);
+                  }}
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Description *</Label>
+              <Textarea
+                rows={2}
+                placeholder="e.g., Cannot leave the house for 7 days after move-in"
+                value={r.description}
+                onChange={(e) => {
+                  const updated = [...checkInRestrictions];
+                  updated[idx] = { ...updated[idx], description: e.target.value };
+                  setCheckInRestrictions(updated);
+                }}
+              />
+            </div>
+          </div>
+        ))}
+
+        {checkInRestrictions.length === 0 && (
+          <p className="text-sm text-muted-foreground italic">
+            No check-in restrictions added. Click &quot;Add Restriction&quot; to add one.
+          </p>
+        )}
       </div>
 
       {/* Staff Signature */}

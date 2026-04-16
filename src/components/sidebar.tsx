@@ -63,6 +63,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: AlertTriangle,
     roles: ["admin", "manager"],
   },
+  // NOTE: Incidents is hidden from nav via filter — it now lives as a Discipline tab
   {
     label: "Discipline",
     href: "/discipline",
@@ -106,15 +107,21 @@ const NAV_ITEMS: NavItem[] = [
 interface SidebarProps {
   role: UserRole;
   userName: string;
+  hasNoLeaveRestriction?: boolean;
 }
 
-export function Sidebar({ role, userName }: SidebarProps) {
+export function Sidebar({ role, userName, hasNoLeaveRestriction }: SidebarProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const filteredItems = NAV_ITEMS.filter((item) =>
-    item.roles.includes(role)
-  );
+  const filteredItems = NAV_ITEMS.filter((item) => {
+    if (!item.roles.includes(role)) return false;
+    // Hide Leave Requests for residents with No Leave restriction
+    if (item.href === "/leave-requests" && hasNoLeaveRestriction) return false;
+    // Incidents is now a tab inside Discipline — hide from nav
+    if (item.href === "/incidents") return false;
+    return true;
+  });
 
   const navContent = (
     <>
