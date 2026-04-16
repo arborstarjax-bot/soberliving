@@ -1,7 +1,15 @@
 -- ============================================================
--- Polish v1 migration: supply list + house documents
+-- Polish v1 migration: supply list + house documents +
+-- voluntary-discharge flag on residents.
 -- Run in Supabase SQL editor. Idempotent.
 -- ============================================================
+
+-- ---- Voluntary-discharge flag ----
+-- Tracks whether a discharge was resident-initiated ("voluntary departure")
+-- vs. staff-initiated. Populated by the Discharge dialog. Used in the
+-- State of the House report to split discharges vs. voluntary departures.
+alter table public.residents
+  add column if not exists discharge_is_voluntary boolean;
 
 -- ---- Supply items (per house) ----
 create table if not exists public.supply_items (

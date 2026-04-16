@@ -146,12 +146,13 @@ export async function loadStateOfHouseData(
     demeritsRes,
     restrictionsRes,
     suppliesRes,
-    checkInBatchesRes,
     checkInResponsesRes,
   ] = await Promise.all([
     supabase
       .from("residents")
-      .select("id, full_name, status, move_in_date, move_out_date, discharge_reason")
+      .select(
+        "id, full_name, status, move_in_date, move_out_date, discharge_reason, discharge_is_voluntary"
+      )
       .eq("house_id", houseId),
     supabase
       .from("rooms")
@@ -177,15 +178,9 @@ export async function loadStateOfHouseData(
       .select("id, name, is_in_stock")
       .eq("house_id", houseId),
     supabase
-      .from("check_in_batches")
-      .select("id, created_at, sent_to")
-      .eq("house_id", houseId),
-    supabase
       .from("check_in_responses")
-      .select(
-        "id, created_at, submitted_at, form_data, check_in_batch:check_in_batches!inner(house_id)"
-      )
-      .eq("check_in_batch.house_id", houseId),
+      .select("id, status, created_at, completed_at, form_data")
+      .eq("house_id", houseId),
   ]);
 
   // Census
@@ -218,12 +213,17 @@ export async function loadStateOfHouseData(
   }
   const openBeds = totalBeds - occupiedBeds - emptyMarkedBeds;
 
-  // Discharges / departures (within range)
+  // Discharges / departures (within range). Split by the explicit
+  // `discharge_is_voluntary` flag set on the Discharge dialog.
   const dischargedInRange = residents.filter(
     (r) => r.status === "discharged" && isIn(r.move_out_date, range)
   );
   const discharges = dischargedInRange
-    .filter((r) => (r.discharge_reason ?? "").length > 0)
+    .filter(
+      (r) =>
+        !(r as unknown as { discharge_is_voluntary: boolean | null })
+          .discharge_is_voluntary
+    )
     .map((r) => ({
       id: r.id,
       full_name: r.full_name,
@@ -231,7 +231,11 @@ export async function loadStateOfHouseData(
       reason: r.discharge_reason ?? null,
     }));
   const voluntaryDepartures = dischargedInRange
-    .filter((r) => !r.discharge_reason)
+    .filter(
+      (r) =>
+        (r as unknown as { discharge_is_voluntary: boolean | null })
+          .discharge_is_voluntary === true
+    )
     .map((r) => ({
       id: r.id,
       full_name: r.full_name,
@@ -268,42 +272,32 @@ export async function loadStateOfHouseData(
   const outOfStockNames = supplies.filter((s) => !s.is_in_stock).map((s) => s.name);
 
   // Check-ins
-  const batches = (checkInBatchesRes.data ?? []).filter((b) =>
-    isIn(b.created_at, range)
+  // "Sent" = any response row created in range for this house
+  // "Submitted" = responses that reached status=completed (using completed_at
+  // when available, otherwise the created_at filter still catches them).
+  const responsesInRange = (checkInResponsesRes.data ?? []).filter((r) =>
+    isIn(r.created_at, range)
   );
-  const sent = batches.reduce(
-    (acc, b) =>
-      acc + (Array.isArray(b.sent_to) ? b.sent_to.length : 0),
-    0
-  );
-  const responses = (checkInResponsesRes.data ?? []).filter((r) =>
-    isIn(r.submitted_at ?? r.created_at, range)
-  );
-  const submitted = responses.filter(
-    (r) => (r.submitted_at ?? null) !== null
+  const sent = responsesInRange.length;
+  const submitted = responsesInRange.filter(
+    (r) => r.status === "completed"
   ).length;
 
-  // Ratings from form_data
+  // Ratings from form_data. The check-in form writes these exact keys:
+  //   meeting_rating       (Q1 meeting satisfaction, 1-10)
+  //   work_rating          (Q7 work satisfaction, 1-10)
+  //   jsl_feeling_rating   (Q8 feeling about being a resident, 1-10 — proxy for well-being)
   const meetingSatisfaction: number[] = [];
   const workSatisfaction: number[] = [];
   const wellbeing: number[] = [];
-  for (const resp of responses) {
+  for (const resp of responsesInRange) {
+    if (resp.status !== "completed") continue;
     const fd = (resp.form_data ?? {}) as Record<string, unknown>;
-    const m = Number(
-      (fd.meeting_satisfaction as number | string | undefined) ??
-        (fd.q3 as number | string | undefined)
-    );
+    const m = Number(fd.meeting_rating as number | string | undefined);
     if (Number.isFinite(m) && m > 0) meetingSatisfaction.push(m);
-    const w = Number(
-      (fd.work_satisfaction as number | string | undefined) ??
-        (fd.q4 as number | string | undefined)
-    );
+    const w = Number(fd.work_rating as number | string | undefined);
     if (Number.isFinite(w) && w > 0) workSatisfaction.push(w);
-    const wb = Number(
-      (fd.wellbeing as number | string | undefined) ??
-        (fd.well_being as number | string | undefined) ??
-        (fd.q6 as number | string | undefined)
-    );
+    const wb = Number(fd.jsl_feeling_rating as number | string | undefined);
     if (Number.isFinite(wb) && wb > 0) wellbeing.push(wb);
   }
 

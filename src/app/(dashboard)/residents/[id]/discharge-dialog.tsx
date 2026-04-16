@@ -23,6 +23,7 @@ interface Props {
 export function DischargeDialog({ residentId, status }: Props) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
+  const [isVoluntary, setIsVoluntary] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -31,18 +32,33 @@ export function DischargeDialog({ residentId, status }: Props) {
   function handleDischarge() {
     setError(null);
     startTransition(async () => {
-      const result = await dischargeResident(residentId, reason.trim() || undefined);
+      const result = await dischargeResident(
+        residentId,
+        reason.trim() || undefined,
+        isVoluntary
+      );
       if (result?.error) {
         setError(result.error);
       } else {
         setOpen(false);
         setReason("");
+        setIsVoluntary(false);
       }
     });
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setReason(""); setError(null); } }}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        setOpen(v);
+        if (!v) {
+          setReason("");
+          setIsVoluntary(false);
+          setError(null);
+        }
+      }}
+    >
       <DialogTrigger render={<Button variant="destructive" size="sm" />}>
         Discharge
       </DialogTrigger>
@@ -64,6 +80,20 @@ export function DischargeDialog({ residentId, status }: Props) {
               rows={3}
             />
           </div>
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 rounded border-input"
+              checked={isVoluntary}
+              onChange={(e) => setIsVoluntary(e.target.checked)}
+            />
+            <span>
+              <span className="font-medium">Voluntary departure</span>
+              <span className="block text-xs text-muted-foreground">
+                Resident left on their own (not staff-initiated). Used in the State of the House report.
+              </span>
+            </span>
+          </label>
           <div className="text-xs text-muted-foreground">
             Discharge date: <span className="font-medium">{new Date().toLocaleDateString()}</span> (auto-stamped)
           </div>
