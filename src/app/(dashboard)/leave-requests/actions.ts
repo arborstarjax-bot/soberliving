@@ -372,7 +372,7 @@ export async function denyManagerRequest(requestId: string, note?: string) {
 
 export async function approveAdminRequest(requestId: string) {
   const user = await requireAuth();
-  if (user.role !== "admin" && user.role !== "manager") return { error: "Not authorized" };
+  if (user.role !== "admin") return { error: "Not authorized — only admins can give final approval" };
 
   const supabase = await createClient();
 
@@ -429,7 +429,7 @@ export async function approveAdminRequest(requestId: string) {
 
 export async function denyAdminRequest(requestId: string, note?: string) {
   const user = await requireAuth();
-  if (user.role !== "admin" && user.role !== "manager") return { error: "Not authorized" };
+  if (user.role !== "admin") return { error: "Not authorized — only admins can deny at final approval" };
 
   const supabase = await createClient();
 

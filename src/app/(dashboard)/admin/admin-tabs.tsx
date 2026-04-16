@@ -820,49 +820,65 @@ function LeaveActions({ requestId, status }: { requestId: string; status: string
     );
   }
 
-  if (status !== "pending") return null;
+  // Handle multi-step approval statuses
+  const isPendingStatus = status === "pending_cover" || status === "pending_manager" || status === "pending_admin";
+  if (!isPendingStatus) return null;
+
+  const stepLabel =
+    status === "pending_cover" ? "Cover" :
+    status === "pending_manager" ? "Manager" : "Admin";
 
   return (
     <div className="flex items-center gap-2">
-      {showDeny ? (
-        <div className="flex items-center gap-2">
-          <Input
-            placeholder="Reason..."
-            value={denialNote}
-            onChange={(e) => setDenialNote(e.target.value)}
-            className="w-40 h-8"
-          />
-          <Button
-            size="sm"
-            variant="destructive"
-            disabled={isPending}
-            onClick={() => startTransition(() => { denyAdminRequest(requestId, denialNote); })}
-          >
-            Deny
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setShowDeny(false)}>
-            Cancel
-          </Button>
-        </div>
-      ) : (
+      <Badge variant="outline" className="text-xs">{stepLabel} Step</Badge>
+      {status === "pending_admin" && (
         <>
-          <Button
-            size="sm"
-            variant="default"
-            disabled={isPending}
-            onClick={() => startTransition(() => { approveAdminRequest(requestId); })}
-          >
-            <Check className="mr-1 h-3 w-3" /> Approve
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={isPending}
-            onClick={() => setShowDeny(true)}
-          >
-            <X className="mr-1 h-3 w-3" /> Deny
-          </Button>
+          {showDeny ? (
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Reason..."
+                value={denialNote}
+                onChange={(e) => setDenialNote(e.target.value)}
+                className="w-40 h-8"
+              />
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={isPending}
+                onClick={() => startTransition(() => { denyAdminRequest(requestId, denialNote); })}
+              >
+                Deny
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setShowDeny(false)}>
+                Cancel
+              </Button>
+            </div>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="default"
+                disabled={isPending}
+                onClick={() => startTransition(() => { approveAdminRequest(requestId); })}
+              >
+                <Check className="mr-1 h-3 w-3" /> Approve
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={isPending}
+                onClick={() => setShowDeny(true)}
+              >
+                <X className="mr-1 h-3 w-3" /> Deny
+              </Button>
+            </>
+          )}
         </>
+      )}
+      {status !== "pending_admin" && (
+        <span className="text-xs text-muted-foreground">
+          Waiting for {stepLabel.toLowerCase()} approval
+        </span>
       )}
     </div>
   );
