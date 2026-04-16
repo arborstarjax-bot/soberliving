@@ -655,9 +655,9 @@ function ChoresTab({
               <div className="space-y-2">
                 <Label>Days of Week *</Label>
                 <div className="flex flex-wrap gap-2">
-                  {(["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const).map((day) => (
+                  {(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const).map((day) => (
                     <label key={day} className="flex items-center gap-1 text-sm">
-                      <input type="checkbox" name="days_of_week" value={day} defaultChecked={["mon", "wed", "fri"].includes(day)} />
+                      <input type="checkbox" name="days_of_week" value={day} defaultChecked={["monday", "wednesday", "friday"].includes(day)} />
                       {day.charAt(0).toUpperCase() + day.slice(1)}
                     </label>
                   ))}
