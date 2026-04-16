@@ -303,10 +303,15 @@ export async function generateMissedChoreDemerits(houseId?: string) {
       continue;
     }
 
+    // Guard against a TOCTOU race: the resident may complete the
+    // chore between the SELECT above and this UPDATE. Re-checking
+    // status='pending' here means a completion that slipped in
+    // concurrently isn't clobbered back to 'missed'.
     const { error: flagError } = await supabase
       .from("chore_signoffs")
       .update({ status: "missed", updated_at: new Date().toISOString() })
-      .eq("id", signoff.id);
+      .eq("id", signoff.id)
+      .eq("status", "pending");
 
     if (!flagError) count++;
   }

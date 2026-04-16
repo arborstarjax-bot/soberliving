@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getPageParams, buildPaginationMeta } from "@/lib/pagination";
 import { NotificationList } from "./notification-list";
 import {
@@ -87,7 +87,18 @@ export default async function NotificationsPage({ searchParams }: PageProps) {
     { status: string; rejection_step: string | null }
   > = {};
   if (leaveIds.length > 0) {
-    const { data: leaves } = await supabase
+    // Use the admin client here: cover_request notifications are
+    // addressed to the covering resident, who has no RLS read access
+    // to leave_requests (same reason approveCoverRequest uses the
+    // admin client). With the RLS-scoped client, the query silently
+    // returns no rows for those IDs, leaveStatusMap is empty, and the
+    // covering resident's old notifications still render stale
+    // Approve/Deny buttons instead of resolved-state badges. We only
+    // read id/status/rejection_step for IDs that already appear in the
+    // current user's notifications, so the scope matches the
+    // notification rows they're already allowed to see.
+    const adminClient = createAdminClient();
+    const { data: leaves } = await adminClient
       .from("leave_requests")
       .select("id, status, rejection_step")
       .in("id", leaveIds);
