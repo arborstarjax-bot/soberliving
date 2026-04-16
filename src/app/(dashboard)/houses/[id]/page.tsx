@@ -109,7 +109,7 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
   // State-of-house params (controlled via URL so tabs work with server components)
   const tabParam = typeof searchParams?.tab === "string" ? searchParams.tab : "occupancy";
   const rangeParam =
-    typeof searchParams?.range === "string" ? searchParams.range : "to_date";
+    typeof searchParams?.range === "string" ? searchParams.range : "all_time";
   const startParam =
     typeof searchParams?.start === "string" ? searchParams.start : "";
   const endParam = typeof searchParams?.end === "string" ? searchParams.end : "";

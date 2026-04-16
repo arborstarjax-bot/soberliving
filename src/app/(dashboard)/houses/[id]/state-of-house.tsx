@@ -24,8 +24,15 @@ interface StateOfHouseProps {
   data: StateOfHouseData;
 }
 
+// Range options.
+//
+// "All Time" replaces the old "To Date" label so it’s obvious the column is
+// unbounded — residents who joined long ago still appear. "Today" is a new
+// explicit one-day window for "what happened today" questions, which is
+// what users tend to read "to date" as meaning.
 const RANGE_OPTIONS: { value: string; label: string }[] = [
-  { value: "to_date", label: "To Date" },
+  { value: "all_time", label: "All Time" },
+  { value: "today", label: "Today" },
   { value: "month", label: "Monthly" },
   { value: "90d", label: "90 Days" },
   { value: "6mo", label: "6 Months" },
@@ -181,19 +188,77 @@ export function StateOfHouseView({
         />
       </div>
 
-      {/* Occupancy & Census — flat */}
-      <SectionCard
+      {/* Occupancy & Census — expand to see bed-by-bed breakdown. */}
+      <ExpandableSection
         title="Occupancy & Census"
-        description="Current headcount and move-ins during the selected period."
+        description="Current headcount plus bed-by-bed breakdown and move-ins during the selected period."
+        summary={
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Stat
+              label="Current residents"
+              value={data.census.currentResidents}
+            />
+            <Stat
+              label="Occupied beds"
+              value={`${data.census.occupiedBeds}/${data.census.totalBeds}`}
+              sub={occPct}
+            />
+            <Stat label="Open beds" value={data.census.openBeds} />
+          </div>
+        }
       >
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Stat label="Current residents" value={data.census.currentResidents} />
-          <Stat
-            label="Occupied beds"
-            value={`${data.census.occupiedBeds}/${data.census.totalBeds}`}
-            sub={occPct}
-          />
-          <Stat label="Open beds" value={data.census.openBeds} />
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium">
+              Occupied beds ({data.census.occupiedBedDetails.length})
+            </h4>
+            {data.census.occupiedBedDetails.length === 0 ? (
+              <p className="text-sm text-muted-foreground">None</p>
+            ) : (
+              <ul className="space-y-2">
+                {data.census.occupiedBedDetails.map((b) => (
+                  <li
+                    key={b.bedId}
+                    className="rounded-md border bg-muted/20 p-3 text-sm flex items-center justify-between gap-2"
+                  >
+                    <span className="text-xs text-muted-foreground">
+                      {b.roomName} / {b.bedLabel}
+                    </span>
+                    {b.residentId ? (
+                      <Link
+                        href={`/residents/${b.residentId}`}
+                        className="font-medium hover:underline"
+                      >
+                        {b.residentName}
+                      </Link>
+                    ) : (
+                      <span className="font-medium">{b.residentName}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="space-y-2">
+            <h4 className="text-sm font-medium">
+              Open beds ({data.census.openBedDetails.length})
+            </h4>
+            {data.census.openBedDetails.length === 0 ? (
+              <p className="text-sm text-muted-foreground">None</p>
+            ) : (
+              <ul className="space-y-2">
+                {data.census.openBedDetails.map((b) => (
+                  <li
+                    key={b.bedId}
+                    className="rounded-md border bg-muted/20 p-3 text-sm"
+                  >
+                    <span className="font-medium">{b.roomName}</span>
+                    <span className="text-muted-foreground"> / {b.bedLabel}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
         <NamedDateList
           title={`New residents in period (${data.census.newResidents.length})`}
@@ -203,7 +268,7 @@ export function StateOfHouseView({
             date: r.move_in_date,
           }))}
         />
-      </SectionCard>
+      </ExpandableSection>
 
       {/* Discharges & Departures — flat */}
       <SectionCard

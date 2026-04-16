@@ -108,6 +108,15 @@ export function resolveRange(
   const endIso = new Date().toISOString();
 
   switch (range) {
+    case "today": {
+      const start = new Date(now);
+      start.setHours(0, 0, 0, 0);
+      return {
+        startIso: start.toISOString(),
+        endIso,
+        label: "Today",
+      };
+    }
     case "month": {
       const start = new Date(now.getFullYear(), now.getMonth(), 1);
       return {
@@ -158,9 +167,12 @@ export function resolveRange(
         } – ${end.toLocaleDateString()}`,
       };
     }
+    case "all_time":
     case "to_date":
     default:
-      return { startIso: null, endIso, label: "All time to date" };
+      // "to_date" kept as a synonym so any bookmarked or old-format URLs
+      // (from before the rename) still resolve to the same all-time view.
+      return { startIso: null, endIso, label: "All time" };
   }
 }
 
