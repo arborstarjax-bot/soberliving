@@ -340,12 +340,12 @@ export function BulletinFeed({
 
             {/* Photo */}
             {post.photo_url && (
-              <div className="mt-3 rounded-xl overflow-hidden border">
+              <div className="mt-3">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={post.photo_url}
                   alt="Post attachment"
-                  className="w-full max-h-80 object-cover"
+                  className="max-h-80 rounded-xl shadow-md object-cover"
                 />
               </div>
             )}
