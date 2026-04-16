@@ -9,6 +9,8 @@ import Link from "next/link";
 import { DeleteResidentButton } from "./delete-resident-button";
 import { IntakeReviewForm } from "../intake-review/intake-review-form";
 import { MarkCompleteButton } from "../intake-review/mark-complete-button";
+import { SendCheckInDialog } from "./check-ins/send-checkin-dialog";
+import { CheckInList } from "./check-ins/checkin-list";
 
 interface Resident {
   id: string;
@@ -56,6 +58,27 @@ interface IntakeAwaitingUser {
   email: string;
 }
 
+interface CheckInResponseSummary {
+  id: string;
+  residentName: string;
+  status: string;
+  completedAt: string | null;
+  formData: Record<string, unknown> | null;
+  hasStaffSignature: boolean;
+  houseId: string;
+}
+
+interface CheckInBatch {
+  id: string;
+  createdBy: string;
+  houseNames: string;
+  houseIds: string[];
+  createdAt: string;
+  completedCount: number;
+  totalCount: number;
+  responses: CheckInResponseSummary[];
+}
+
 // Unified person type for the merged list
 interface UnifiedPerson {
   key: string;
@@ -83,6 +106,7 @@ interface ResidentsTabsProps {
   isStaff: boolean;
   intakePending?: IntakePendingUser[];
   intakeAwaiting?: IntakeAwaitingUser[];
+  checkInBatches?: CheckInBatch[];
 }
 
 export function ResidentsTabs({
@@ -93,6 +117,7 @@ export function ResidentsTabs({
   isStaff,
   intakePending = [],
   intakeAwaiting = [],
+  checkInBatches = [],
 }: ResidentsTabsProps) {
   const [topTab, setTopTab] = useState<string>("residents");
   // Build a unified list of all people
@@ -272,6 +297,21 @@ export function ResidentsTabs({
             {intakeCount > 0 && (
               <Badge variant={topTab === "intake" ? "secondary" : "destructive"} className="text-[10px] px-1.5 py-0">
                 {intakeCount}
+              </Badge>
+            )}
+          </button>
+          <button
+            onClick={() => setTopTab("checkins")}
+            className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors flex items-center gap-1.5 ${
+              topTab === "checkins"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            Check Ins
+            {checkInBatches.length > 0 && (
+              <Badge variant={topTab === "checkins" ? "secondary" : "outline"} className="text-[10px] px-1.5 py-0">
+                {checkInBatches.length}
               </Badge>
             )}
           </button>
@@ -465,6 +505,16 @@ export function ResidentsTabs({
               );
             })
           )}
+        </div>
+      )}
+      {/* Check Ins view */}
+      {topTab === "checkins" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Monthly Check-Ins</h2>
+            <SendCheckInDialog houses={houses} />
+          </div>
+          <CheckInList batches={checkInBatches} />
         </div>
       )}
     </div>

@@ -1,6 +1,7 @@
 import { requireAuth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
+import { createClient } from "@/lib/supabase/server";
 
 export default async function DashboardLayout({
   children,
@@ -18,6 +19,22 @@ export default async function DashboardLayout({
   // Redirect residents who completed intake but haven't signed their commitment agreement
   if (user.role === "resident" && user.intake_completed && !user.commitment_signed) {
     redirect("/sign-commitment");
+  }
+
+  // Redirect residents who have a pending check-in (blocking task)
+  if (user.role === "resident") {
+    const supabase = await createClient();
+    const { data: pendingCheckIn } = await supabase
+      .from("check_in_responses")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("status", "pending")
+      .limit(1)
+      .maybeSingle();
+
+    if (pendingCheckIn) {
+      redirect(`/check-in/${pendingCheckIn.id}`);
+    }
   }
 
   return (

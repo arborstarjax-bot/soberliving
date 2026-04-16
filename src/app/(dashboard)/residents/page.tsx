@@ -4,6 +4,7 @@ import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { getDaysSober } from "@/lib/milestones";
 import { CreateUserDialog } from "../users/create-user-dialog";
 import { ResidentsTabs } from "./residents-tabs";
+import { getCheckInBatches } from "../check-ins/actions";
 
 export default async function ResidentsPage() {
   const user = await requireAuth();
@@ -184,6 +185,31 @@ export default async function ResidentsPage() {
     }));
   }
 
+  // Fetch check-in batches for staff
+  let checkInBatches: Array<{
+    id: string;
+    createdBy: string;
+    houseNames: string;
+    houseIds: string[];
+    createdAt: string;
+    completedCount: number;
+    totalCount: number;
+    responses: Array<{
+      id: string;
+      residentName: string;
+      status: string;
+      completedAt: string | null;
+      formData: Record<string, unknown> | null;
+      hasStaffSignature: boolean;
+      houseId: string;
+    }>;
+  }> = [];
+
+  if (isStaff) {
+    const result = await getCheckInBatches();
+    checkInBatches = result.batches ?? [];
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -205,6 +231,7 @@ export default async function ResidentsPage() {
         isStaff={isStaff}
         intakePending={intakePending}
         intakeAwaiting={intakeAwaiting}
+        checkInBatches={checkInBatches}
       />
     </div>
   );
