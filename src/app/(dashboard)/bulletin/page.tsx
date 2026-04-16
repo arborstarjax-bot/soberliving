@@ -4,6 +4,20 @@ import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { BulletinFeed } from "./bulletin-feed";
 import { NewPostForm } from "./new-post-form";
 
+/** Parse photo_url field — handles both legacy single URL and new JSON array format */
+function parsePhotoUrls(raw: string | null): string[] {
+  if (!raw) return [];
+  if (raw.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.filter((u: unknown) => typeof u === "string" && u.length > 0);
+    } catch {
+      // fall through to single URL
+    }
+  }
+  return [raw];
+}
+
 export default async function BulletinPage() {
   const user = await requireAuth();
   const supabase = createAdminClient();
@@ -134,7 +148,7 @@ export default async function BulletinPage() {
       author_id: post.author_id as string,
       title: post.title as string,
       content: post.content as string,
-      photo_url: (post.photo_url as string) ?? null,
+      photo_urls: parsePhotoUrls(post.photo_url as string | null),
       is_pinned: post.is_pinned as boolean,
       created_at: post.created_at as string,
       author_name: authorData?.full_name ?? "Unknown",

@@ -41,7 +41,7 @@ interface Post {
   author_id: string;
   title: string;
   content: string;
-  photo_url: string | null;
+  photo_urls: string[];
   is_pinned: boolean;
   created_at: string;
   author_name: string;
@@ -338,15 +338,20 @@ export function BulletinFeed({
               {post.content}
             </p>
 
-            {/* Photo */}
-            {post.photo_url && (
-              <div className="mt-3">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={post.photo_url}
-                  alt="Post attachment"
-                  className="max-h-80 rounded-xl shadow-md object-cover"
-                />
+            {/* Photos */}
+            {post.photo_urls.length > 0 && (
+              <div className={`mt-3 ${post.photo_urls.length === 1 ? "" : "grid gap-2 grid-cols-2"}`}>
+                {post.photo_urls.map((url, i) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={url}
+                    src={url}
+                    alt={`Photo ${i + 1}`}
+                    className={`rounded-xl shadow-md object-cover ${
+                      post.photo_urls.length === 1 ? "max-h-80" : "w-full h-48"
+                    }`}
+                  />
+                ))}
               </div>
             )}
 

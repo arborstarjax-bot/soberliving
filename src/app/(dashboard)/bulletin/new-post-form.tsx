@@ -73,10 +73,13 @@ export function NewPostForm({ houses, userRole, singleHouse }: NewPostFormProps)
   const [selectedHouses, setSelectedHouses] = useState<string[]>(
     singleHouse && houses.length === 1 ? [houses[0].id] : []
   );
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const isStaff = userRole === "admin" || userRole === "manager";
+  const maxPhotos = isStaff ? 4 : 1;
 
   const [state, action, isPending] = useActionState(
     async (prev: { error?: string } | undefined, formData: FormData) => {
@@ -84,14 +87,14 @@ export function NewPostForm({ houses, userRole, singleHouse }: NewPostFormProps)
       for (const hid of selectedHouses) {
         formData.append("house_ids", hid);
       }
-      if (photoUrl) {
-        formData.set("photo_url", photoUrl);
+      if (photoUrls.length > 0) {
+        formData.set("photo_url", JSON.stringify(photoUrls));
       }
       const result = await createBulletinPost(prev, formData);
       if (!result?.error) {
         setIsOpen(false);
         setSelectedHouses(singleHouse && houses.length === 1 ? [houses[0].id] : []);
-        setPhotoUrl(null);
+        setPhotoUrls([]);
       }
       return result;
     },
@@ -101,6 +104,10 @@ export function NewPostForm({ houses, userRole, singleHouse }: NewPostFormProps)
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (photoUrls.length >= maxPhotos) {
+      setUploadError(`Maximum ${maxPhotos} photo${maxPhotos > 1 ? "s" : ""} allowed`);
+      return;
+    }
     setUploading(true);
     setUploadError(null);
     try {
@@ -116,7 +123,7 @@ export function NewPostForm({ houses, userRole, singleHouse }: NewPostFormProps)
       if (result.error) {
         setUploadError(result.error);
       } else if (result.url) {
-        setPhotoUrl(result.url);
+        setPhotoUrls((prev) => [...prev, result.url!]);
       }
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "Upload failed");
@@ -124,6 +131,11 @@ export function NewPostForm({ houses, userRole, singleHouse }: NewPostFormProps)
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
     }
+  }
+
+  function removePhoto(index: number) {
+    setPhotoUrls((prev) => prev.filter((_, i) => i !== index));
+    setUploadError(null);
   }
 
   function toggleHouse(id: string) {
@@ -205,42 +217,25 @@ export function NewPostForm({ houses, userRole, singleHouse }: NewPostFormProps)
           )}
 
           <div className="space-y-2">
-            <Label>Photo (optional)</Label>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-              >
-                {uploading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <ImageIcon className="mr-2 h-4 w-4" />
-                )}
-                {uploading ? "Uploading..." : "Add Photo"}
-              </Button>
-              {photoUrl && (
-                <div className="flex items-center gap-2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={photoUrl}
-                    alt="Preview"
-                    className="h-10 w-10 rounded object-cover"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0"
-                    onClick={() => { setPhotoUrl(null); setUploadError(null); }}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
-              )}
-            </div>
+            <Label>Photos (optional{isStaff ? " — up to 4" : ""})</Label>
+            {photoUrls.length < maxPhotos && (
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploading}
+                >
+                  {uploading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <ImageIcon className="mr-2 h-4 w-4" />
+                  )}
+                  {uploading ? "Uploading..." : `Add Photo${photoUrls.length > 0 ? ` (${photoUrls.length}/${maxPhotos})` : ""}`}
+                </Button>
+              </div>
+            )}
             <input
               ref={fileRef}
               type="file"
@@ -253,25 +248,28 @@ export function NewPostForm({ houses, userRole, singleHouse }: NewPostFormProps)
             )}
           </div>
 
-          {/* Full-size photo preview */}
-          {photoUrl && (
-            <div className="relative rounded-lg overflow-hidden border">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={photoUrl}
-                alt="Photo preview"
-                className="max-h-64 w-full object-cover"
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="absolute top-2 right-2 h-7 rounded-full"
-                onClick={() => { setPhotoUrl(null); setUploadError(null); }}
-              >
-                <X className="h-3 w-3 mr-1" />
-                Remove
-              </Button>
+          {/* Photo previews */}
+          {photoUrls.length > 0 && (
+            <div className={`grid gap-2 ${photoUrls.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}>
+              {photoUrls.map((url, i) => (
+                <div key={url} className="relative rounded-xl overflow-hidden border">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={url}
+                    alt={`Photo ${i + 1}`}
+                    className="w-full h-40 object-cover"
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="absolute top-1.5 right-1.5 h-6 w-6 p-0 rounded-full"
+                    onClick={() => removePhoto(i)}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
             </div>
           )}
 
