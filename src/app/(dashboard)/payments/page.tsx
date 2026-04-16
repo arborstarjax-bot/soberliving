@@ -310,8 +310,8 @@ export default async function PaymentsPage() {
                   </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span>
-                      {payment.status === "pending"
-                        ? "Pending"
+                      {payment.status === "pending" || !payment.paid_at
+                        ? payment.status.charAt(0).toUpperCase() + payment.status.slice(1)
                         : new Date(payment.paid_at).toLocaleDateString()}
                     </span>
                     {payment.payment_method && (

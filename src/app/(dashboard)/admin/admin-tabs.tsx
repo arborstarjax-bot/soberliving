@@ -652,6 +652,26 @@ function ChoresTab({
                 <Label>Chore Name *</Label>
                 <Input name="name" required placeholder="e.g. Kitchen Clean" />
               </div>
+              <div className="space-y-2">
+                <Label>Days of Week *</Label>
+                <div className="flex flex-wrap gap-2">
+                  {(["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const).map((day) => (
+                    <label key={day} className="flex items-center gap-1 text-sm">
+                      <input type="checkbox" name="days_of_week" value={day} defaultChecked={["mon", "wed", "fri"].includes(day)} />
+                      {day.charAt(0).toUpperCase() + day.slice(1)}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Cycle Length (weeks)</Label>
+                <select name="cycle_weeks" defaultValue="2" className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">
+                  <option value="1">1 week</option>
+                  <option value="2">2 weeks</option>
+                  <option value="3">3 weeks</option>
+                  <option value="4">4 weeks</option>
+                </select>
+              </div>
               {createState?.error && <p className="text-sm text-destructive">{createState.error}</p>}
               <Button type="submit" className="w-full" disabled={createPending}>
                 {createPending ? "Creating…" : "Create Chore"}
