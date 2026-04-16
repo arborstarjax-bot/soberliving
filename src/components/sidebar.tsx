@@ -107,9 +107,10 @@ interface SidebarProps {
   role: UserRole;
   userName: string;
   hasNoLeaveRestriction?: boolean;
+  unreadNotificationCount?: number;
 }
 
-export function Sidebar({ role, userName, hasNoLeaveRestriction }: SidebarProps) {
+export function Sidebar({ role, userName, hasNoLeaveRestriction, unreadNotificationCount = 0 }: SidebarProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -154,6 +155,11 @@ export function Sidebar({ role, userName, hasNoLeaveRestriction }: SidebarProps)
             >
               <item.icon className="h-4 w-4 shrink-0" />
               {item.label}
+              {item.href === "/notifications" && unreadNotificationCount > 0 && (
+                <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                  {unreadNotificationCount > 99 ? "99+" : unreadNotificationCount}
+                </span>
+              )}
             </Link>
           );
         })}

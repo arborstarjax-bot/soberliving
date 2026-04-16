@@ -39,6 +39,18 @@ export default async function DashboardLayout({
     }
   }
 
+  // Fetch unread notification count for sidebar badge
+  let unreadNotificationCount = 0;
+  {
+    const supabase = await createClient();
+    const { count } = await supabase
+      .from("notifications")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("is_read", false);
+    unreadNotificationCount = count ?? 0;
+  }
+
   // Check if resident has an active "no_leave" restriction to hide Leave Requests nav
   let hasNoLeaveRestriction = false;
   if (user.role === "resident") {
@@ -65,7 +77,7 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar role={user.role} userName={user.full_name} hasNoLeaveRestriction={hasNoLeaveRestriction} />
+      <Sidebar role={user.role} userName={user.full_name} hasNoLeaveRestriction={hasNoLeaveRestriction} unreadNotificationCount={unreadNotificationCount} />
       <main className="flex-1 overflow-y-auto">
         <div className="container mx-auto p-4 lg:p-6 max-w-7xl">
           {children}

@@ -25,6 +25,20 @@ export default async function DisciplinePage() {
       .maybeSingle();
     residentRecordId = myResident?.id ?? null;
     residentHouseId = myResident?.house_id ?? null;
+
+    // Guard: if resident has no active record, show empty discipline page
+    if (!residentRecordId) {
+      return (
+        <div className="space-y-6">
+          <div>
+            <h1 className="text-2xl font-bold">Discipline</h1>
+            <p className="text-muted-foreground">
+              No active resident record found. Contact your house manager for assistance.
+            </p>
+          </div>
+        </div>
+      );
+    }
   }
 
   // Get houses

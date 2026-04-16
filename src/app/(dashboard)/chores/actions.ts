@@ -1164,6 +1164,7 @@ export async function completeChore(
   date: string,
   photoUrl?: string
 ): Promise<{ error?: string }> {
+  await requireAuth();
   const supabase = await createClient();
 
   // Find the signoff for this chore assignment on this date
