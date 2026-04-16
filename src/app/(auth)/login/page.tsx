@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 import { login } from "@/app/(auth)/actions";
 import { Button } from "@/components/ui/button";
@@ -9,6 +10,7 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -54,6 +56,15 @@ export default function LoginPage() {
             </Button>
           </form>
         </CardContent>
+        <CardFooter className="justify-center text-sm text-muted-foreground">
+          Don&apos;t have an account?{" "}
+          <Link
+            href="/register"
+            className="ml-1 font-medium text-primary hover:underline"
+          >
+            Sign up
+          </Link>
+        </CardFooter>
       </Card>
     </div>
   );

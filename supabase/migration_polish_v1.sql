@@ -94,6 +94,30 @@ create policy "house_documents_storage_delete"
   on storage.objects for delete to authenticated
   using (bucket_id = 'house-documents');
 
+-- ---- Account status for self-signup approval flow ----
+-- Open signup creates a users row with account_status = 'pending'.
+-- Admins approve or reject from the admin panel. Existing rows are
+-- backfilled to 'active' so current accounts are not interrupted.
+alter table public.users
+  add column if not exists account_status text not null default 'pending'
+    check (account_status in ('pending', 'active', 'rejected'));
+
+-- Backfill: any row that already has a user_roles entry is considered
+-- active (pre-existing account). Rows with no role stay 'pending'.
+update public.users u
+  set account_status = 'active'
+  where account_status <> 'active'
+    and exists (select 1 from public.user_roles ur where ur.user_id = u.id);
+
+-- Allow a newly-signed-up user to insert their own public.users row.
+-- Without this, self-signup fails under RLS because the only existing
+-- insert policy requires an admin role. This policy is narrowly scoped
+-- to the authenticated user's own id.
+drop policy if exists "Users can insert their own profile" on public.users;
+create policy "Users can insert their own profile"
+  on public.users for insert to authenticated
+  with check (auth.uid() = id);
+
 -- ---- Rename legacy "[Empty]" bed labels to "[Not Available]" ----
 -- The UI now says "Not Available" instead of "Empty" so the suffix that
 -- flags a bed as unavailable was also renamed. Existing rows with the

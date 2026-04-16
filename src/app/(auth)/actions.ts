@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 
 interface AuthState {
   error?: string;
@@ -31,6 +31,31 @@ export async function login(
     return { error: error.message };
   }
 
+  // Gate pending / rejected accounts before redirecting to the dashboard.
+  // Sign the user straight back out so no protected routes are accessible.
+  const { data: profile } = await supabase
+    .from("users")
+    .select("account_status")
+    .eq("id", data.user?.id ?? "")
+    .single();
+
+  const status = (profile as { account_status?: string } | null)
+    ?.account_status;
+  if (status === "pending") {
+    await supabase.auth.signOut();
+    return {
+      error:
+        "Your account is pending admin approval. You will be able to sign in once an admin approves it.",
+    };
+  }
+  if (status === "rejected") {
+    await supabase.auth.signOut();
+    return {
+      error:
+        "Your account request was not approved. Please contact an administrator.",
+    };
+  }
+
   // Redirect based on role
   const { data: roleRecord } = await supabase
     .from("user_roles")
@@ -49,35 +74,36 @@ export async function signup(
   _prevState: AuthState | undefined,
   formData: FormData
 ): Promise<AuthState | undefined> {
-  const fullName = formData.get("full_name") as string;
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
+  const fullName = (formData.get("full_name") as string | null)?.trim() ?? "";
+  const email = (formData.get("email") as string | null)?.trim() ?? "";
+  const password = (formData.get("password") as string | null) ?? "";
 
-  if (!fullName || fullName.trim().length < 2) {
+  if (fullName.length < 2) {
     return { error: "Full name must be at least 2 characters" };
   }
   if (!email) {
     return { error: "Email is required" };
   }
-  if (!password || password.length < 6) {
-    return { error: "Password must be at least 6 characters" };
+  if (password.length < 8) {
+    return { error: "Password must be at least 8 characters" };
   }
 
   const supabase = await createClient();
 
-  // Create the auth user
+  // Create the auth user. If email confirmation is enabled in Supabase
+  // this will NOT return a session; the user must click the email link
+  // before they can sign in. Either way the admin must still approve
+  // the account before any dashboard access is granted.
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
-      data: {
-        full_name: fullName.trim(),
-      },
+      data: { full_name: fullName },
     },
   });
 
   if (error) {
-    if (error.message.includes("already registered")) {
+    if (error.message.toLowerCase().includes("already")) {
       return { error: "An account with this email already exists" };
     }
     return { error: error.message };
@@ -87,41 +113,45 @@ export async function signup(
     return { error: "Failed to create account" };
   }
 
-  // Insert into public.users table
-  const { error: profileError } = await supabase
+  // Upsert the public.users profile with account_status='pending'.
+  // Use the admin client so this works whether or not Supabase returned
+  // a session (email-confirm mode) and regardless of the users-insert
+  // RLS policy.
+  const admin = createAdminClient();
+  const { error: profileError } = await admin
     .from("users")
-    .insert({
-      id: data.user.id,
-      email,
-      full_name: fullName.trim(),
-    });
+    .upsert(
+      {
+        id: data.user.id,
+        email,
+        full_name: fullName,
+        account_status: "pending",
+      },
+      { onConflict: "id" }
+    );
 
   if (profileError) {
-    // If the profile insert fails, the auth user still exists.
-    // Log the error but don't block — the user can still log in
-    // and an admin can fix the profile later.
-    console.error("Failed to create user profile:", profileError.message);
+    return {
+      error:
+        "Failed to create profile: " +
+        profileError.message +
+        ". Please contact an administrator.",
+    };
   }
 
-  // Assign default resident role
-  const { error: roleError } = await supabase
-    .from("user_roles")
-    .insert({
-      user_id: data.user.id,
-      role: "resident",
-    });
+  // Do NOT assign a role. The admin picks the role at approval time.
 
-  if (roleError) {
-    console.error("Failed to assign default role:", roleError.message);
+  // If Supabase auto-confirmed the signup it also returned a session;
+  // sign the user straight back out so they can't land on protected
+  // routes while still pending approval.
+  if (data.session) {
+    await supabase.auth.signOut();
   }
 
-  // If email confirmation is required (no session), show success message
-  if (!data.session) {
-    return { success: "Check your email for a confirmation link" };
-  }
-
-  // If auto-confirmed, redirect to dashboard
-  redirect("/dashboard");
+  return {
+    success:
+      "Thanks! Your account has been created and is waiting for admin approval. You'll be able to sign in once it's approved.",
+  };
 }
 
 export async function logout() {

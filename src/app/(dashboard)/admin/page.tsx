@@ -1,7 +1,9 @@
 import { requireAuth } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { redirect } from "next/navigation";
+import Link from "next/link";
+import { UserPlus } from "lucide-react";
 import { AdminTabs } from "./admin-tabs";
 
 export default async function AdminPage() {
@@ -176,8 +178,37 @@ export default async function AdminPage() {
 
   const activeDemerits = (demerits ?? []).filter((d) => d.status === "active");
 
+  // --- Pending signups (admin only) ---
+  let pendingUserCount = 0;
+  if (isAdmin) {
+    const adminClient = createAdminClient();
+    const { count } = await adminClient
+      .from("users")
+      .select("id", { count: "exact", head: true })
+      .eq("account_status", "pending");
+    pendingUserCount = count ?? 0;
+  }
+
   return (
-    <AdminTabs
+    <>
+      {isAdmin && pendingUserCount > 0 && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900">
+          <div className="flex items-center gap-2">
+            <UserPlus className="h-4 w-4" />
+            <span className="text-sm">
+              {pendingUserCount} pending signup
+              {pendingUserCount === 1 ? "" : "s"} waiting for approval.
+            </span>
+          </div>
+          <Link
+            href="/admin/pending-users"
+            className="text-sm font-medium underline underline-offset-2"
+          >
+            Review
+          </Link>
+        </div>
+      )}
+      <AdminTabs
       isAdmin={isAdmin}
       houses={houses ?? []}
       residents={residents ?? []}
@@ -197,6 +228,7 @@ export default async function AdminPage() {
       users={users}
       pendingPayments={pendingPayments ?? []}
       recentPayments={recentPayments ?? []}
-    />
+      />
+    </>
   );
 }

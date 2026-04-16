@@ -207,7 +207,6 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
           </TabsTrigger>
           <TabsTrigger value="state">State of the House</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
-          <TabsTrigger value="info">Info</TabsTrigger>
         </TabsList>
 
         <TabsContent value="occupancy" className="space-y-4 mt-4">
