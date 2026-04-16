@@ -119,8 +119,9 @@ export function DocumentsList({
                           !window.confirm(`Delete "${doc.name}"?`)
                         )
                           return;
-                        startTransition(() => {
-                          deleteHouseDocument(doc.id);
+                        startTransition(async () => {
+                          const result = await deleteHouseDocument(doc.id);
+                          if (result?.error) alert(result.error);
                         });
                       }}
                     >

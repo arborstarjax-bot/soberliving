@@ -449,7 +449,7 @@ export async function deleteBed(
   return {};
 }
 
-// --- Toggle Bed Empty ---
+// --- Toggle Bed Not Available ---
 
 export async function toggleBedEmpty(bedId: string, houseId: string) {
   const user = await requireAuth();
@@ -469,10 +469,13 @@ export async function toggleBedEmpty(bedId: string, houseId: string) {
     .maybeSingle();
 
   if (activeAssignment) {
-    return { error: "Cannot mark bed as empty while a resident is assigned" };
+    return {
+      error:
+        "Cannot mark bed as not available while a resident is assigned",
+    };
   }
 
-  // Check current bed label to see if it's already marked empty
+  // Check current bed label to see if it's already marked not available
   const { data: bed } = await supabase
     .from("beds")
     .select("label, room_id, rooms(house_id)")
@@ -485,12 +488,18 @@ export async function toggleBedEmpty(bedId: string, houseId: string) {
   const actualHouseId = (bed.rooms as unknown as { house_id: string })?.house_id;
   if (actualHouseId !== houseId) return { error: "Not authorized" };
 
-  // Toggle: if label ends with " [Empty]", remove it; otherwise add it
-  const emptyTag = " [Empty]";
-  const isMarkedEmpty = bed.label.endsWith(emptyTag);
+  // Toggle: if label ends with " [Not Available]" or legacy " [Empty]",
+  // remove it; otherwise add " [Not Available]". We keep the legacy suffix
+  // recognised so existing rows that haven't been migrated yet still work.
+  const tag = " [Not Available]";
+  const legacyTag = " [Empty]";
+  const isMarkedEmpty =
+    bed.label.endsWith(tag) || bed.label.endsWith(legacyTag);
   const newLabel = isMarkedEmpty
-    ? bed.label.slice(0, -emptyTag.length)
-    : bed.label + emptyTag;
+    ? bed.label.endsWith(tag)
+      ? bed.label.slice(0, -tag.length)
+      : bed.label.slice(0, -legacyTag.length)
+    : bed.label + tag;
 
   const { error } = await supabase
     .from("beds")

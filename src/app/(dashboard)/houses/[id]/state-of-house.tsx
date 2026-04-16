@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -36,10 +38,19 @@ function pct(n: number, d: number): string {
   return `${Math.round((100 * n) / d)}%`;
 }
 
-function avg(nums: number[]): number | null {
-  const clean = nums.filter((n) => Number.isFinite(n));
-  if (clean.length === 0) return null;
-  return clean.reduce((a, b) => a + b, 0) / clean.length;
+function avgOf<T>(items: T[], read: (x: T) => number): number | null {
+  if (items.length === 0) return null;
+  let sum = 0;
+  let count = 0;
+  for (const it of items) {
+    const v = read(it);
+    if (Number.isFinite(v)) {
+      sum += v;
+      count++;
+    }
+  }
+  if (count === 0) return null;
+  return sum / count;
 }
 
 function fmtDate(s: string | null): string {
@@ -65,12 +76,11 @@ export function StateOfHouseView({
     return `${base}?${params.toString()}`;
   };
 
-  const meetingAvg = avg(data.meetingSatisfaction);
-  const workAvg = avg(data.workSatisfaction);
-  const wellbeingAvg = avg(data.wellbeing);
+  const meetingAvg = avgOf(data.meetingResponses, (r) => r.rating);
+  const workAvg = avgOf(data.workResponses, (r) => r.rating);
+  const wellbeingAvg = avgOf(data.wellbeingResponses, (r) => r.rating);
 
   const occPct = pct(data.census.occupiedBeds, data.census.totalBeds);
-  const submittedPct = pct(data.checkIns.submitted, data.checkIns.sent);
 
   return (
     <div className="space-y-6">
@@ -171,7 +181,7 @@ export function StateOfHouseView({
         />
       </div>
 
-      {/* Occupancy & Census */}
+      {/* Occupancy & Census — flat */}
       <SectionCard
         title="Occupancy & Census"
         description="Current headcount and move-ins during the selected period."
@@ -195,7 +205,7 @@ export function StateOfHouseView({
         />
       </SectionCard>
 
-      {/* Discharges & Departures */}
+      {/* Discharges & Departures — flat */}
       <SectionCard
         title="Discharges & Departures"
         description="Residents who left during the selected period. Reasons, when recorded, are shown."
@@ -260,112 +270,261 @@ export function StateOfHouseView({
         </div>
       </SectionCard>
 
-      {/* Check-ins & engagement */}
-      <SectionCard
+      {/* Check-Ins — expandable */}
+      <ExpandableSection
         title="Check-Ins & Engagement"
-        description="Monthly check-in volume and average resident self-ratings."
+        description="Average self-ratings from completed check-ins. Click a rating to see per-resident detail."
+        summary={
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Stat
+              label="Avg meeting satisfaction"
+              value={meetingAvg != null ? meetingAvg.toFixed(1) : "—"}
+              sub={
+                data.meetingResponses.length > 0
+                  ? `${data.meetingResponses.length} responses`
+                  : undefined
+              }
+            />
+            <Stat
+              label="Avg work satisfaction"
+              value={workAvg != null ? workAvg.toFixed(1) : "—"}
+              sub={
+                data.workResponses.length > 0
+                  ? `${data.workResponses.length} responses`
+                  : undefined
+              }
+            />
+            <Stat
+              label="Avg well-being"
+              value={wellbeingAvg != null ? wellbeingAvg.toFixed(1) : "—"}
+              sub={
+                data.wellbeingResponses.length > 0
+                  ? `${data.wellbeingResponses.length} responses`
+                  : undefined
+              }
+            />
+          </div>
+        }
       >
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <Stat label="Check-ins sent" value={data.checkIns.sent} />
-          <Stat
-            label="Submitted"
-            value={data.checkIns.submitted}
-            sub={submittedPct}
+        <div className="space-y-4">
+          <RatingList
+            title={`Meeting satisfaction (${data.meetingResponses.length})`}
+            emptyText="No meeting-satisfaction ratings in this period."
+            items={data.meetingResponses.map((r) => ({
+              id: r.id,
+              primary: r.name,
+              secondary: null,
+              rating: r.rating,
+            }))}
           />
-          <Stat
-            label="Avg meeting satisfaction"
-            value={meetingAvg != null ? meetingAvg.toFixed(1) : "—"}
-            sub={
-              data.meetingSatisfaction.length > 0
-                ? `${data.meetingSatisfaction.length} responses`
-                : undefined
-            }
+          <RatingList
+            title={`Work satisfaction (${data.workResponses.length})`}
+            emptyText="No work-satisfaction ratings in this period."
+            items={data.workResponses.map((r) => ({
+              id: r.id,
+              primary: r.name,
+              secondary: r.job ?? "Workplace not provided",
+              rating: r.rating,
+            }))}
           />
-          <Stat
-            label="Avg work satisfaction"
-            value={workAvg != null ? workAvg.toFixed(1) : "—"}
-            sub={
-              data.workSatisfaction.length > 0
-                ? `${data.workSatisfaction.length} responses`
-                : undefined
-            }
-          />
-          <Stat
-            label="Avg well-being"
-            value={wellbeingAvg != null ? wellbeingAvg.toFixed(1) : "—"}
-            sub={
-              data.wellbeing.length > 0
-                ? `${data.wellbeing.length} responses`
-                : undefined
-            }
+          <RatingList
+            title={`Well-being (${data.wellbeingResponses.length})`}
+            emptyText="No well-being ratings in this period."
+            items={data.wellbeingResponses.map((r) => ({
+              id: r.id,
+              primary: r.name,
+              secondary: null,
+              rating: r.rating,
+            }))}
           />
         </div>
-      </SectionCard>
+      </ExpandableSection>
 
-      {/* Incidents */}
-      <SectionCard
+      {/* Incidents — expandable */}
+      <ExpandableSection
         title="Incidents"
         description="Reported incidents during the selected period."
+        summary={
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Stat label="Total" value={data.incidents.total} />
+            <Stat
+              label="Critical / Major"
+              value={
+                data.incidents.bySeverity.critical +
+                data.incidents.bySeverity.major
+              }
+              sub={`critical ${data.incidents.bySeverity.critical} · major ${data.incidents.bySeverity.major}`}
+              highlight={
+                data.incidents.bySeverity.critical +
+                  data.incidents.bySeverity.major >
+                0
+              }
+            />
+            <Stat label="Minor" value={data.incidents.bySeverity.minor} />
+          </div>
+        }
       >
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Stat label="Total" value={data.incidents.total} />
-          <Stat
-            label="Critical / Major"
-            value={
-              data.incidents.bySeverity.critical +
-              data.incidents.bySeverity.major
-            }
-            sub={`critical ${data.incidents.bySeverity.critical} · major ${data.incidents.bySeverity.major}`}
-            highlight={
-              data.incidents.bySeverity.critical +
-                data.incidents.bySeverity.major >
-              0
-            }
-          />
-          <Stat label="Minor" value={data.incidents.bySeverity.minor} />
-        </div>
-      </SectionCard>
+        {data.incidents.items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No incidents in this period.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {data.incidents.items.map((i) => (
+              <li
+                key={i.id}
+                className="rounded-md border bg-muted/20 p-3 text-sm"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="font-medium">{i.residentName}</span>
+                    <span className="ml-2 text-xs uppercase tracking-wide text-muted-foreground">
+                      {i.severity}
+                      {i.category ? ` · ${i.category}` : ""}
+                    </span>
+                  </div>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {fmtDate(i.occurredAt)}
+                  </span>
+                </div>
+                {i.description && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {i.description}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </ExpandableSection>
 
-      {/* Discipline */}
-      <SectionCard
-        title="Discipline"
-        description="Demerits and restrictions activity."
+      {/* Demerits — expandable */}
+      <ExpandableSection
+        title="Demerits"
+        description="Demerits issued during the selected period."
+        summary={
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Stat label="Demerits issued" value={data.demerits.issued} />
+          </div>
+        }
       >
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Stat label="Demerits issued" value={data.demerits.issued} />
-          <Stat label="Worked off" value={data.demerits.workedOff} />
-          <Stat
-            label="Active restrictions"
-            value={data.restrictions.active}
-            sub={`lifted ${data.restrictions.lifted}`}
-          />
-        </div>
-      </SectionCard>
+        {data.demerits.items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No demerits issued in this period.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {data.demerits.items.map((d) => (
+              <li
+                key={d.id}
+                className="rounded-md border bg-muted/20 p-3 text-sm"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="font-medium">{d.residentName}</span>
+                    {d.category && (
+                      <span className="ml-2 text-xs uppercase tracking-wide text-muted-foreground">
+                        {d.category}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {fmtDate(d.createdAt)}
+                  </span>
+                </div>
+                {d.reason && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {d.reason}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </ExpandableSection>
 
-      {/* Supplies */}
-      <SectionCard
+      {/* Restrictions — expandable */}
+      <ExpandableSection
+        title="Restrictions"
+        description="Restriction activity during the selected period."
+        summary={
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Stat label="Active" value={data.restrictions.active} />
+            <Stat label="Lifted" value={data.restrictions.lifted} />
+          </div>
+        }
+      >
+        {data.restrictions.items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No restriction activity in this period.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {data.restrictions.items.map((r) => (
+              <li
+                key={r.id}
+                className="rounded-md border bg-muted/20 p-3 text-sm"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="font-medium">{r.residentName}</span>
+                    <span
+                      className={`ml-2 text-xs uppercase tracking-wide ${
+                        r.isActive
+                          ? "text-amber-700"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {r.isActive ? "Active" : "Lifted"}
+                    </span>
+                  </div>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {fmtDate(r.startDate)}
+                    {r.endDate ? ` → ${fmtDate(r.endDate)}` : ""}
+                  </span>
+                </div>
+                {r.description && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {r.description}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </ExpandableSection>
+
+      {/* Supplies — expandable */}
+      <ExpandableSection
         title="Supplies"
         description="Per-house supply stock status (current, not range-filtered)."
+        summary={
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Stat label="In stock" value={data.supplies.inStock} />
+            <Stat
+              label="Out of stock"
+              value={data.supplies.outOfStock}
+              highlight={data.supplies.outOfStock > 0}
+            />
+          </div>
+        }
       >
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Stat label="Tracked items" value={data.supplies.total} />
-          <Stat label="In stock" value={data.supplies.inStock} />
-          <Stat
-            label="Out of stock"
-            value={data.supplies.outOfStock}
-            highlight={data.supplies.outOfStock > 0}
-          />
-        </div>
-        {data.supplies.outOfStockNames.length > 0 && (
+        {data.supplies.outOfStockNames.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            All tracked supplies are currently in stock.
+          </p>
+        ) : (
           <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
             <span className="font-medium">Needs restock:</span>{" "}
             {data.supplies.outOfStockNames.join(", ")}
           </div>
         )}
-      </SectionCard>
+      </ExpandableSection>
     </div>
   );
 }
+
+// ─── Layout primitives ─────────────────────────────────────────────
 
 function SectionCard({
   title,
@@ -383,6 +542,50 @@ function SectionCard({
         {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
       <CardContent className="space-y-4">{children}</CardContent>
+    </Card>
+  );
+}
+
+function ExpandableSection({
+  title,
+  description,
+  summary,
+  children,
+}: {
+  title: string;
+  description?: string;
+  summary: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Card>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full text-left"
+        aria-expanded={open}
+      >
+        <CardHeader className="flex-row items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base flex items-center gap-1.5">
+              {title}
+              <span className="text-muted-foreground">
+                {open ? (
+                  <ChevronDown className="h-4 w-4" />
+                ) : (
+                  <ChevronRight className="h-4 w-4" />
+                )}
+              </span>
+            </CardTitle>
+            {description && <CardDescription>{description}</CardDescription>}
+          </div>
+        </CardHeader>
+      </button>
+      <CardContent className="space-y-4">
+        {summary}
+        {open && <div className="pt-2 border-t">{children}</div>}
+      </CardContent>
     </Card>
   );
 }
@@ -459,6 +662,51 @@ function NamedDateList({
               <span className="font-medium">{it.name}</span>
               <span className="text-xs text-muted-foreground whitespace-nowrap">
                 {fmtDate(it.date)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function RatingList({
+  title,
+  emptyText,
+  items,
+}: {
+  title: string;
+  emptyText: string;
+  items: {
+    id: string;
+    primary: string;
+    secondary: string | null;
+    rating: number;
+  }[];
+}) {
+  return (
+    <div className="space-y-2">
+      <h4 className="text-sm font-medium">{title}</h4>
+      {items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{emptyText}</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {items.map((it) => (
+            <li
+              key={it.id}
+              className="flex items-center justify-between gap-3 rounded-md border bg-muted/20 px-3 py-2 text-sm"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="font-medium truncate">{it.primary}</p>
+                {it.secondary && (
+                  <p className="text-xs text-muted-foreground truncate">
+                    {it.secondary}
+                  </p>
+                )}
+              </div>
+              <span className="text-sm font-semibold whitespace-nowrap">
+                {it.rating}/10
               </span>
             </li>
           ))}

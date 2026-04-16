@@ -93,3 +93,13 @@ drop policy if exists "house_documents_storage_delete" on storage.objects;
 create policy "house_documents_storage_delete"
   on storage.objects for delete to authenticated
   using (bucket_id = 'house-documents');
+
+-- ---- Rename legacy "[Empty]" bed labels to "[Not Available]" ----
+-- The UI now says "Not Available" instead of "Empty" so the suffix that
+-- flags a bed as unavailable was also renamed. Existing rows with the
+-- old " [Empty]" suffix are migrated in place. The app still recognises
+-- the legacy suffix for back-compat, but we update once so future logic
+-- can assume the new label.
+update public.beds
+  set label = regexp_replace(label, ' \[Empty\]$', ' [Not Available]')
+  where label like '% [Empty]';

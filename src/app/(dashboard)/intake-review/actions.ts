@@ -142,7 +142,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
       resident_id: residentId,
       house_id: data.houseId,
       room_id: data.roomId,
-      bed_id: data.bedId || null,
+      bed_id: data.bedId,
       payment_frequency: data.paymentFrequency,
       rent_amount: data.rentAmount,
       admin_fee: data.adminFee,

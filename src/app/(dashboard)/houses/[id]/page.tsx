@@ -98,7 +98,11 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
         (ba: { end_date: string | null }) => !ba.end_date
       );
       if (hasActive) occupiedBeds++;
-      else if (bed.label.endsWith(" [Empty]")) emptyBeds++;
+      else if (
+        bed.label.endsWith(" [Not Available]") ||
+        bed.label.endsWith(" [Empty]")
+      )
+        emptyBeds++;
     }
   }
 
@@ -142,10 +146,14 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
     };
   });
 
+  const managerNames: string[] = (managerAssignments ?? [])
+    .map((ma) => (ma.users as unknown as { full_name: string } | null)?.full_name)
+    .filter((n): n is string => Boolean(n));
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold">{house.name}</h1>
             {canManage && (
@@ -160,17 +168,26 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
               </>
             )}
           </div>
-          {house.address && (
-            <p className="text-muted-foreground">{house.address}</p>
-          )}
+          <dl className="mt-1 grid gap-x-6 gap-y-0.5 text-sm text-muted-foreground sm:grid-cols-[auto_1fr]">
+            <dt className="font-medium text-foreground/70">Address</dt>
+            <dd>{house.address || "—"}</dd>
+            <dt className="font-medium text-foreground/70">Phone</dt>
+            <dd>{house.phone || "—"}</dd>
+            <dt className="font-medium text-foreground/70">Managers</dt>
+            <dd>
+              {managerNames.length > 0 ? managerNames.join(", ") : "—"}
+            </dd>
+            <dt className="font-medium text-foreground/70">Created</dt>
+            <dd>{new Date(house.created_at).toLocaleDateString()}</dd>
+          </dl>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <Badge variant="outline" className="text-base">
             {occupiedBeds}/{totalBeds} beds occupied
           </Badge>
           {emptyBeds > 0 && (
             <Badge variant="outline" className="text-base border-amber-400 text-amber-700">
-              {emptyBeds} empty
+              {emptyBeds} not available
             </Badge>
           )}
         </div>
@@ -290,39 +307,6 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
               No activity yet
             </p>
           )}
-        </TabsContent>
-
-        <TabsContent value="info" className="mt-4">
-          <Card>
-            <CardContent className="space-y-4 pt-6">
-              <div>
-                <p className="text-sm text-muted-foreground">Address</p>
-                <p>{house.address || "—"}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Phone</p>
-                <p>{house.phone || "—"}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Managers</p>
-                {managerAssignments && managerAssignments.length > 0 ? (
-                  <div className="space-y-1">
-                    {managerAssignments.map((ma) => (
-                      <p key={ma.user_id}>
-                        {(ma.users as unknown as { full_name: string } | null)?.full_name}
-                      </p>
-                    ))}
-                  </div>
-                ) : (
-                  <p>No managers assigned</p>
-                )}
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Created</p>
-                <p>{new Date(house.created_at).toLocaleDateString()}</p>
-              </div>
-            </CardContent>
-          </Card>
         </TabsContent>
       </Tabs>
     </div>

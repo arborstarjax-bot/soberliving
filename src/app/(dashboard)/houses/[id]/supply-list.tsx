@@ -150,8 +150,9 @@ function SupplyGroup({
                       className="h-7 text-xs"
                       disabled={isPending}
                       onClick={() =>
-                        startTransition(() => {
-                          toggleSupplyStock(item.id);
+                        startTransition(async () => {
+                          const result = await toggleSupplyStock(item.id);
+                          if (result?.error) alert(result.error);
                         })
                       }
                     >
@@ -168,8 +169,9 @@ function SupplyGroup({
                           !window.confirm(`Delete "${item.name}"?`)
                         )
                           return;
-                        startTransition(() => {
-                          deleteSupplyItem(item.id);
+                        startTransition(async () => {
+                          const result = await deleteSupplyItem(item.id);
+                          if (result?.error) alert(result.error);
                         });
                       }}
                     >

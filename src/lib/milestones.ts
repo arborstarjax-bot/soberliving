@@ -18,11 +18,6 @@ const MILESTONE_DEFINITIONS = [
   { label: "90 Days", days: 90 },
   { label: "6 Months", days: 182 },
   { label: "1 Year", days: 365 },
-  { label: "18 Months", days: 548 },
-  { label: "2 Years", days: 730 },
-  { label: "3 Years", days: 1095 },
-  { label: "5 Years", days: 1825 },
-  { label: "10 Years", days: 3650 },
 ];
 
 export function calculateMilestones(sobrietyDate: string): Milestone[] {

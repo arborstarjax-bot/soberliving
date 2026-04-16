@@ -23,24 +23,47 @@ export interface StateOfHouseData {
     full_name: string;
     move_out_date: string | null;
   }[];
-  checkIns: {
-    sent: number;
-    submitted: number;
-  };
-  meetingSatisfaction: number[];
-  workSatisfaction: number[];
-  wellbeing: number[];
+  meetingResponses: { id: string; name: string; rating: number }[];
+  workResponses: {
+    id: string;
+    name: string;
+    job: string | null;
+    rating: number;
+  }[];
+  wellbeingResponses: { id: string; name: string; rating: number }[];
   incidents: {
     total: number;
     bySeverity: { minor: number; major: number; critical: number };
+    items: {
+      id: string;
+      residentName: string;
+      severity: string;
+      category: string | null;
+      description: string | null;
+      occurredAt: string | null;
+    }[];
   };
   demerits: {
     issued: number;
-    workedOff: number;
+    items: {
+      id: string;
+      residentName: string;
+      reason: string | null;
+      category: string | null;
+      createdAt: string | null;
+    }[];
   };
   restrictions: {
     active: number;
     lifted: number;
+    items: {
+      id: string;
+      residentName: string;
+      description: string | null;
+      startDate: string | null;
+      endDate: string | null;
+      isActive: boolean;
+    }[];
   };
   supplies: {
     total: number;
@@ -161,16 +184,20 @@ export async function loadStateOfHouseData(
       .eq("is_active", true),
     supabase
       .from("incidents")
-      .select("id, severity, occurred_at, created_at")
+      .select(
+        "id, severity, category, description, occurred_at, created_at, residents(full_name)"
+      )
       .eq("house_id", houseId),
     supabase
       .from("demerits")
-      .select("id, status, created_at, worked_off_at, residents!inner(house_id)")
+      .select(
+        "id, status, reason, category, created_at, worked_off_at, residents!inner(house_id, full_name)"
+      )
       .eq("residents.house_id", houseId),
     supabase
       .from("restrictions")
       .select(
-        "id, is_active, start_date, end_date, created_at, residents!inner(house_id)"
+        "id, is_active, description, start_date, end_date, created_at, residents!inner(house_id, full_name)"
       )
       .eq("residents.house_id", houseId),
     supabase
@@ -179,7 +206,9 @@ export async function loadStateOfHouseData(
       .eq("house_id", houseId),
     supabase
       .from("check_in_responses")
-      .select("id, status, created_at, completed_at, form_data")
+      .select(
+        "id, resident_id, status, created_at, completed_at, form_data, residents(full_name)"
+      )
       .eq("house_id", houseId),
   ]);
 
@@ -208,7 +237,11 @@ export async function loadStateOfHouseData(
         (ba) => !ba.end_date
       );
       if (occupied) occupiedBeds++;
-      else if (bed.label.endsWith(" [Empty]")) emptyMarkedBeds++;
+      else if (
+        bed.label.endsWith(" [Not Available]") ||
+        bed.label.endsWith(" [Empty]")
+      )
+        emptyMarkedBeds++;
     }
   }
   const openBeds = totalBeds - occupiedBeds - emptyMarkedBeds;
@@ -243,27 +276,83 @@ export async function loadStateOfHouseData(
     }));
 
   // Incidents
-  const incidents = (incidentsRes.data ?? []).filter((i) =>
-    isIn(i.occurred_at ?? i.created_at, range)
+  type RawIncident = {
+    id: string;
+    severity: string | null;
+    category: string | null;
+    description: string | null;
+    occurred_at: string | null;
+    created_at: string | null;
+    residents?: { full_name?: string } | { full_name?: string }[] | null;
+  };
+  const incidentsRaw = ((incidentsRes.data ?? []) as unknown as RawIncident[]).filter(
+    (i) => isIn(i.occurred_at ?? i.created_at, range)
   );
   const incidentsBySeverity = {
-    minor: incidents.filter((i) => i.severity === "minor").length,
-    major: incidents.filter((i) => i.severity === "major").length,
-    critical: incidents.filter((i) => i.severity === "critical").length,
+    minor: incidentsRaw.filter((i) => i.severity === "minor").length,
+    major: incidentsRaw.filter((i) => i.severity === "major").length,
+    critical: incidentsRaw.filter((i) => i.severity === "critical").length,
   };
+  const pickName = (
+    rel: { full_name?: string } | { full_name?: string }[] | null | undefined
+  ): string => {
+    if (!rel) return "Unknown resident";
+    const single = Array.isArray(rel) ? rel[0] : rel;
+    return single?.full_name ?? "Unknown resident";
+  };
+  const incidentItems = incidentsRaw.map((i) => ({
+    id: i.id,
+    residentName: pickName(i.residents),
+    severity: i.severity ?? "minor",
+    category: i.category,
+    description: i.description,
+    occurredAt: i.occurred_at ?? i.created_at,
+  }));
 
   // Demerits
-  const demerits = (demeritsRes.data ?? []).filter((d) =>
-    isIn(d.created_at, range)
+  type RawDemerit = {
+    id: string;
+    status: string | null;
+    reason: string | null;
+    category: string | null;
+    created_at: string | null;
+    worked_off_at: string | null;
+    residents?: { full_name?: string } | { full_name?: string }[] | null;
+  };
+  const demeritsRaw = ((demeritsRes.data ?? []) as unknown as RawDemerit[]).filter(
+    (d) => isIn(d.created_at, range)
   );
-  const workedOff = demerits.filter((d) => d.status === "worked_off").length;
+  const demeritItems = demeritsRaw.map((d) => ({
+    id: d.id,
+    residentName: pickName(d.residents),
+    reason: d.reason,
+    category: d.category,
+    createdAt: d.created_at,
+  }));
 
   // Restrictions
-  const restrictions = (restrictionsRes.data ?? []).filter((r) =>
-    isIn(r.created_at, range)
-  );
-  const activeRestrictions = restrictions.filter((r) => r.is_active).length;
-  const liftedRestrictions = restrictions.filter((r) => !r.is_active).length;
+  type RawRestriction = {
+    id: string;
+    is_active: boolean;
+    description: string | null;
+    start_date: string | null;
+    end_date: string | null;
+    created_at: string | null;
+    residents?: { full_name?: string } | { full_name?: string }[] | null;
+  };
+  const restrictionsRaw = (
+    (restrictionsRes.data ?? []) as unknown as RawRestriction[]
+  ).filter((r) => isIn(r.created_at, range));
+  const activeRestrictions = restrictionsRaw.filter((r) => r.is_active).length;
+  const liftedRestrictions = restrictionsRaw.filter((r) => !r.is_active).length;
+  const restrictionItems = restrictionsRaw.map((r) => ({
+    id: r.id,
+    residentName: pickName(r.residents),
+    description: r.description,
+    startDate: r.start_date,
+    endDate: r.end_date,
+    isActive: Boolean(r.is_active),
+  }));
 
   // Supplies (current snapshot — not range-scoped)
   const supplies = suppliesRes.data ?? [];
@@ -271,34 +360,47 @@ export async function loadStateOfHouseData(
   const outOfStock = supplies.length - inStock;
   const outOfStockNames = supplies.filter((s) => !s.is_in_stock).map((s) => s.name);
 
-  // Check-ins
-  // "Sent" = any response row created in range for this house
-  // "Submitted" = responses that reached status=completed (using completed_at
-  // when available, otherwise the created_at filter still catches them).
-  const responsesInRange = (checkInResponsesRes.data ?? []).filter((r) =>
-    isIn(r.created_at, range)
-  );
-  const sent = responsesInRange.length;
-  const submitted = responsesInRange.filter(
-    (r) => r.status === "completed"
-  ).length;
-
-  // Ratings from form_data. The check-in form writes these exact keys:
+  // Check-ins — per-response ratings from form_data. Keys written by the
+  // check-in form:
   //   meeting_rating       (Q1 meeting satisfaction, 1-10)
   //   work_rating          (Q7 work satisfaction, 1-10)
   //   jsl_feeling_rating   (Q8 feeling about being a resident, 1-10 — proxy for well-being)
-  const meetingSatisfaction: number[] = [];
-  const workSatisfaction: number[] = [];
-  const wellbeing: number[] = [];
+  //   current_job          (Q6 current workplace / job)
+  const responsesInRange = (checkInResponsesRes.data ?? []).filter((r) =>
+    isIn(r.created_at, range)
+  );
+  const meetingResponses: { id: string; name: string; rating: number }[] = [];
+  const workResponses: {
+    id: string;
+    name: string;
+    job: string | null;
+    rating: number;
+  }[] = [];
+  const wellbeingResponses: { id: string; name: string; rating: number }[] = [];
   for (const resp of responsesInRange) {
     if (resp.status !== "completed") continue;
     const fd = (resp.form_data ?? {}) as Record<string, unknown>;
+    const residentRel = (
+      resp as unknown as { residents?: { full_name?: string } | null }
+    ).residents;
+    const name = residentRel?.full_name ?? "Unknown resident";
     const m = Number(fd.meeting_rating as number | string | undefined);
-    if (Number.isFinite(m) && m > 0) meetingSatisfaction.push(m);
+    if (Number.isFinite(m) && m > 0) {
+      meetingResponses.push({ id: resp.id, name, rating: m });
+    }
     const w = Number(fd.work_rating as number | string | undefined);
-    if (Number.isFinite(w) && w > 0) workSatisfaction.push(w);
+    if (Number.isFinite(w) && w > 0) {
+      const rawJob = fd.current_job;
+      const job =
+        typeof rawJob === "string" && rawJob.trim().length > 0
+          ? rawJob.trim()
+          : null;
+      workResponses.push({ id: resp.id, name, job, rating: w });
+    }
     const wb = Number(fd.jsl_feeling_rating as number | string | undefined);
-    if (Number.isFinite(wb) && wb > 0) wellbeing.push(wb);
+    if (Number.isFinite(wb) && wb > 0) {
+      wellbeingResponses.push({ id: resp.id, name, rating: wb });
+    }
   }
 
   return {
@@ -315,21 +417,22 @@ export async function loadStateOfHouseData(
     },
     discharges,
     voluntaryDepartures,
-    checkIns: { sent, submitted },
-    meetingSatisfaction,
-    workSatisfaction,
-    wellbeing,
+    meetingResponses,
+    workResponses,
+    wellbeingResponses,
     incidents: {
-      total: incidents.length,
+      total: incidentsRaw.length,
       bySeverity: incidentsBySeverity,
+      items: incidentItems,
     },
     demerits: {
-      issued: demerits.length,
-      workedOff,
+      issued: demeritsRaw.length,
+      items: demeritItems,
     },
     restrictions: {
       active: activeRestrictions,
       lifted: liftedRestrictions,
+      items: restrictionItems,
     },
     supplies: {
       total: supplies.length,
