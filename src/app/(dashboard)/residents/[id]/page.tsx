@@ -97,6 +97,17 @@ export default async function ResidentDetailPage(
         .order("created_at", { ascending: false })
     : { data: [] };
 
+  // Fetch user role (for role editing by admin)
+  let residentRole: string | null = null;
+  if (resident.user_id) {
+    const { data: roleData } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", resident.user_id)
+      .maybeSingle();
+    residentRole = roleData?.role ?? null;
+  }
+
   const milestones = resident.sobriety_date
     ? calculateMilestones(resident.sobriety_date)
     : [];
@@ -133,6 +144,9 @@ export default async function ResidentDetailPage(
                 emergency_contact_relationship: resident.emergency_contact_relationship ?? null,
                 notes: resident.notes ?? null,
               }}
+              userId={resident.user_id ?? null}
+              currentRole={residentRole}
+              isAdmin={user.role === "admin"}
             />
           )}
           {isStaff && (

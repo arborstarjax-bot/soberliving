@@ -309,7 +309,7 @@ function HousesTab({
             {selectedHouseData.phone && (
               <p className="text-muted-foreground">{selectedHouseData.phone}</p>
             )}
-            <p>Capacity: {selectedHouseData.capacity} beds</p>
+            <p>Capacity: {houseRooms.reduce((sum, r) => sum + r.beds.length, 0)} beds</p>
           </CardContent>
         </Card>
       )}

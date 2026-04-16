@@ -170,7 +170,7 @@ export function LeaveReviewActions({
 
   // Admin final approval at pending_admin stage
   if (status === "pending_admin") {
-    const canAct = userRole === "admin" || userRole === "manager";
+    const canAct = userRole === "admin";
     if (!canAct) return <Badge variant="secondary" className="text-xs">Awaiting Admin Approval</Badge>;
 
     if (showDenyNote) {

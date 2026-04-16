@@ -70,7 +70,7 @@ export async function createLeaveRequest(
   }
 
   // Authorization
-  if (user.role !== "admin" && user.role !== "manager" && !canAccessHouse(user, resident.house_id)) {
+  if (user.role === "resident") {
     // Residents can only create requests for themselves
     const { data: myResident } = await supabase
       .from("residents")
@@ -81,6 +81,8 @@ export async function createLeaveRequest(
     if (!myResident || myResident.id !== parsed.data.resident_id) {
       return { error: "Not authorized" };
     }
+  } else if (user.role !== "admin" && !canAccessHouse(user, resident.house_id)) {
+    return { error: "Not authorized" };
   }
 
   const { data, error } = await supabase

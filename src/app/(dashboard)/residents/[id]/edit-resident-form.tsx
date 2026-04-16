@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Pencil } from "lucide-react";
 import { updateResident } from "../actions";
+import { changeUserRole } from "../../users/actions";
 
 interface EditResidentFormProps {
   residentId: string;
@@ -22,9 +23,12 @@ interface EditResidentFormProps {
     emergency_contact_relationship: string | null;
     notes: string | null;
   };
+  userId?: string | null;
+  currentRole?: string | null;
+  isAdmin?: boolean;
 }
 
-export function EditResidentForm({ residentId, resident }: EditResidentFormProps) {
+export function EditResidentForm({ residentId, resident, userId, currentRole, isAdmin }: EditResidentFormProps) {
   const [editing, setEditing] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -37,11 +41,22 @@ export function EditResidentForm({ residentId, resident }: EditResidentFormProps
       const result = await updateResident(residentId, formData);
       if (result?.error) {
         setError(result.error);
-      } else {
-        setSuccess(true);
-        setEditing(false);
-        setTimeout(() => setSuccess(false), 3000);
+        return;
       }
+
+      // Update role if admin changed it
+      const newRole = formData.get("role") as string | null;
+      if (isAdmin && userId && newRole && newRole !== currentRole) {
+        const roleResult = await changeUserRole(userId, newRole);
+        if (roleResult?.error) {
+          setError(roleResult.error);
+          return;
+        }
+      }
+
+      setSuccess(true);
+      setEditing(false);
+      setTimeout(() => setSuccess(false), 3000);
     });
   }
 
@@ -95,6 +110,21 @@ export function EditResidentForm({ residentId, resident }: EditResidentFormProps
           <Label htmlFor="sobriety_date">Sobriety Date</Label>
           <Input id="sobriety_date" name="sobriety_date" type="date" defaultValue={resident.sobriety_date ?? ""} />
         </div>
+        {isAdmin && userId && (
+          <div className="space-y-1.5">
+            <Label htmlFor="role">Role</Label>
+            <select
+              id="role"
+              name="role"
+              defaultValue={currentRole ?? "resident"}
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+            >
+              <option value="resident">Resident</option>
+              <option value="manager">Manager</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+        )}
       </div>
 
       <div className="border-t pt-4">
