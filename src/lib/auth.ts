@@ -15,7 +15,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("id, email, full_name")
+    .select("id, email, full_name, intake_completed, commitment_signed, is_resident")
     .eq("id", user.id)
     .single();
 
@@ -40,12 +40,21 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     assignedHouseIds = assignments?.map((a) => a.house_id) ?? [];
   }
 
+  // Read intake/commitment status from the users table
+  // (submitIntakeForm and signCommitment both write to users, not residents)
+  const isResident = role === "resident" || profile.is_resident === true;
+  const intakeCompleted = profile.intake_completed === true;
+  const commitmentSigned = profile.commitment_signed === true;
+
   return {
     id: profile.id,
     email: profile.email,
     full_name: profile.full_name,
     role,
     assigned_house_ids: assignedHouseIds,
+    intake_completed: intakeCompleted,
+    is_resident: isResident,
+    commitment_signed: commitmentSigned,
   };
 });
 

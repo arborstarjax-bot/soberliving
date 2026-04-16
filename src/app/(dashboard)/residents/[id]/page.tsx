@@ -8,7 +8,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { calculateMilestones, getDaysSober } from "@/lib/milestones";
 import { ResidentTimeline } from "./timeline";
 import { ResidentNotes } from "./notes";
-import { ResidentActions } from "./resident-actions";
+import { ForcePhotoToggle } from "./force-photo-toggle";
+import { EditResidentForm } from "./edit-resident-form";
+import { DischargeDialog } from "./discharge-dialog";
+import { DocumentsList } from "@/components/documents-list";
 
 export default async function ResidentDetailPage(
   props: PageProps<"/residents/[id]">
@@ -69,6 +72,14 @@ export default async function ResidentDetailPage(
     .eq("resident_id", id)
     .order("created_at", { ascending: false });
 
+  // Active restrictions
+  const { data: restrictions } = await supabase
+    .from("restrictions")
+    .select("*")
+    .eq("resident_id", id)
+    .eq("is_active", true)
+    .order("created_at", { ascending: false });
+
   // Activity log
   const { data: activity } = await supabase
     .from("activity_log")
@@ -77,12 +88,49 @@ export default async function ResidentDetailPage(
     .order("created_at", { ascending: false })
     .limit(50);
 
+  // Documents (linked via user_id)
+  const { data: documents } = resident.user_id
+    ? await supabase
+        .from("documents")
+        .select("*")
+        .eq("user_id", resident.user_id)
+        .order("created_at", { ascending: false })
+    : { data: [] };
+
+  // Fetch user role (for role editing by admin)
+  let residentRole: string | null = null;
+  if (resident.user_id) {
+    const { data: roleData } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", resident.user_id)
+      .maybeSingle();
+    residentRole = roleData?.role ?? null;
+  }
+
+  // Fetch all houses + manager house assignments (for role editing)
+  const { data: allHouses } = await supabase
+    .from("houses")
+    .select("id, name")
+    .order("name");
+
+  let assignedHouseIds: string[] = [];
+  if (resident.user_id) {
+    const { data: assignments } = await supabase
+      .from("manager_house_assignments")
+      .select("house_id")
+      .eq("user_id", resident.user_id)
+      .is("unassigned_at", null);
+    assignedHouseIds = (assignments ?? []).map((a) => a.house_id);
+  }
+
   const milestones = resident.sobriety_date
     ? calculateMilestones(resident.sobriety_date)
     : [];
 
   const activeBeds = (bedAssignments ?? []).filter((ba) => !ba.end_date);
   const isStaff = user.role === "admin" || user.role === "manager";
+  const canEdit = user.role === "admin" || (user.role === "manager" && canAccessHouse(user, resident.house_id));
 
   return (
     <div className="space-y-6">
@@ -96,12 +144,36 @@ export default async function ResidentDetailPage(
             </Badge>
           </p>
         </div>
-        {isStaff && (
-          <ResidentActions
-            residentId={id}
-            status={resident.status}
-          />
-        )}
+        <div className="flex items-center gap-2">
+          {canEdit && (
+            <EditResidentForm
+              residentId={id}
+              resident={{
+                full_name: resident.full_name,
+                phone: resident.phone ?? null,
+                email: resident.email ?? null,
+                date_of_birth: resident.date_of_birth ?? null,
+                sobriety_date: resident.sobriety_date ?? null,
+                move_in_date: resident.move_in_date,
+                emergency_contact_name: resident.emergency_contact_name ?? null,
+                emergency_contact_phone: resident.emergency_contact_phone ?? null,
+                emergency_contact_relationship: resident.emergency_contact_relationship ?? null,
+                notes: resident.notes ?? null,
+              }}
+              userId={resident.user_id ?? null}
+              currentRole={residentRole}
+              isAdmin={user.role === "admin"}
+              houses={(allHouses ?? []).map((h) => ({ id: h.id, name: h.name }))}
+              assignedHouseIds={assignedHouseIds}
+            />
+          )}
+          {isStaff && (
+            <DischargeDialog
+              residentId={id}
+              status={resident.status}
+            />
+          )}
+        </div>
       </div>
 
       {/* Quick stats */}
@@ -210,6 +282,9 @@ export default async function ResidentDetailPage(
               Notes ({notes?.length ?? 0})
             </TabsTrigger>
           )}
+          <TabsTrigger value="documents">
+            Documents ({documents?.length ?? 0})
+          </TabsTrigger>
           <TabsTrigger value="details">Details</TabsTrigger>
         </TabsList>
 
@@ -348,9 +423,50 @@ export default async function ResidentDetailPage(
           </TabsContent>
         )}
 
+        <TabsContent value="documents" className="mt-4">
+          <DocumentsList documents={documents ?? []} />
+        </TabsContent>
+
         <TabsContent value="details" className="mt-4">
           <Card>
             <CardContent className="space-y-4 pt-6">
+              {isStaff && (
+                <div className="border rounded-md p-4 bg-muted/30">
+                  <ForcePhotoToggle
+                    residentId={id}
+                    initialValue={resident.force_photo ?? false}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1 ml-7">
+                    When enabled, this resident must upload a photo before signing off on chores.
+                  </p>
+                </div>
+              )}
+
+              {/* Active Restrictions */}
+              {(restrictions ?? []).length > 0 && (
+                <div className="border-t pt-4">
+                  <p className="text-sm text-muted-foreground mb-2">Active Restrictions</p>
+                  <div className="space-y-2">
+                    {(restrictions ?? []).map((r) => (
+                      <div key={r.id} className="flex items-center justify-between text-sm border border-red-200 rounded-md p-2 bg-red-50">
+                        <div>
+                          <span className="font-medium capitalize">{r.restriction_type.replace("_", " ")}</span>
+                          {r.is_house_commitment && (
+                            <Badge variant="secondary" className="ml-2 text-xs">New Intake</Badge>
+                          )}
+                          <p className="text-xs text-muted-foreground">{r.description}</p>
+                          {r.notes && <p className="text-xs text-muted-foreground italic">Note: {r.notes}</p>}
+                        </div>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          {r.end_date
+                            ? `Until ${new Date(r.end_date).toLocaleDateString()}`
+                            : "Indefinite"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <p className="text-sm text-muted-foreground">Date of Birth</p>
@@ -378,6 +494,12 @@ export default async function ResidentDetailPage(
                       : "—"}
                   </p>
                 </div>
+                {resident.discharge_reason && (
+                  <div className="sm:col-span-2">
+                    <p className="text-sm text-muted-foreground">Discharge Reason</p>
+                    <p className="text-sm">{resident.discharge_reason}</p>
+                  </div>
+                )}
               </div>
               <div className="border-t pt-4">
                 <p className="text-sm text-muted-foreground mb-1">

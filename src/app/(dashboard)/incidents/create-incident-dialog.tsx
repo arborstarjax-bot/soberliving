@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { createIncident } from "./actions";
+import { createIncident, uploadIncidentPhoto } from "./actions";
+import { compressImage } from "@/lib/compress-image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +14,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus } from "lucide-react";
+import { Plus, Camera } from "lucide-react";
 
 interface Props {
   houses: { id: string; name: string }[];
@@ -24,6 +25,32 @@ export function CreateIncidentDialog({ houses, residents }: Props) {
   const [open, setOpen] = useState(false);
   const [selectedHouse, setSelectedHouse] = useState("");
   const [state, action, pending] = useActionState(createIncident, undefined);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const raw = e.target.files?.[0];
+    if (!raw) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const file = await compressImage(raw);
+      setPhotoFile(file);
+      const fd = new FormData();
+      fd.append("file", file);
+      const result = await uploadIncidentPhoto(fd);
+      if (result.error) {
+        setUploadError(result.error);
+        setPhotoUrl(null);
+      } else {
+        setPhotoUrl(result.url ?? null);
+      }
+    } finally {
+      setUploading(false);
+    }
+  }
 
   const filteredResidents = selectedHouse
     ? residents.filter((r) => r.house_id === selectedHouse)
@@ -102,6 +129,29 @@ export function CreateIncidentDialog({ houses, residents }: Props) {
           <div className="space-y-2">
             <Label>Description *</Label>
             <Textarea name="description" required rows={3} />
+          </div>
+          <div className="space-y-2">
+            <Label>Photo (optional)</Label>
+            <div className="flex items-center gap-2">
+              <label
+                htmlFor="incident-photo"
+                className="inline-flex items-center gap-1.5 cursor-pointer rounded-md border border-input px-3 py-1.5 text-sm hover:bg-accent transition-colors"
+              >
+                <Camera className="h-4 w-4" />
+                {photoFile ? photoFile.name : "Choose photo"}
+              </label>
+              <input
+                id="incident-photo"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handlePhotoChange}
+              />
+              {uploading && <span className="text-xs text-muted-foreground">Uploading…</span>}
+              {photoUrl && <span className="text-xs text-green-600">Uploaded</span>}
+            </div>
+            {uploadError && <p className="text-xs text-destructive">{uploadError}</p>}
+            {photoUrl && <input type="hidden" name="photo_url" value={photoUrl} />}
           </div>
           {state?.error && (
             <p className="text-sm text-destructive">{state.error}</p>

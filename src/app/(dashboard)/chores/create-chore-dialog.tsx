@@ -13,6 +13,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Plus } from "lucide-react";
+import { ALL_DAYS, DAY_LABELS, type DayOfWeek } from "@/lib/validations";
 
 interface Props {
   houses: { id: string; name: string }[];
@@ -21,6 +22,18 @@ interface Props {
 export function CreateChoreDialog({ houses }: Props) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState(createChore, undefined);
+  const [selectedDays, setSelectedDays] = useState<DayOfWeek[]>([
+    "monday",
+    "wednesday",
+    "friday",
+  ]);
+  const [cycleWeeks, setCycleWeeks] = useState(2);
+
+  function toggleDay(day: DayOfWeek) {
+    setSelectedDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -58,6 +71,47 @@ export function CreateChoreDialog({ houses }: Props) {
               placeholder="e.g., Kitchen, Master Bathroom"
             />
           </div>
+
+          {/* Days of Week checkboxes */}
+          <div className="space-y-2">
+            <Label>Days of Week *</Label>
+            <div className="flex flex-wrap gap-3">
+              {ALL_DAYS.map((day) => (
+                <label key={day} className="flex items-center gap-1.5 text-sm">
+                  <input
+                    type="checkbox"
+                    name="days_of_week"
+                    value={day}
+                    checked={selectedDays.includes(day)}
+                    onChange={() => toggleDay(day)}
+                    className="h-4 w-4 rounded border-input"
+                  />
+                  {DAY_LABELS[day]}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Cycle length radio buttons */}
+          <div className="space-y-2">
+            <Label>Cycle Length *</Label>
+            <div className="flex flex-wrap gap-4">
+              {[1, 2, 3, 4].map((weeks) => (
+                <label key={weeks} className="flex items-center gap-1.5 text-sm">
+                  <input
+                    type="radio"
+                    name="cycle_weeks"
+                    value={weeks}
+                    checked={cycleWeeks === weeks}
+                    onChange={() => setCycleWeeks(weeks)}
+                    className="h-4 w-4"
+                  />
+                  {weeks} Week{weeks > 1 ? "s" : ""}
+                </label>
+              ))}
+            </div>
+          </div>
+
           <p className="text-xs text-muted-foreground">
             After creating, add specific tasks from the Chore Lists tab.
           </p>

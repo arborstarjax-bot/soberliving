@@ -17,9 +17,12 @@ import {
   LogOut,
   Menu,
   X,
+  ShieldAlert,
+  MessageSquare,
+  Bell,
+  FileText,
 } from "lucide-react";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
 
 interface NavItem {
   label: string;
@@ -59,6 +62,13 @@ const NAV_ITEMS: NavItem[] = [
     icon: AlertTriangle,
     roles: ["admin", "manager"],
   },
+  // NOTE: Incidents is hidden from nav via filter — it now lives as a Discipline tab
+  {
+    label: "Discipline",
+    href: "/discipline",
+    icon: ShieldAlert,
+    roles: ["admin", "manager", "resident"],
+  },
   {
     label: "Leave Requests",
     href: "/leave-requests",
@@ -66,11 +76,19 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["admin", "manager", "resident"],
   },
   {
-    label: "Users & Roles",
-    href: "/users",
-    icon: UserCog,
-    roles: ["admin"],
+    label: "Bulletin",
+    href: "/bulletin",
+    icon: MessageSquare,
+    roles: ["admin", "manager", "resident"],
   },
+  {
+    label: "Notifications",
+    href: "/notifications",
+    icon: Bell,
+    roles: ["admin", "manager", "resident"],
+  },
+  // Intake Review is now a tab inside the Residents page
+  // Users & Roles folded into Residents page — /users route still works for direct access
   {
     label: "Activity Log",
     href: "/activity",
@@ -88,22 +106,29 @@ const NAV_ITEMS: NavItem[] = [
 interface SidebarProps {
   role: UserRole;
   userName: string;
+  hasNoLeaveRestriction?: boolean;
+  unreadNotificationCount?: number;
 }
 
-export function Sidebar({ role, userName }: SidebarProps) {
+export function Sidebar({ role, userName, hasNoLeaveRestriction, unreadNotificationCount = 0 }: SidebarProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const filteredItems = NAV_ITEMS.filter((item) =>
-    item.roles.includes(role)
-  );
+  const filteredItems = NAV_ITEMS.filter((item) => {
+    if (!item.roles.includes(role)) return false;
+    // Hide Leave Requests for residents with No Leave restriction
+    if (item.href === "/leave-requests" && hasNoLeaveRestriction) return false;
+    // Incidents is now a tab inside Discipline — hide from nav
+    if (item.href === "/incidents") return false;
+    return true;
+  });
 
   const navContent = (
     <>
-      <div className="flex h-14 items-center border-b px-4">
+      <div className="flex h-14 items-center border-b border-sidebar-border px-4">
         <Link
           href="/dashboard"
-          className="flex items-center gap-2 font-semibold"
+          className="flex items-center gap-2 font-semibold text-sidebar-foreground"
           onClick={() => setMobileOpen(false)}
         >
           <Home className="h-5 w-5" />
@@ -124,20 +149,25 @@ export function Sidebar({ role, userName }: SidebarProps) {
               className={cn(
                 "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                 isActive
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
               )}
             >
               <item.icon className="h-4 w-4 shrink-0" />
               {item.label}
+              {item.href === "/notifications" && unreadNotificationCount > 0 && (
+                <span className="ml-auto text-xs font-bold text-yellow-400">
+                  +{unreadNotificationCount > 99 ? "99" : unreadNotificationCount}
+                </span>
+              )}
             </Link>
           );
         })}
       </nav>
 
-      <div className="border-t p-3">
+      <div className="border-t border-sidebar-border p-3">
         <div className="flex items-center gap-3 rounded-md px-3 py-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar-primary text-sidebar-primary-foreground text-xs font-bold">
             {userName
               .split(" ")
               .map((n) => n[0])
@@ -146,14 +176,14 @@ export function Sidebar({ role, userName }: SidebarProps) {
               .slice(0, 2)}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{userName}</p>
-            <p className="text-xs text-muted-foreground capitalize">{role}</p>
+            <p className="text-sm font-medium truncate text-sidebar-foreground">{userName}</p>
+            <p className="text-xs text-sidebar-foreground/60 capitalize">{role}</p>
           </div>
         </div>
         <form action="/api/auth/logout" method="POST">
           <button
             type="submit"
-            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors"
           >
             <LogOut className="h-4 w-4" />
             Sign Out
@@ -166,18 +196,18 @@ export function Sidebar({ role, userName }: SidebarProps) {
   return (
     <>
       {/* Mobile toggle */}
-      <div className="sticky top-0 z-40 flex h-14 items-center border-b bg-background px-4 lg:hidden">
-        <Button
-          variant="ghost"
-          size="icon"
+      <div className="sticky top-0 z-40 flex h-14 items-center border-b border-sidebar-border bg-sidebar px-4 lg:hidden text-sidebar-foreground">
+        <button
+          type="button"
           onClick={() => setMobileOpen(!mobileOpen)}
+          className="inline-flex items-center justify-center h-9 w-9 rounded-md text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
         >
           {mobileOpen ? (
             <X className="h-5 w-5" />
           ) : (
             <Menu className="h-5 w-5" />
           )}
-        </Button>
+        </button>
         <span className="ml-3 font-semibold">Sober Living</span>
       </div>
 
@@ -192,7 +222,7 @@ export function Sidebar({ role, userName }: SidebarProps) {
       {/* Mobile sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-background border-r transition-transform lg:hidden",
+          "fixed inset-y-0 left-0 z-40 flex w-64 flex-col bg-sidebar border-r border-sidebar-border transition-transform lg:hidden",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -200,7 +230,7 @@ export function Sidebar({ role, userName }: SidebarProps) {
       </aside>
 
       {/* Desktop sidebar */}
-      <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:border-r lg:bg-background">
+      <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:border-r lg:border-sidebar-border lg:bg-sidebar">
         {navContent}
       </aside>
     </>

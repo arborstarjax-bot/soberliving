@@ -35,9 +35,11 @@ export async function createIncident(
     .eq("id", parsed.data.resident_id)
     .single();
 
+  const photoUrl = formData.get("photo_url") as string | null;
+
   const { data, error } = await supabase
     .from("incidents")
-    .insert({ ...parsed.data, reported_by: user.id })
+    .insert({ ...parsed.data, reported_by: user.id, ...(photoUrl ? { photo_url: photoUrl } : {}) })
     .select("id")
     .single();
 
@@ -57,4 +59,27 @@ export async function createIncident(
   revalidatePath("/incidents");
   revalidatePath(`/residents/${parsed.data.resident_id}`);
   return {};
+}
+
+export async function uploadIncidentPhoto(formData: FormData): Promise<{ url?: string; error?: string }> {
+  const user = await requireAuth();
+  const supabase = await createClient();
+
+  const file = formData.get("file") as File;
+  if (!file) return { error: "No file provided" };
+
+  const ext = file.name.split(".").pop();
+  const path = `incidents/${user.id}/${Date.now()}.${ext}`;
+
+  const { error } = await supabase.storage
+    .from("chore-photos")
+    .upload(path, file, { upsert: false });
+
+  if (error) return { error: error.message };
+
+  const { data: publicUrl } = supabase.storage
+    .from("chore-photos")
+    .getPublicUrl(path);
+
+  return { url: publicUrl.publicUrl };
 }

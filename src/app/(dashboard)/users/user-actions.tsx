@@ -40,7 +40,7 @@ export function UserActions({
   );
 
   return (
-    <>
+    <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
       <DropdownMenu>
         <DropdownMenuTrigger render={<Button variant="ghost" size="sm" />}>
             <MoreVertical className="h-4 w-4" />
@@ -126,6 +126,6 @@ export function UserActions({
           </form>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }

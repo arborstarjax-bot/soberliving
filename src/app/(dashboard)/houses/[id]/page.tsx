@@ -9,6 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Link from "next/link";
 import { OccupancyGrid } from "./occupancy-grid";
 import { AddRoomDialog } from "./add-room-dialog";
+import { EditHouseDialog } from "../edit-house-dialog";
+import { DeleteHouseDialog } from "../delete-house-dialog";
 
 export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) {
   const { id } = await props.params;
@@ -35,6 +37,7 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
     )
     .eq("house_id", id)
     .eq("is_active", true)
+    .order("sort_order")
     .order("name");
 
   // Residents in this house
@@ -63,13 +66,16 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
   const roomsData = rooms ?? [];
   let totalBeds = 0;
   let occupiedBeds = 0;
+  let emptyBeds = 0;
   for (const room of roomsData) {
     for (const bed of room.beds ?? []) {
+      if (!bed.is_active) continue;
       totalBeds++;
       const hasActive = (bed.bed_assignments ?? []).some(
         (ba: { end_date: string | null }) => !ba.end_date
       );
       if (hasActive) occupiedBeds++;
+      else if (bed.label.endsWith(" [Empty]")) emptyBeds++;
     }
   }
 
@@ -77,7 +83,20 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">{house.name}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold">{house.name}</h1>
+            {(user.role === "admin" || user.role === "manager") && (
+              <>
+                <EditHouseDialog
+                  houseId={house.id}
+                  currentName={house.name}
+                  currentAddress={house.address}
+                  currentPhone={house.phone}
+                />
+                <DeleteHouseDialog houseId={house.id} houseName={house.name} />
+              </>
+            )}
+          </div>
           {house.address && (
             <p className="text-muted-foreground">{house.address}</p>
           )}
@@ -86,6 +105,11 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
           <Badge variant="outline" className="text-base">
             {occupiedBeds}/{totalBeds} beds occupied
           </Badge>
+          {emptyBeds > 0 && (
+            <Badge variant="outline" className="text-base border-amber-400 text-amber-700">
+              {emptyBeds} empty
+            </Badge>
+          )}
         </div>
       </div>
 

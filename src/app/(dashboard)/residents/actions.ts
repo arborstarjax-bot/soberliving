@@ -90,18 +90,22 @@ export async function updateResident(residentId: string, formData: FormData) {
     return { error: "Not authorized" };
   }
 
+  // Use null for cleared fields (empty string) vs undefined for absent fields
+  function fieldVal(key: string): string | null | undefined {
+    if (!formData.has(key)) return undefined; // field absent — don't update
+    const v = formData.get(key) as string;
+    return v === "" ? null : v; // empty string — clear to null
+  }
+
   const parsed = updateResidentSchema.safeParse({
-    full_name: formData.get("full_name") || undefined,
-    phone: formData.get("phone") || undefined,
-    email: formData.get("email") || undefined,
-    emergency_contact_name:
-      formData.get("emergency_contact_name") || undefined,
-    emergency_contact_phone:
-      formData.get("emergency_contact_phone") || undefined,
-    emergency_contact_relationship:
-      formData.get("emergency_contact_relationship") || undefined,
-    sobriety_date: formData.get("sobriety_date") || undefined,
-    notes: formData.get("notes") || undefined,
+    full_name: formData.get("full_name") || undefined, // name should never be cleared
+    phone: fieldVal("phone"),
+    email: fieldVal("email"),
+    emergency_contact_name: fieldVal("emergency_contact_name"),
+    emergency_contact_phone: fieldVal("emergency_contact_phone"),
+    emergency_contact_relationship: fieldVal("emergency_contact_relationship"),
+    sobriety_date: fieldVal("sobriety_date"),
+    notes: fieldVal("notes"),
   });
 
   if (!parsed.success) {
@@ -129,7 +133,7 @@ export async function updateResident(residentId: string, formData: FormData) {
   return {};
 }
 
-export async function dischargeResident(residentId: string) {
+export async function dischargeResident(residentId: string, reason?: string) {
   const user = await requireAuth();
   const supabase = await createClient();
 
@@ -147,6 +151,61 @@ export async function dischargeResident(residentId: string) {
     return { error: "Not authorized" };
   }
 
+  const dischargeDate = new Date().toISOString().split("T")[0];
+
+  // End all active bed assignments
+  await supabase
+    .from("bed_assignments")
+    .update({ end_date: dischargeDate })
+    .eq("resident_id", residentId)
+    .is("end_date", null);
+
+  // Update resident status with discharge date and optional reason
+  const { error } = await supabase
+    .from("residents")
+    .update({
+      status: "discharged",
+      move_out_date: dischargeDate,
+      discharge_reason: reason || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", residentId);
+
+  if (error) return { error: error.message };
+
+  const reasonText = reason ? ` — Reason: ${reason}` : "";
+  await logActivity({
+    houseId: resident.house_id,
+    residentId,
+    actorId: user.id,
+    eventType: "move_out",
+    entityType: "resident",
+    entityId: residentId,
+    description: `${resident.full_name} discharged by ${user.full_name}${reasonText}`,
+  });
+
+  revalidatePath(`/residents/${residentId}`);
+  revalidatePath(`/houses/${resident.house_id}`);
+  revalidatePath("/residents");
+  return {};
+}
+
+export async function deleteResident(residentId: string) {
+  const user = await requireAuth();
+  if (user.role !== "admin") {
+    return { error: "Only admins can delete residents" };
+  }
+
+  const supabase = await createClient();
+
+  const { data: resident } = await supabase
+    .from("residents")
+    .select("house_id, full_name")
+    .eq("id", residentId)
+    .single();
+
+  if (!resident) return { error: "Resident not found" };
+
   // End all active bed assignments
   await supabase
     .from("bed_assignments")
@@ -154,14 +213,51 @@ export async function dischargeResident(residentId: string) {
     .eq("resident_id", residentId)
     .is("end_date", null);
 
-  // Update resident status
+  // Delete the resident
   const { error } = await supabase
     .from("residents")
-    .update({
-      status: "discharged",
-      move_out_date: new Date().toISOString().split("T")[0],
-      updated_at: new Date().toISOString(),
-    })
+    .delete()
+    .eq("id", residentId);
+
+  if (error) return { error: error.message };
+
+  await logActivity({
+    houseId: resident.house_id,
+    actorId: user.id,
+    eventType: "resident_deleted",
+    entityType: "resident",
+    entityId: residentId,
+    description: `${resident.full_name} deleted by ${user.full_name}`,
+  });
+
+  revalidatePath("/residents");
+  revalidatePath(`/houses/${resident.house_id}`);
+  return {};
+}
+
+// --- Force Photo Toggle ---
+
+export async function updateResidentForcePhoto(
+  residentId: string,
+  forcePhoto: boolean
+) {
+  const user = await requireAuth();
+  const supabase = await createClient();
+
+  const { data: resident } = await supabase
+    .from("residents")
+    .select("house_id, full_name")
+    .eq("id", residentId)
+    .single();
+
+  if (!resident) return { error: "Resident not found" };
+  if (user.role !== "admin" && !canAccessHouse(user, resident.house_id)) {
+    return { error: "Not authorized" };
+  }
+
+  const { error } = await supabase
+    .from("residents")
+    .update({ force_photo: forcePhoto, updated_at: new Date().toISOString() })
     .eq("id", residentId);
 
   if (error) return { error: error.message };
@@ -170,15 +266,14 @@ export async function dischargeResident(residentId: string) {
     houseId: resident.house_id,
     residentId,
     actorId: user.id,
-    eventType: "move_out",
+    eventType: "resident_updated",
     entityType: "resident",
     entityId: residentId,
-    description: `${resident.full_name} discharged by ${user.full_name}`,
+    description: `Force photo ${forcePhoto ? "enabled" : "disabled"} for ${resident.full_name} by ${user.full_name}`,
   });
 
   revalidatePath(`/residents/${residentId}`);
-  revalidatePath(`/houses/${resident.house_id}`);
-  revalidatePath("/residents");
+  return {};
 }
 
 // --- Bed Assignments ---

@@ -50,7 +50,7 @@ export default function LoginPage() {
               <p className="text-sm text-destructive">{state.error}</p>
             )}
             <Button type="submit" className="w-full" disabled={pending}>
-              {pending ? "Signing in…" : "Sign In"}
+              {pending ? "Signing in..." : "Sign In"}
             </Button>
           </form>
         </CardContent>

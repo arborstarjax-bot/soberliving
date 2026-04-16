@@ -1,65 +1,125 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { requireAuth, requireRole } from "@/lib/auth";
+import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
-import { createUserSchema, assignManagerSchema } from "@/lib/validations";
+import { createUserSchema, assignManagerSchema, updateUserProfileSchema } from "@/lib/validations";
+import { sendInviteEmail } from "@/lib/email";
 
 export async function createUser(
-  _prevState: { error?: string } | undefined,
+  _prevState: { error?: string; inviteLink?: string } | undefined,
   formData: FormData
 ) {
-  const user = await requireRole("admin");
+  // Allow both admins and managers to invite residents
+  const user = await requireAuth();
+  if (user.role === "resident") return { error: "Not authorized" };
+
   const parsed = createUserSchema.safeParse({
     email: formData.get("email"),
-    full_name: formData.get("full_name"),
+    full_name: formData.get("full_name") || undefined,
     phone: formData.get("phone") || undefined,
-    role: formData.get("role"),
-    password: formData.get("password"),
   });
+  const houseId = (formData.get("house_id") as string) || null;
+
+  // Managers can only assign residents to houses they manage
+  if (houseId && user.role !== "admin" && !canAccessHouse(user, houseId)) {
+    return { error: "Not authorized for this house" };
+  }
 
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
   const supabase = await createClient();
+  const adminClient = createAdminClient();
 
-  // Create auth user via Supabase
-  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+  // Generate an invite link via Supabase admin API (requires service role key)
+  const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
+    type: "invite",
     email: parsed.data.email,
-    password: parsed.data.password,
-    email_confirm: true,
+    options: {
+      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/reset-password`,
+    },
   });
 
-  if (authError) return { error: authError.message };
+  if (linkError) return { error: linkError.message };
 
-  // Create user record
-  const { error: userError } = await supabase.from("users").insert({
-    id: authData.user.id,
-    email: parsed.data.email,
-    full_name: parsed.data.full_name,
-    phone: parsed.data.phone ?? null,
-  });
+  const authUserId = linkData.user.id;
 
-  if (userError) return { error: userError.message };
+  // Check if user record already exists (e.g. re-inviting an existing email)
+  const { data: existingUser } = await supabase
+    .from("users")
+    .select("id")
+    .eq("id", authUserId)
+    .maybeSingle();
 
-  // Create role record
-  const { error: roleError } = await supabase.from("user_roles").insert({
-    user_id: authData.user.id,
-    role: parsed.data.role,
-  });
+  if (!existingUser) {
+    // Create user record
+    const { error: userError } = await supabase.from("users").insert({
+      id: authUserId,
+      email: parsed.data.email,
+      full_name: parsed.data.full_name || parsed.data.email.split("@")[0],
+      phone: parsed.data.phone ?? null,
+      ...(houseId ? { pending_house_id: houseId } : {}),
+    });
 
-  if (roleError) return { error: roleError.message };
+    if (userError) return { error: userError.message };
+
+    // Default role is resident
+    const { error: roleError } = await supabase.from("user_roles").insert({
+      user_id: authUserId,
+      role: "resident",
+    });
+
+    if (roleError) return { error: roleError.message };
+  }
 
   await logActivity({
     actorId: user.id,
-    eventType: "user_created",
+    eventType: existingUser ? "user_reinvited" : "user_created",
     entityType: "user",
-    entityId: authData.user.id,
-    description: `User "${parsed.data.full_name}" (${parsed.data.role}) created by ${user.full_name}`,
+    entityId: authUserId,
+    description: existingUser
+      ? `Resident "${parsed.data.email}" re-invited by ${user.full_name}`
+      : `Resident "${parsed.data.email}" invited by ${user.full_name}`,
   });
 
   revalidatePath("/users");
-  return {};
+  revalidatePath("/residents");
+
+  // Use the action_link from Supabase (contains tokens in the URL).
+  // Rewrite the redirect so it lands on our /reset-password page where
+  // the user can set their password.
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+  let inviteLink = linkData.properties?.action_link ?? "";
+
+  if (inviteLink) {
+    // The action_link redirects to Supabase's default. We rewrite the
+    // redirect_to query param so it ends up on /reset-password in our app.
+    try {
+      const url = new URL(inviteLink);
+      url.searchParams.set("redirect_to", `${baseUrl}/reset-password`);
+      inviteLink = url.toString();
+    } catch {
+      // If URL parsing fails, fall back to the raw link
+    }
+  } else {
+    inviteLink = `${baseUrl}/login`;
+  }
+
+  // Send invite email via Resend (best-effort — don't fail the whole action if email fails)
+  try {
+    await sendInviteEmail({
+      to: parsed.data.email,
+      fullName: parsed.data.full_name || parsed.data.email.split("@")[0],
+      role: "resident",
+      inviteLink,
+    });
+  } catch {
+    // Email send failed — admin can still share the link manually
+  }
+
+  return { inviteLink };
 }
 
 export async function changeUserRole(userId: string, newRole: string) {
@@ -115,17 +175,19 @@ export async function assignManagerToHouses(
     .eq("user_id", userId)
     .is("unassigned_at", null);
 
-  // Create new assignments
+  // Create new assignments (skip insert if no houses selected — "unassign all" case)
   const assignments = houseIds.map((houseId) => ({
     user_id: userId,
     house_id: houseId,
   }));
 
-  const { error } = await supabase
-    .from("manager_house_assignments")
-    .insert(assignments);
+  if (assignments.length > 0) {
+    const { error } = await supabase
+      .from("manager_house_assignments")
+      .insert(assignments);
 
-  if (error) return { error: error.message };
+    if (error) return { error: error.message };
+  }
 
   const { data: targetUser } = await supabase
     .from("users")
@@ -141,6 +203,59 @@ export async function assignManagerToHouses(
     description: `${targetUser?.full_name} assigned to ${houseIds.length} house(s) by ${user.full_name}`,
   });
 
+  revalidatePath("/users");
+  return {};
+}
+
+export async function updateUserProfile(
+  _prevState: { error?: string } | undefined,
+  formData: FormData
+) {
+  const user = await requireRole("admin");
+  const userId = formData.get("user_id") as string;
+
+  if (!userId) return { error: "User ID is required" };
+
+  const parsed = updateUserProfileSchema.safeParse({
+    full_name: formData.get("full_name") || undefined,
+    phone: formData.get("phone") || undefined,
+    role: formData.get("role") || undefined,
+  });
+
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const supabase = await createClient();
+
+  // Update user record
+  const updateFields: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (parsed.data.full_name) updateFields.full_name = parsed.data.full_name;
+  if (parsed.data.phone !== undefined) updateFields.phone = parsed.data.phone ?? null;
+
+  const { error: userError } = await supabase
+    .from("users")
+    .update(updateFields)
+    .eq("id", userId);
+
+  if (userError) return { error: userError.message };
+
+  // Update role if provided
+  if (parsed.data.role) {
+    const { error: roleError } = await supabase
+      .from("user_roles")
+      .upsert({ user_id: userId, role: parsed.data.role }, { onConflict: "user_id" });
+
+    if (roleError) return { error: roleError.message };
+  }
+
+  await logActivity({
+    actorId: user.id,
+    eventType: "user_updated",
+    entityType: "user",
+    entityId: userId,
+    description: `User profile updated by ${user.full_name}`,
+  });
+
+  revalidatePath(`/users/${userId}`);
   revalidatePath("/users");
   return {};
 }

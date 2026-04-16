@@ -39,7 +39,7 @@ export function StartRotationDialog({ houses }: Props) {
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Start 2-Week Rotation</DialogTitle>
+          <DialogTitle>Start New Rotation</DialogTitle>
         </DialogHeader>
         <form action={action} className="space-y-4">
           <div className="space-y-2">
@@ -67,9 +67,10 @@ export function StartRotationDialog({ houses }: Props) {
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            This will create a 2-week rotation cycle. Any existing current
-            rotation for this house will be archived. After creating, assign
-            residents to chores from the rotation board.
+            This will start a new rotation cycle based on each chore&apos;s
+            configured cycle length. Any existing current rotation for this
+            house will be archived. After creating, assign residents to chores
+            from the rotation board.
           </p>
           {state?.error && (
             <p className="text-sm text-destructive">{state.error}</p>
