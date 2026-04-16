@@ -18,6 +18,10 @@ export default async function AdminPage() {
   const houseFilter = getAccessibleHouseFilter(user);
   const isAdmin = user.role === "admin";
 
+  // All queries on this page are independent — run them in parallel so
+  // the admin dashboard's first byte is bounded by the slowest single
+  // query instead of the sum of all of them.
+
   // --- Houses ---
   let housesQuery = supabase
     .from("houses")
@@ -25,7 +29,6 @@ export default async function AdminPage() {
     .eq("is_active", true)
     .order("name");
   if (houseFilter) housesQuery = housesQuery.in("id", houseFilter);
-  const { data: houses } = await housesQuery;
 
   // --- Residents ---
   let residentsQuery = supabase
@@ -34,7 +37,6 @@ export default async function AdminPage() {
     .eq("status", "active")
     .order("full_name");
   if (houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
-  const { data: residents } = await residentsQuery;
 
   // --- Rooms & Beds for bed assignment ---
   let roomsQuery = supabase
@@ -43,10 +45,9 @@ export default async function AdminPage() {
     .eq("is_active", true)
     .order("name");
   if (houseFilter) roomsQuery = roomsQuery.in("house_id", houseFilter);
-  const { data: rooms } = await roomsQuery;
 
   // --- Active bed assignments ---
-  const { data: bedAssignments } = await supabase
+  const bedAssignmentsQuery = supabase
     .from("bed_assignments")
     .select("id, resident_id, bed_id, start_date")
     .is("end_date", null);
@@ -58,7 +59,6 @@ export default async function AdminPage() {
     .eq("is_active", true)
     .order("sort_order");
   if (houseFilter) choresQuery = choresQuery.in("house_id", houseFilter);
-  const { data: chores } = await choresQuery;
 
   // --- Current rotations ---
   let rotationsQuery = supabase
@@ -68,10 +68,9 @@ export default async function AdminPage() {
     )
     .eq("is_current", true);
   if (houseFilter) rotationsQuery = rotationsQuery.in("house_id", houseFilter);
-  const { data: rotations } = await rotationsQuery;
 
   // --- Pending signoffs ---
-  const { data: pendingSignoffs } = await supabase
+  const pendingSignoffsQuery = supabase
     .from("chore_signoffs")
     .select(
       "*, rotation_assignment:chore_rotation_assignments(resident:residents(full_name), chore:chores(name, house_id))"
@@ -79,29 +78,12 @@ export default async function AdminPage() {
     .eq("status", "completed_pending_review")
     .order("sign_off_date", { ascending: true });
 
-  let filteredPendingSignoffs = pendingSignoffs ?? [];
-  if (houseFilter) {
-    filteredPendingSignoffs = filteredPendingSignoffs.filter((s) => {
-      const ra = s.rotation_assignment as { chore: { house_id: string } };
-      return houseFilter.includes(ra?.chore?.house_id);
-    });
-  }
-
   // --- Leave Requests (pending) ---
   const leaveQuery = supabase
     .from("leave_requests")
     .select("*, resident:residents(id, full_name, house_id, houses(name))")
     .in("status", ["pending_cover", "pending_manager", "pending_admin"])
     .order("created_at", { ascending: false });
-  const { data: allPendingLeave } = await leaveQuery;
-  let pendingLeave = allPendingLeave ?? [];
-  if (houseFilter) {
-    pendingLeave = pendingLeave.filter((r) =>
-      houseFilter.includes(
-        (r.resident as { house_id: string })?.house_id
-      )
-    );
-  }
 
   // --- Demerits ---
   let demeritsQuery = supabase
@@ -109,7 +91,6 @@ export default async function AdminPage() {
     .select("*, resident:residents(full_name), house:houses(name), issuer:users!issued_by(full_name)")
     .order("created_at", { ascending: false });
   if (houseFilter) demeritsQuery = demeritsQuery.in("house_id", houseFilter);
-  const { data: demerits } = await demeritsQuery;
 
   // --- Incidents ---
   let incidentsQuery = supabase
@@ -118,10 +99,9 @@ export default async function AdminPage() {
     .order("occurred_at", { ascending: false })
     .limit(20);
   if (houseFilter) incidentsQuery = incidentsQuery.in("house_id", houseFilter);
-  const { data: incidents } = await incidentsQuery;
 
   // --- Users (admin only) ---
-  let users: Array<{
+  type AdminUser = {
     id: string;
     full_name: string;
     email: string;
@@ -132,14 +112,13 @@ export default async function AdminPage() {
       houses: { name: string } | null;
       unassigned_at: string | null;
     }>;
-  }> = [];
-  if (isAdmin) {
-    const { data } = await supabase
-      .from("users")
-      .select("id, full_name, email, is_active, user_roles(role), manager_house_assignments(house_id, houses(name), unassigned_at)")
-      .order("full_name");
-    users = (data ?? []) as unknown as typeof users;
-  }
+  };
+  const usersQuery = isAdmin
+    ? supabase
+        .from("users")
+        .select("id, full_name, email, is_active, user_roles(role), manager_house_assignments(house_id, houses(name), unassigned_at)")
+        .order("full_name")
+    : null;
 
   // --- Pending payments ---
   let pendingPaymentsQuery = supabase
@@ -148,7 +127,6 @@ export default async function AdminPage() {
     .eq("status", "pending")
     .order("created_at", { ascending: false });
   if (houseFilter) pendingPaymentsQuery = pendingPaymentsQuery.in("house_id", houseFilter);
-  const { data: pendingPayments } = await pendingPaymentsQuery;
 
   // --- Recent completed payments ---
   let recentPaymentsQuery = supabase
@@ -158,7 +136,55 @@ export default async function AdminPage() {
     .order("paid_at", { ascending: false })
     .limit(10);
   if (houseFilter) recentPaymentsQuery = recentPaymentsQuery.in("house_id", houseFilter);
-  const { data: recentPayments } = await recentPaymentsQuery;
+
+  const [
+    { data: houses },
+    { data: residents },
+    { data: rooms },
+    { data: bedAssignments },
+    { data: chores },
+    { data: rotations },
+    { data: pendingSignoffs },
+    { data: allPendingLeave },
+    { data: demerits },
+    { data: incidents },
+    usersRes,
+    { data: pendingPayments },
+    { data: recentPayments },
+  ] = await Promise.all([
+    housesQuery,
+    residentsQuery,
+    roomsQuery,
+    bedAssignmentsQuery,
+    choresQuery,
+    rotationsQuery,
+    pendingSignoffsQuery,
+    leaveQuery,
+    demeritsQuery,
+    incidentsQuery,
+    usersQuery ? usersQuery : Promise.resolve({ data: null as AdminUser[] | null }),
+    pendingPaymentsQuery,
+    recentPaymentsQuery,
+  ]);
+
+  let filteredPendingSignoffs = pendingSignoffs ?? [];
+  if (houseFilter) {
+    filteredPendingSignoffs = filteredPendingSignoffs.filter((s) => {
+      const ra = s.rotation_assignment as { chore: { house_id: string } };
+      return houseFilter.includes(ra?.chore?.house_id);
+    });
+  }
+
+  let pendingLeave = allPendingLeave ?? [];
+  if (houseFilter) {
+    pendingLeave = pendingLeave.filter((r) =>
+      houseFilter.includes(
+        (r.resident as { house_id: string })?.house_id
+      )
+    );
+  }
+
+  const users: AdminUser[] = (usersRes.data as unknown as AdminUser[] | null) ?? [];
 
   // Occupied beds set for quick lookup
   const occupiedBedIds = new Set(
