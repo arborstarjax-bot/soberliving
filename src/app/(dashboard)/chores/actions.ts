@@ -565,6 +565,19 @@ export async function rotateSchedule(rotationId: string) {
     return { error: "Not authorized" };
   }
 
+  // Same mid-cycle guard as assignRotationChore: only create signoffs
+  // for today and forward, so reshuffling part-way through a cycle
+  // doesn't back-fill past dates that the auto-enforce job would then
+  // flip to `missed` + auto-demerit.
+  const { data: rotateHouseRow } = await supabase
+    .from("houses")
+    .select("timezone")
+    .eq("id", rotation.house_id)
+    .single();
+  const rotateTodayStr = getHouseToday(
+    rotateHouseRow?.timezone ?? "America/Los_Angeles"
+  );
+
   // Get current assignments with their chore and resident info
   const { data: assignments } = await supabase
     .from("chore_rotation_assignments")
@@ -656,9 +669,12 @@ export async function rotateSchedule(rotationId: string) {
         const offset = dayToOffset[day];
         if (offset === undefined) continue;
         const signoffDate = addDays(startDate, weekOffset + offset);
+        const signoffDateStr = format(signoffDate, "yyyy-MM-dd");
+        // Skip past days (see rotateTodayStr comment near rotation fetch).
+        if (signoffDateStr < rotateTodayStr) continue;
         signoffs.push({
           rotation_assignment_id: assignment.id,
-          sign_off_date: format(signoffDate, "yyyy-MM-dd"),
+          sign_off_date: signoffDateStr,
           day_of_week: day,
           week_number: weekNum,
           status: "pending",

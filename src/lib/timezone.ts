@@ -44,6 +44,25 @@ export function getHouseYesterday(timezone: string = DEFAULT_TIMEZONE): string {
 }
 
 /**
+ * Returns the calendar date (YYYY-MM-DD) of an ISO timestamp in the given
+ * IANA timezone. Useful for comparing a row's `created_at` to a stored
+ * date-only column like `sign_off_date` without tripping over UTC offsets.
+ */
+export function isoDateInTz(
+  iso: string,
+  timezone: string = DEFAULT_TIMEZONE
+): string {
+  const d = new Date(iso);
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return formatter.format(d);
+}
+
+/**
  * Returns today's day-of-week name (e.g. "monday") in the given timezone.
  */
 export function getHouseDayOfWeek(

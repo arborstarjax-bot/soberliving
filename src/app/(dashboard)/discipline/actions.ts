@@ -6,7 +6,7 @@ import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { createDemeritSchema } from "@/lib/validations";
-import { getHouseYesterday } from "@/lib/timezone";
+import { getHouseYesterday, isoDateInTz, DEFAULT_TIMEZONE } from "@/lib/timezone";
 import { sendNotification, sendNotificationToHouseManagers } from "@/lib/notifications";
 
 export async function createDemerit(
@@ -249,13 +249,18 @@ export async function generateMissedChoreDemerits(houseId?: string) {
     .select("timezone")
     .eq("id", houseId)
     .single();
-  const yesterdayStr = getHouseYesterday(houseRow?.timezone ?? "America/Los_Angeles");
+  const houseTz = houseRow?.timezone ?? DEFAULT_TIMEZONE;
+  const yesterdayStr = getHouseYesterday(houseTz);
 
-  // Find pending signoffs whose date has passed (they are missed)
+  // Find pending signoffs whose date has passed (they are missed).
+  // Also pull created_at so we can filter out back-filled rows that were
+  // inserted after their sign_off_date — those come from mid-cycle
+  // reassigns / rotation reshuffles and must NOT auto-demerit the new
+  // assignee for days they weren't on the rotation.
   const { data: missedSignoffs } = await supabase
     .from("chore_signoffs")
     .select(
-      "id, sign_off_date, rotation_assignment:chore_rotation_assignments(resident_id, chore:chores(name, house_id))"
+      "id, sign_off_date, created_at, rotation_assignment:chore_rotation_assignments(resident_id, chore:chores(name, house_id))"
     )
     .eq("status", "pending")
     .lte("sign_off_date", yesterdayStr);
@@ -273,6 +278,16 @@ export async function generateMissedChoreDemerits(houseId?: string) {
 
     if (!ra?.chore) continue;
     if (ra.chore.house_id !== houseId) continue;
+
+    // Defensive guard against mid-cycle back-fills: if the signoff row
+    // was created after the sign_off_date, the resident wasn't on this
+    // chore on that day — skip it instead of issuing a demerit.
+    const createdDate = signoff.created_at
+      ? isoDateInTz(signoff.created_at as string, houseTz)
+      : null;
+    if (createdDate && createdDate > (signoff.sign_off_date as string)) {
+      continue;
+    }
 
     const effectiveHouseId = ra.chore.house_id;
 
