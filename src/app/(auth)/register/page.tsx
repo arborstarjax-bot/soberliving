@@ -17,7 +17,6 @@ import {
 
 export default function RegisterPage() {
   const [state, action, pending] = useActionState(signup, undefined);
-  const submitted = Boolean(state?.success);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
@@ -25,14 +24,14 @@ export default function RegisterPage() {
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold">Create account</CardTitle>
           <CardDescription>
-            Sign up and an administrator will approve your account before you
-            can sign in.
+            Sign up to start your application. You&apos;ll complete an intake
+            packet, and staff will review and assign housing.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {submitted ? (
+          {state?.success ? (
             <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-md p-3">
-              {state?.success}
+              {state.success}
             </p>
           ) : (
             <form action={action} className="space-y-4">

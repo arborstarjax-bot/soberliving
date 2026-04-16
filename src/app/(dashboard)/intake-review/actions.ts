@@ -238,6 +238,47 @@ export async function markIntakeComplete(userId: string) {
   return {};
 }
 
+export async function denyIntakeApplication(userId: string, reason?: string) {
+  const currentUser = await requireRole("admin", "manager");
+  const adminClient = createAdminClient();
+
+  const { data: targetUser } = await adminClient
+    .from("users")
+    .select("id, full_name, account_status")
+    .eq("id", userId)
+    .single();
+
+  if (!targetUser) return { error: "User not found" };
+  if ((targetUser as { account_status?: string }).account_status === "rejected") {
+    return { error: "Application is already denied" };
+  }
+
+  // Soft delete: flip account_status so login rejects them. Intake form
+  // rows and the users row itself stay in place for audit history.
+  const { error } = await adminClient
+    .from("users")
+    .update({
+      account_status: "rejected",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", userId);
+
+  if (error) return { error: error.message };
+
+  await logActivity({
+    actorId: currentUser.id,
+    eventType: "intake_application_denied",
+    entityType: "user",
+    entityId: userId,
+    description:
+      `${currentUser.full_name} denied ${targetUser.full_name}'s intake application` +
+      (reason ? ` — ${reason}` : ""),
+  });
+
+  revalidatePath("/intake-review");
+  return {};
+}
+
 export async function getRoomsForHouse(houseId: string) {
   await requireRole("admin", "manager");
   const adminClient = createAdminClient();

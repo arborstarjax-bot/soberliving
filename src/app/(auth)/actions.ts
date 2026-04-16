@@ -31,8 +31,9 @@ export async function login(
     return { error: error.message };
   }
 
-  // Gate pending / rejected accounts before redirecting to the dashboard.
-  // Sign the user straight back out so no protected routes are accessible.
+  // Gate rejected / denied accounts before redirecting. Pending is no
+  // longer a supported state — new signups are auto-active and advance
+  // to intake; denial flips them to 'rejected' from Intake Review.
   const { data: profile } = await supabase
     .from("users")
     .select("account_status")
@@ -41,18 +42,11 @@ export async function login(
 
   const status = (profile as { account_status?: string } | null)
     ?.account_status;
-  if (status === "pending") {
-    await supabase.auth.signOut();
-    return {
-      error:
-        "Your account is pending admin approval. You will be able to sign in once an admin approves it.",
-    };
-  }
   if (status === "rejected") {
     await supabase.auth.signOut();
     return {
       error:
-        "Your account request was not approved. Please contact an administrator.",
+        "Your application was not approved. Please contact an administrator.",
     };
   }
 
@@ -67,6 +61,8 @@ export async function login(
   if (role === "admin" || role === "manager") {
     redirect("/admin");
   }
+  // Residents land at /dashboard; the dashboard layout handles
+  // redirecting them onwards to /intake or /sign-commitment as needed.
   redirect("/dashboard");
 }
 
@@ -91,9 +87,7 @@ export async function signup(
   const supabase = await createClient();
 
   // Create the auth user. If email confirmation is enabled in Supabase
-  // this will NOT return a session; the user must click the email link
-  // before they can sign in. Either way the admin must still approve
-  // the account before any dashboard access is granted.
+  // no session is returned; otherwise signUp also signs the user in.
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -116,17 +110,15 @@ export async function signup(
 
   // When Supabase has email confirmation enabled and the email is already
   // registered, signUp() returns a fake user with `identities: []` and no
-  // error (intentional, to avoid email enumeration). Detect that case so we
-  // don't upsert over the existing profile and clobber their account_status
-  // or full_name — which would lock out the real user.
+  // error (intentional, to avoid email enumeration). Detect that so we
+  // don't clobber the existing user's profile.
   if (Array.isArray(data.user.identities) && data.user.identities.length === 0) {
     return { error: "An account with this email already exists" };
   }
 
-  // Upsert the public.users profile with account_status='pending'.
-  // Use the admin client so this works whether or not Supabase returned
-  // a session (email-confirm mode) and regardless of the users-insert
-  // RLS policy.
+  // Create the public profile (active immediately) and the resident role
+  // assignment. Staff approves/denies the application from Intake Review
+  // after the user submits their intake packet.
   const admin = createAdminClient();
   const { error: profileError } = await admin
     .from("users")
@@ -135,7 +127,7 @@ export async function signup(
         id: data.user.id,
         email,
         full_name: fullName,
-        account_status: "pending",
+        account_status: "active",
       },
       { onConflict: "id" }
     );
@@ -149,23 +141,40 @@ export async function signup(
     };
   }
 
-  // Do NOT assign a role. The admin picks the role at approval time.
+  const { error: roleError } = await admin
+    .from("user_roles")
+    .upsert(
+      { user_id: data.user.id, role: "resident" },
+      { onConflict: "user_id" }
+    );
 
-  // If Supabase auto-confirmed the signup it also returned a session;
-  // sign the user straight back out so they can't land on protected
-  // routes while still pending approval.
-  if (data.session) {
-    await supabase.auth.signOut();
+  if (roleError) {
+    return {
+      error:
+        "Failed to assign role: " +
+        roleError.message +
+        ". Please contact an administrator.",
+    };
   }
 
-  return {
-    success:
-      "Thanks! Your account has been created and is waiting for admin approval. You'll be able to sign in once it's approved.",
-  };
-}
+  // If Supabase didn't auto-sign-in (email-confirm path), sign in now so
+  // the new user lands straight on /intake without a second round-trip.
+  // If signIn fails (confirm-email gate), surface a friendly message.
+  if (!data.session) {
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (signInError) {
+      return {
+        success:
+          "Account created. Please check your email to confirm your address, then sign in.",
+      };
+    }
+  }
 
-export async function logout() {
-  const supabase = await createClient();
-  await supabase.auth.signOut();
-  redirect("/login");
+  // The (dashboard) layout will redirect resident-role + !intake_completed
+  // users to /intake, so sending them to /dashboard is fine and keeps the
+  // redirect logic centralized.
+  redirect("/dashboard");
 }

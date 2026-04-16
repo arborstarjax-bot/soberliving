@@ -204,30 +204,33 @@ export default async function AdminPage() {
 
   const activeDemerits = (demerits ?? []).filter((d) => d.status === "active");
 
-  // --- Pending signups (admin only) ---
-  let pendingUserCount = 0;
+  // --- Pending intake applications (admin only) ---
+  let pendingIntakeCount = 0;
   if (isAdmin) {
     const adminClient = createAdminClient();
     const { count } = await adminClient
       .from("users")
       .select("id", { count: "exact", head: true })
-      .eq("account_status", "pending");
-    pendingUserCount = count ?? 0;
+      .eq("intake_completed", true)
+      .eq("commitment_signed", false)
+      .eq("is_active", true)
+      .neq("account_status", "rejected");
+    pendingIntakeCount = count ?? 0;
   }
 
   return (
     <>
-      {isAdmin && pendingUserCount > 0 && (
+      {isAdmin && pendingIntakeCount > 0 && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900">
           <div className="flex items-center gap-2">
             <UserPlus className="h-4 w-4" />
             <span className="text-sm">
-              {pendingUserCount} pending signup
-              {pendingUserCount === 1 ? "" : "s"} waiting for approval.
+              {pendingIntakeCount} intake application
+              {pendingIntakeCount === 1 ? "" : "s"} waiting for review.
             </span>
           </div>
           <Link
-            href="/admin/pending-users"
+            href="/intake-review"
             className="text-sm font-medium underline underline-offset-2"
           >
             Review

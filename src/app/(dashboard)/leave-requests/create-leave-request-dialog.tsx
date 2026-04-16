@@ -96,17 +96,6 @@ export function CreateLeaveRequestDialog({ residents, userRole, userResidentId }
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Departure Date *</Label>
-              <Input name="departure_date" type="date" required />
-            </div>
-            <div className="space-y-2">
-              <Label>Return Date *</Label>
-              <Input name="expected_return_date" type="date" required />
-            </div>
-          </div>
-
           <div className="space-y-2">
             <Label>Reason for Pass</Label>
             <Textarea name="reason_for_pass" rows={2} placeholder="Why are you requesting leave?" />
@@ -114,12 +103,20 @@ export function CreateLeaveRequestDialog({ residents, userRole, userResidentId }
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>Leaving Date/Time</Label>
-              <Input name="leaving_datetime" type="datetime-local" />
+              <Label>Leaving Date/Time *</Label>
+              <Input
+                name="leaving_datetime"
+                type="datetime-local"
+                required
+              />
             </div>
             <div className="space-y-2">
-              <Label>Returning Date/Time</Label>
-              <Input name="returning_datetime" type="datetime-local" />
+              <Label>Returning Date/Time *</Label>
+              <Input
+                name="returning_datetime"
+                type="datetime-local"
+                required
+              />
             </div>
           </div>
 

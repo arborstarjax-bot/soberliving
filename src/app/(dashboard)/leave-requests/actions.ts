@@ -11,12 +11,14 @@ import { z } from "zod";
 const createLeaveRequestSchema = z.object({
   resident_id: z.string().uuid(),
   covering_resident_id: z.string().uuid("You must select a covering resident from your house"),
-  departure_date: z.string().min(1, "Departure date is required"),
-  expected_return_date: z.string().min(1, "Expected return date is required"),
+  // Leaving / returning are the only date inputs the user fills out now.
+  // The date-only `departure_date` / `expected_return_date` columns on the
+  // DB are still populated, but we derive them from these datetimes so
+  // existing list views and activity descriptions keep rendering.
+  leaving_datetime: z.string().min(1, "Leaving date/time is required"),
+  returning_datetime: z.string().min(1, "Returning date/time is required"),
   reason: z.string().optional(),
   reason_for_pass: z.string().optional(),
-  leaving_datetime: z.string().optional(),
-  returning_datetime: z.string().optional(),
   transportation: z.string().optional(),
   companion: z.string().optional(),
   destination_address: z.string().optional(),
@@ -30,12 +32,10 @@ export async function createLeaveRequest(
   const parsed = createLeaveRequestSchema.safeParse({
     resident_id: formData.get("resident_id"),
     covering_resident_id: formData.get("covering_resident_id"),
-    departure_date: formData.get("departure_date"),
-    expected_return_date: formData.get("expected_return_date"),
+    leaving_datetime: formData.get("leaving_datetime"),
+    returning_datetime: formData.get("returning_datetime"),
     reason: formData.get("reason") || undefined,
     reason_for_pass: formData.get("reason_for_pass") || undefined,
-    leaving_datetime: formData.get("leaving_datetime") || undefined,
-    returning_datetime: formData.get("returning_datetime") || undefined,
     transportation: formData.get("transportation") || undefined,
     companion: formData.get("companion") || undefined,
     destination_address: formData.get("destination_address") || undefined,
@@ -85,18 +85,25 @@ export async function createLeaveRequest(
     return { error: "Not authorized" };
   }
 
+  // Derive the date-only columns from the datetimes so the rest of the
+  // app (list views, activity log, notifications) keeps working without
+  // schema changes. `datetime-local` inputs arrive as "YYYY-MM-DDTHH:MM"
+  // so slicing the first 10 chars gives the YYYY-MM-DD we want.
+  const departureDate = parsed.data.leaving_datetime.slice(0, 10);
+  const expectedReturnDate = parsed.data.returning_datetime.slice(0, 10);
+
   const { data, error } = await supabase
     .from("leave_requests")
     .insert({
       resident_id: parsed.data.resident_id,
       covering_resident_id: parsed.data.covering_resident_id,
       requested_by: user.id,
-      departure_date: parsed.data.departure_date,
-      expected_return_date: parsed.data.expected_return_date,
+      departure_date: departureDate,
+      expected_return_date: expectedReturnDate,
       reason: parsed.data.reason ?? null,
       reason_for_pass: parsed.data.reason_for_pass ?? null,
-      leaving_datetime: parsed.data.leaving_datetime ?? null,
-      returning_datetime: parsed.data.returning_datetime ?? null,
+      leaving_datetime: parsed.data.leaving_datetime,
+      returning_datetime: parsed.data.returning_datetime,
       transportation: parsed.data.transportation ?? null,
       companion: parsed.data.companion ?? null,
       destination_address: parsed.data.destination_address ?? null,
@@ -114,7 +121,7 @@ export async function createLeaveRequest(
     eventType: "leave_requested",
     entityType: "leave_request",
     entityId: data.id,
-    description: `Leave requested for ${resident.full_name}: ${parsed.data.departure_date} to ${parsed.data.expected_return_date}. Cover: ${coverResident.full_name}`,
+    description: `Leave requested for ${resident.full_name}: ${departureDate} to ${expectedReturnDate}. Cover: ${coverResident.full_name}`,
   });
 
   // Notify covering resident
@@ -123,7 +130,7 @@ export async function createLeaveRequest(
       userId: coverResident.user_id,
       type: "cover_request",
       title: "Chore Cover Request",
-      message: `${resident.full_name} wants you to cover their chores from ${parsed.data.departure_date} to ${parsed.data.expected_return_date}`,
+      message: `${resident.full_name} wants you to cover their chores from ${departureDate} to ${expectedReturnDate}`,
       actionUrl: "/leave-requests",
       entityType: "leave_request",
       entityId: data.id,
