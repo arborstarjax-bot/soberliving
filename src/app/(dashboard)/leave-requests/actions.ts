@@ -147,10 +147,16 @@ export async function approveCoverRequest(requestId: string) {
   if (!request) return { error: "Request not found" };
   if (request.status !== "pending_cover") return { error: "Request is not pending cover approval" };
 
-  // Verify the current user is the covering resident
+  const resident = request.resident as unknown as { full_name: string; house_id: string } | null;
+  const houseId = resident?.house_id ?? "";
+
+  // Verify the current user is the covering resident, or authorized staff
   const coverResident = request.covering_resident as unknown as { user_id: string; full_name: string } | null;
-  if (coverResident?.user_id !== user.id && user.role === "resident") {
+  if (user.role === "resident" && coverResident?.user_id !== user.id) {
     return { error: "Only the covering resident can approve this" };
+  }
+  if (user.role !== "resident" && user.role !== "admin" && !canAccessHouse(user, houseId)) {
+    return { error: "Not authorized for this house" };
   }
 
   const { error } = await supabase
@@ -164,9 +170,6 @@ export async function approveCoverRequest(requestId: string) {
     .eq("id", requestId);
 
   if (error) return { error: error.message };
-
-  const resident = request.resident as unknown as { full_name: string; house_id: string } | null;
-  const houseId = resident?.house_id ?? "";
 
   await logActivity({
     houseId,
@@ -205,10 +208,16 @@ export async function denyCoverRequest(requestId: string, note?: string) {
   if (!request) return { error: "Request not found" };
   if (request.status !== "pending_cover") return { error: "Request is not pending cover approval" };
 
-  // Verify the current user is the covering resident or staff
+  const residentInfo = request.resident as unknown as { full_name: string; house_id: string; user_id: string | null } | null;
+  const houseId = residentInfo?.house_id ?? "";
+
+  // Verify the current user is the covering resident, or authorized staff
   const coverResident = request.covering_resident as unknown as { user_id: string } | null;
-  if (coverResident?.user_id !== user.id && user.role === "resident") {
+  if (user.role === "resident" && coverResident?.user_id !== user.id) {
     return { error: "Only the covering resident can deny this" };
+  }
+  if (user.role !== "resident" && user.role !== "admin" && !canAccessHouse(user, houseId)) {
+    return { error: "Not authorized for this house" };
   }
 
   const { error } = await supabase
@@ -223,22 +232,20 @@ export async function denyCoverRequest(requestId: string, note?: string) {
 
   if (error) return { error: error.message };
 
-  const resident = request.resident as unknown as { full_name: string; house_id: string; user_id: string | null } | null;
-
   await logActivity({
-    houseId: resident?.house_id,
+    houseId: residentInfo?.house_id,
     residentId: request.resident_id,
     actorId: user.id,
     eventType: "leave_cover_denied",
     entityType: "leave_request",
     entityId: requestId,
-    description: `Cover denied by ${user.full_name} for ${resident?.full_name}'s leave request`,
+    description: `Cover denied by ${user.full_name} for ${residentInfo?.full_name}'s leave request`,
   });
 
   // Notify the requesting resident
-  if (resident?.user_id) {
+  if (residentInfo?.user_id) {
     await sendNotification({
-      userId: resident.user_id,
+      userId: residentInfo.user_id,
       type: "leave_rejected",
       title: "Leave Request Denied",
       message: `Your covering resident declined your leave request${note ? `: ${note}` : ""}`,

@@ -16,7 +16,7 @@ export default async function ResidentsPage() {
   let query = supabase
     .from("residents")
     .select(
-      "id, full_name, status, move_in_date, sobriety_date, house_id, houses(name)"
+      "id, full_name, status, move_in_date, sobriety_date, house_id, user_id, houses(name)"
     )
     .order("full_name");
 
@@ -70,6 +70,7 @@ export default async function ResidentsPage() {
     move_in_date: r.move_in_date,
     sobriety_date: r.sobriety_date,
     house_id: r.house_id,
+    user_id: (r as Record<string, unknown>).user_id as string | null,
     house_name:
       (r.houses as unknown as { name: string } | null)?.name ?? "Unknown",
     days_sober: r.sobriety_date ? getDaysSober(r.sobriety_date) : null,
@@ -89,7 +90,7 @@ export default async function ResidentsPage() {
         (a) => !a.unassigned_at
       );
       const matchingResident = normalizedResidents.find(
-        (r) => r.full_name === u.full_name
+        (r) => r.user_id === u.id
       );
       return {
         id: u.id,
