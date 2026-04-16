@@ -290,8 +290,8 @@ export async function getCheckInResponse(responseId: string) {
     return { error: "Check-in not found" };
   }
 
-  // Residents can only see their own
-  if (user.role === "resident" && data.user_id !== user.id) {
+  // The user filling out the form must own this check-in
+  if (data.user_id !== user.id && user.role !== "admin" && user.role !== "manager") {
     return { error: "Not authorized" };
   }
 
