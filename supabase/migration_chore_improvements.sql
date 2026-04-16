@@ -53,10 +53,12 @@ BEGIN
         WHERE ur.user_id = auth.uid() AND ur.role IN ('admin', 'manager')
       )
       OR
-      -- Residents can update their own signoffs (via resident record)
+      -- Residents can update their own signoffs (via rotation assignment → resident)
       EXISTS (
-        SELECT 1 FROM public.residents r
-        WHERE r.user_id = auth.uid() AND r.id = chore_signoffs.resident_id
+        SELECT 1 FROM public.chore_rotation_assignments cra
+        JOIN public.residents r ON r.id = cra.resident_id
+        WHERE cra.id = chore_signoffs.rotation_assignment_id
+          AND r.user_id = auth.uid()
       )
     );
 END $$;

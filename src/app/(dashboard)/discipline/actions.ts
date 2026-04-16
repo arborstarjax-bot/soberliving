@@ -204,18 +204,31 @@ export async function generateMissedChoreDemerits(houseId?: string) {
 
   const supabase = await createClient();
 
-  // Use house timezone if available, otherwise default
-  let yesterdayStr: string;
-  if (houseId) {
-    const { data: houseRow } = await supabase
+  // When no houseId is provided, iterate per-house to use each house's timezone
+  if (!houseId) {
+    let housesQuery = supabase
       .from("houses")
-      .select("timezone")
-      .eq("id", houseId)
-      .single();
-    yesterdayStr = getHouseYesterday(houseRow?.timezone ?? "America/Los_Angeles");
-  } else {
-    yesterdayStr = getHouseYesterday();
+      .select("id")
+      .eq("is_active", true);
+    const { data: allHouses } = await housesQuery;
+    let totalCount = 0;
+    for (const house of allHouses ?? []) {
+      if (user.role !== "admin" && !canAccessHouse(user, house.id)) continue;
+      const result = await generateMissedChoreDemerits(house.id);
+      if ("count" in result) totalCount += (result.count ?? 0);
+    }
+    revalidatePath("/discipline");
+    revalidatePath("/chores");
+    return { count: totalCount };
   }
+
+  // Single-house path: use the house's timezone
+  const { data: houseRow } = await supabase
+    .from("houses")
+    .select("timezone")
+    .eq("id", houseId)
+    .single();
+  const yesterdayStr = getHouseYesterday(houseRow?.timezone ?? "America/Los_Angeles");
 
   // Find pending signoffs whose date has passed (they are missed)
   const { data: missedSignoffs } = await supabase
@@ -238,8 +251,7 @@ export async function generateMissedChoreDemerits(houseId?: string) {
     } | null;
 
     if (!ra?.chore) continue;
-    if (houseId && ra.chore.house_id !== houseId) continue;
-    if (!houseId && user.role !== "admin" && !canAccessHouse(user, ra.chore.house_id)) continue;
+    if (ra.chore.house_id !== houseId) continue;
 
     const effectiveHouseId = ra.chore.house_id;
 
