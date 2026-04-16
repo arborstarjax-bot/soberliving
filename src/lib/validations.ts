@@ -158,7 +158,7 @@ export const createNoteSchema = z.object({
 
 export const createUserSchema = z.object({
   email: z.string().email("Valid email is required"),
-  full_name: z.string().min(1, "Full name is required").max(200),
+  full_name: z.string().max(200).optional(),
   phone: z.string().max(20).optional(),
 });
 

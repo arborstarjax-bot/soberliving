@@ -14,7 +14,7 @@ export async function createUser(
   const user = await requireRole("admin");
   const parsed = createUserSchema.safeParse({
     email: formData.get("email"),
-    full_name: formData.get("full_name"),
+    full_name: formData.get("full_name") || undefined,
     phone: formData.get("phone") || undefined,
   });
   const houseId = (formData.get("house_id") as string) || null;
@@ -49,7 +49,7 @@ export async function createUser(
     const { error: userError } = await supabase.from("users").insert({
       id: authUserId,
       email: parsed.data.email,
-      full_name: parsed.data.full_name,
+      full_name: parsed.data.full_name || parsed.data.email.split("@")[0],
       phone: parsed.data.phone ?? null,
       ...(houseId ? { pending_house_id: houseId } : {}),
     });
@@ -71,8 +71,8 @@ export async function createUser(
     entityType: "user",
     entityId: authUserId,
     description: existingUser
-      ? `Resident "${parsed.data.full_name}" re-invited by ${user.full_name}`
-      : `Resident "${parsed.data.full_name}" invited by ${user.full_name}`,
+      ? `Resident "${parsed.data.email}" re-invited by ${user.full_name}`
+      : `Resident "${parsed.data.email}" invited by ${user.full_name}`,
   });
 
   revalidatePath("/users");
@@ -102,7 +102,7 @@ export async function createUser(
   try {
     await sendInviteEmail({
       to: parsed.data.email,
-      fullName: parsed.data.full_name,
+      fullName: parsed.data.full_name || parsed.data.email.split("@")[0],
       role: "resident",
       inviteLink,
     });

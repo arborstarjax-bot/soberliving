@@ -96,12 +96,8 @@ export function CreateUserDialog({ houses = [] }: { houses?: House[] }) {
         ) : (
           <form action={action} className="space-y-4">
             <div className="space-y-2">
-              <Label>Full Name *</Label>
-              <Input name="full_name" required />
-            </div>
-            <div className="space-y-2">
               <Label>Email *</Label>
-              <Input name="email" type="email" required />
+              <Input name="email" type="email" required placeholder="resident@example.com" />
             </div>
             <div className="space-y-2">
               <Label>Phone</Label>
