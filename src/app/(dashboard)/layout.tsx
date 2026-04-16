@@ -1,7 +1,7 @@
 import { requireAuth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 
 export default async function DashboardLayout({
   children,
@@ -23,8 +23,8 @@ export default async function DashboardLayout({
 
   // Redirect residents who have a pending check-in (blocking task)
   if (user.role === "resident") {
-    const supabase = await createClient();
-    const { data: pendingCheckIn } = await supabase
+    const adminClient = createAdminClient();
+    const { data: pendingCheckIn } = await adminClient
       .from("check_in_responses")
       .select("id")
       .eq("user_id", user.id)
