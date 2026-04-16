@@ -103,7 +103,8 @@ export async function signup(
   });
 
   if (error) {
-    if (error.message.toLowerCase().includes("already")) {
+    const msg = error.message.toLowerCase();
+    if (msg.includes("already registered") || msg.includes("user already")) {
       return { error: "An account with this email already exists" };
     }
     return { error: error.message };

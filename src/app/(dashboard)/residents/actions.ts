@@ -11,6 +11,7 @@ import {
   updateResidentSchema,
   createNoteSchema,
 } from "@/lib/validations";
+import { sendNotification } from "@/lib/notifications";
 
 // --- Residents ---
 
@@ -193,6 +194,28 @@ export async function dischargeResident(
     description: `${resident.full_name} discharged${voluntaryText} by ${user.full_name}${reasonText}`,
   });
 
+  // Notify the resident about their own discharge. Kept minimal — if the
+  // discharge was involuntary and sensitive, the reason is redacted here
+  // (staff can still see full details in the activity log).
+  const { data: residentUser } = await supabase
+    .from("residents")
+    .select("user_id")
+    .eq("id", residentId)
+    .single();
+
+  if (residentUser?.user_id) {
+    await sendNotification({
+      userId: residentUser.user_id,
+      type: "discharge",
+      title: isVoluntary ? "Departure Recorded" : "Discharge Recorded",
+      message: isVoluntary
+        ? "Your voluntary departure has been recorded."
+        : "Your discharge has been recorded. Please contact house staff with any questions.",
+      entityType: "resident",
+      entityId: residentId,
+    });
+  }
+
   revalidatePath(`/residents/${residentId}`);
   revalidatePath(`/houses/${resident.house_id}`);
   revalidatePath("/residents");
@@ -360,6 +383,25 @@ export async function assignBed(
     metadata: { bed_id: bedId },
   });
 
+  const { data: residentUser } = await supabase
+    .from("residents")
+    .select("user_id")
+    .eq("id", residentId)
+    .single();
+
+  if (residentUser?.user_id) {
+    const roomName = (bed?.room as unknown as { name: string } | null)?.name ?? "your room";
+    await sendNotification({
+      userId: residentUser.user_id,
+      type: "bed_assigned",
+      title: "Bed Assigned",
+      message: `You were assigned to ${roomName} / ${bed?.label ?? "a bed"}.`,
+      actionUrl: `/houses/${houseId}`,
+      entityType: "bed_assignment",
+      entityId: data.id,
+    });
+  }
+
   revalidatePath(`/houses/${houseId}`);
   revalidatePath(`/residents/${residentId}`);
   return {};
@@ -452,6 +494,25 @@ export async function changeResidentBed(
       description: `${resident?.full_name} moved to ${(bed?.room as unknown as { name: string } | null)?.name} / ${bed?.label} by ${user.full_name}`,
       metadata: { bed_id: bedId },
     });
+
+    const { data: residentUser } = await supabase
+      .from("residents")
+      .select("user_id")
+      .eq("id", residentId)
+      .single();
+
+    if (residentUser?.user_id) {
+      const roomName = (bed?.room as unknown as { name: string } | null)?.name ?? "your room";
+      await sendNotification({
+        userId: residentUser.user_id,
+        type: "bed_changed",
+        title: "Bed Changed",
+        message: `You were moved to ${roomName} / ${bed?.label ?? "a bed"}.`,
+        actionUrl: `/houses/${houseId}`,
+        entityType: "bed_assignment",
+        entityId: data.id,
+      });
+    }
   } else {
     await logActivity({
       houseId,

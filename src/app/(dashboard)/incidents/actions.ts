@@ -6,6 +6,7 @@ import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { createIncidentSchema } from "@/lib/validations";
+import { sendNotification } from "@/lib/notifications";
 
 export async function createIncident(
   _prevState: { error?: string } | undefined,
@@ -55,6 +56,25 @@ export async function createIncident(
     description: `${parsed.data.severity} incident logged for ${resident?.full_name} by ${user.full_name}`,
     metadata: { severity: parsed.data.severity, category: parsed.data.category },
   });
+
+  // Notify the resident that an incident has been logged against them.
+  const { data: residentUser } = await supabase
+    .from("residents")
+    .select("user_id")
+    .eq("id", parsed.data.resident_id)
+    .single();
+
+  if (residentUser?.user_id) {
+    await sendNotification({
+      userId: residentUser.user_id,
+      type: "incident_logged",
+      title: "Incident Logged",
+      message: `A ${parsed.data.severity} incident was logged${parsed.data.category ? ` (${parsed.data.category})` : ""}.`,
+      actionUrl: "/incidents",
+      entityType: "incident",
+      entityId: data.id,
+    });
+  }
 
   revalidatePath("/incidents");
   revalidatePath(`/residents/${parsed.data.resident_id}`);

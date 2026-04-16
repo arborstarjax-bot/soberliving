@@ -270,74 +270,81 @@ export function StateOfHouseView({
         </div>
       </SectionCard>
 
-      {/* Check-Ins — expandable */}
+      {/* Check-Ins — three separate expandable cards so each rating can be
+          opened independently (per-resident detail with workplace for work). */}
       <ExpandableSection
-        title="Check-Ins & Engagement"
-        description="Average self-ratings from completed check-ins. Click a rating to see per-resident detail."
+        title="Meeting Satisfaction"
+        description="Average self-rated meeting satisfaction from check-ins."
         summary={
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Stat
-              label="Avg meeting satisfaction"
+              label="Avg rating"
               value={meetingAvg != null ? meetingAvg.toFixed(1) : "—"}
-              sub={
-                data.meetingResponses.length > 0
-                  ? `${data.meetingResponses.length} responses`
-                  : undefined
-              }
             />
-            <Stat
-              label="Avg work satisfaction"
-              value={workAvg != null ? workAvg.toFixed(1) : "—"}
-              sub={
-                data.workResponses.length > 0
-                  ? `${data.workResponses.length} responses`
-                  : undefined
-              }
-            />
-            <Stat
-              label="Avg well-being"
-              value={wellbeingAvg != null ? wellbeingAvg.toFixed(1) : "—"}
-              sub={
-                data.wellbeingResponses.length > 0
-                  ? `${data.wellbeingResponses.length} responses`
-                  : undefined
-              }
-            />
+            <Stat label="Responses" value={data.meetingResponses.length} />
           </div>
         }
       >
-        <div className="space-y-4">
-          <RatingList
-            title={`Meeting satisfaction (${data.meetingResponses.length})`}
-            emptyText="No meeting-satisfaction ratings in this period."
-            items={data.meetingResponses.map((r) => ({
-              id: r.id,
-              primary: r.name,
-              secondary: null,
-              rating: r.rating,
-            }))}
-          />
-          <RatingList
-            title={`Work satisfaction (${data.workResponses.length})`}
-            emptyText="No work-satisfaction ratings in this period."
-            items={data.workResponses.map((r) => ({
-              id: r.id,
-              primary: r.name,
-              secondary: r.job ?? "Workplace not provided",
-              rating: r.rating,
-            }))}
-          />
-          <RatingList
-            title={`Well-being (${data.wellbeingResponses.length})`}
-            emptyText="No well-being ratings in this period."
-            items={data.wellbeingResponses.map((r) => ({
-              id: r.id,
-              primary: r.name,
-              secondary: null,
-              rating: r.rating,
-            }))}
-          />
-        </div>
+        <RatingList
+          title={`Per-resident (${data.meetingResponses.length})`}
+          emptyText="No meeting-satisfaction ratings in this period."
+          items={data.meetingResponses.map((r) => ({
+            id: r.id,
+            primary: r.name,
+            secondary: null,
+            rating: r.rating,
+          }))}
+        />
+      </ExpandableSection>
+
+      <ExpandableSection
+        title="Work Satisfaction"
+        description="Where each resident works and how they rated it this period."
+        summary={
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Stat
+              label="Avg rating"
+              value={workAvg != null ? workAvg.toFixed(1) : "—"}
+            />
+            <Stat label="Responses" value={data.workResponses.length} />
+          </div>
+        }
+      >
+        <RatingList
+          title={`Per-resident (${data.workResponses.length})`}
+          emptyText="No work-satisfaction ratings in this period."
+          items={data.workResponses.map((r) => ({
+            id: r.id,
+            primary: r.name,
+            secondary: r.job ?? "Workplace not provided",
+            rating: r.rating,
+          }))}
+        />
+      </ExpandableSection>
+
+      <ExpandableSection
+        title="Well-being"
+        description="Self-rated feeling about being a resident this period."
+        summary={
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Stat
+              label="Avg rating"
+              value={wellbeingAvg != null ? wellbeingAvg.toFixed(1) : "—"}
+            />
+            <Stat label="Responses" value={data.wellbeingResponses.length} />
+          </div>
+        }
+      >
+        <RatingList
+          title={`Per-resident (${data.wellbeingResponses.length})`}
+          emptyText="No well-being ratings in this period."
+          items={data.wellbeingResponses.map((r) => ({
+            id: r.id,
+            primary: r.name,
+            secondary: null,
+            rating: r.rating,
+          }))}
+        />
       </ExpandableSection>
 
       {/* Incidents — expandable */}
@@ -509,15 +516,39 @@ export function StateOfHouseView({
           </div>
         }
       >
-        {data.supplies.outOfStockNames.length === 0 ? (
+        {data.supplies.items.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            All tracked supplies are currently in stock.
+            No supplies tracked for this house yet.
           </p>
         ) : (
-          <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
-            <span className="font-medium">Needs restock:</span>{" "}
-            {data.supplies.outOfStockNames.join(", ")}
-          </div>
+          <>
+            {data.supplies.outOfStock > 0 && (
+              <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm">
+                <span className="font-medium">Needs restock:</span>{" "}
+                {data.supplies.outOfStockNames.join(", ")}
+              </div>
+            )}
+            <ul className="grid gap-1.5 sm:grid-cols-2">
+              {data.supplies.items.map((s) => (
+                <li
+                  key={s.id}
+                  className="rounded-md border bg-muted/20 px-3 py-2 text-sm flex items-center justify-between gap-2"
+                >
+                  <span className="font-medium">{s.name}</span>
+                  <span
+                    className={
+                      "text-xs font-medium uppercase tracking-wide " +
+                      (s.isInStock
+                        ? "text-emerald-700"
+                        : "text-destructive")
+                    }
+                  >
+                    {s.isInStock ? "In stock" : "Out of stock"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </ExpandableSection>
     </div>

@@ -193,20 +193,56 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
         </div>
       </div>
 
-      <Tabs defaultValue={tabParam}>
+      {/* Controlled Tabs driven by the ?tab= URL param. Using `value` (not
+          `defaultValue`) avoids the Base UI "uncontrolled default changed
+          after init" warning that fires when the user navigates between
+          tab-stated URLs for this page. Each trigger is rendered as a Link
+          so switching tabs updates the URL (and preserves state-of-house
+          query params). */}
+      <Tabs value={tabParam}>
         <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="occupancy">Occupancy</TabsTrigger>
-          <TabsTrigger value="residents">
+          <TabsTrigger
+            value="occupancy"
+            nativeButton={false}
+            render={<Link href={`/houses/${id}?tab=occupancy`} />}
+          >
+            Occupancy
+          </TabsTrigger>
+          <TabsTrigger
+            value="residents"
+            nativeButton={false}
+            render={<Link href={`/houses/${id}?tab=residents`} />}
+          >
             Residents ({residents?.length ?? 0})
           </TabsTrigger>
-          <TabsTrigger value="supplies">
+          <TabsTrigger
+            value="supplies"
+            nativeButton={false}
+            render={<Link href={`/houses/${id}?tab=supplies`} />}
+          >
             Supplies ({supplyItems.length})
           </TabsTrigger>
-          <TabsTrigger value="documents">
+          <TabsTrigger
+            value="documents"
+            nativeButton={false}
+            render={<Link href={`/houses/${id}?tab=documents`} />}
+          >
             Documents ({houseDocuments.length})
           </TabsTrigger>
-          <TabsTrigger value="state">State of the House</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger
+            value="state"
+            nativeButton={false}
+            render={<Link href={`/houses/${id}?tab=state`} />}
+          >
+            State of the House
+          </TabsTrigger>
+          <TabsTrigger
+            value="activity"
+            nativeButton={false}
+            render={<Link href={`/houses/${id}?tab=activity`} />}
+          >
+            Activity
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="occupancy" className="space-y-4 mt-4">

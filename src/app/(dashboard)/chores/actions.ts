@@ -309,6 +309,20 @@ export async function assignRotationChore(
     return { error: "Not authorized" };
   }
 
+  // Look up the house's timezone so we only create signoffs for days that
+  // haven't already passed. Without this, assigning a resident mid-cycle
+  // creates `pending` signoffs for past dates which the auto-enforce job
+  // (generateMissedChoreDemerits) then flips to `missed` + auto-demerits
+  // — penalizing the new assignee for days they weren't on the rotation.
+  const { data: houseRow } = await supabase
+    .from("houses")
+    .select("timezone")
+    .eq("id", rotation.house_id)
+    .single();
+  const todayStr = getHouseToday(
+    houseRow?.timezone ?? "America/Los_Angeles"
+  );
+
   // Check if this chore is already assigned in this rotation
   const { data: existingAssignment } = await supabase
     .from("chore_rotation_assignments")
@@ -358,9 +372,12 @@ export async function assignRotationChore(
         const offset = dayToOffset[day];
         if (offset === undefined) continue;
         const signoffDate = addDays(startDate, weekOffset + offset);
+        const signoffDateStr = format(signoffDate, "yyyy-MM-dd");
+        // Skip past days (see comment near rotation fetch above).
+        if (signoffDateStr < todayStr) continue;
         signoffs.push({
           rotation_assignment_id: existingAssignment.id,
-          sign_off_date: format(signoffDate, "yyyy-MM-dd"),
+          sign_off_date: signoffDateStr,
           day_of_week: day,
           week_number: weekNum,
           status: "pending",
@@ -415,9 +432,13 @@ export async function assignRotationChore(
         const offset = dayToOffset[day];
         if (offset === undefined) continue;
         const signoffDate = addDays(startDate, weekOffset + offset);
+        const signoffDateStr = format(signoffDate, "yyyy-MM-dd");
+        // Skip past days when assigning mid-cycle (see comment near rotation
+        // fetch above).
+        if (signoffDateStr < todayStr) continue;
         signoffs.push({
           rotation_assignment_id: data.id,
-          sign_off_date: format(signoffDate, "yyyy-MM-dd"),
+          sign_off_date: signoffDateStr,
           day_of_week: day,
           week_number: weekNum,
           status: "pending",
@@ -425,7 +446,9 @@ export async function assignRotationChore(
       }
     }
 
-    await supabase.from("chore_signoffs").insert(signoffs);
+    if (signoffs.length > 0) {
+      await supabase.from("chore_signoffs").insert(signoffs);
+    }
   }
 
   const { data: chore } = await supabase
@@ -449,6 +472,27 @@ export async function assignRotationChore(
     entityId: parsed.data.rotation_id,
     description: `"${chore?.name}" assigned to ${resident?.full_name} by ${user.full_name} for rotation starting ${rotation.cycle_start_date}`,
   });
+
+  // Notify the assigned resident so they know a chore was added to their
+  // rotation (prevents "I didn't know I was on this chore" missed-demerit
+  // frustration).
+  const { data: residentUser } = await supabase
+    .from("residents")
+    .select("user_id")
+    .eq("id", parsed.data.resident_id)
+    .single();
+
+  if (residentUser?.user_id) {
+    await sendNotification({
+      userId: residentUser.user_id,
+      type: "chore_assigned",
+      title: "Chore Assigned",
+      message: `You were assigned "${chore?.name ?? "a chore"}" for the rotation starting ${rotation.cycle_start_date}.`,
+      actionUrl: "/chores",
+      entityType: "chore_rotation_assignment",
+      entityId: parsed.data.rotation_id,
+    });
+  }
 
   revalidatePath("/chores");
   return {};

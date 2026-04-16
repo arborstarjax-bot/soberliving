@@ -11,6 +11,21 @@ export interface StateOfHouseData {
       full_name: string;
       move_in_date: string | null;
     }[];
+    // Per-bed detail for the Occupancy expansion. Each occupied bed lists
+    // the resident; each open bed is a room/label pair so staff can see
+    // exactly which beds are free.
+    occupiedBedDetails: {
+      bedId: string;
+      roomName: string;
+      bedLabel: string;
+      residentName: string;
+      residentId: string | null;
+    }[];
+    openBedDetails: {
+      bedId: string;
+      roomName: string;
+      bedLabel: string;
+    }[];
   };
   discharges: {
     id: string;
@@ -70,6 +85,11 @@ export interface StateOfHouseData {
     inStock: number;
     outOfStock: number;
     outOfStockNames: string[];
+    items: {
+      id: string;
+      name: string;
+      isInStock: boolean;
+    }[];
   };
 }
 
@@ -220,28 +240,60 @@ export async function loadStateOfHouseData(
   );
 
   // Beds
-  const rooms = roomsRes.data ?? [];
+  type RawBedAssignment = {
+    end_date: string | null;
+    residents?: { id?: string; full_name?: string } | { id?: string; full_name?: string }[] | null;
+  };
+  type RawBed = {
+    id: string;
+    is_active: boolean;
+    label: string;
+    bed_assignments: RawBedAssignment[];
+  };
+  type RawRoom = { id: string; name: string | null; beds: RawBed[] };
+  const rooms = (roomsRes.data ?? []) as unknown as RawRoom[];
   let totalBeds = 0;
   let occupiedBeds = 0;
   let emptyMarkedBeds = 0;
+  const occupiedBedDetails: StateOfHouseData["census"]["occupiedBedDetails"] =
+    [];
+  const openBedDetails: StateOfHouseData["census"]["openBedDetails"] = [];
+  const cleanBedLabel = (label: string): string =>
+    label
+      .replace(/\s*\[Not Available\]$/, "")
+      .replace(/\s*\[Empty\]$/, "");
   for (const room of rooms) {
-    const beds = (
-      room as unknown as {
-        beds: { id: string; is_active: boolean; label: string; bed_assignments: { end_date: string | null }[] }[];
-      }
-    ).beds ?? [];
-    for (const bed of beds) {
+    const roomName = room.name ?? "Room";
+    for (const bed of room.beds ?? []) {
       if (!bed.is_active) continue;
       totalBeds++;
-      const occupied = (bed.bed_assignments ?? []).some(
+      const activeAssignment = (bed.bed_assignments ?? []).find(
         (ba) => !ba.end_date
       );
-      if (occupied) occupiedBeds++;
-      else if (
+      const isEmpty =
         bed.label.endsWith(" [Not Available]") ||
-        bed.label.endsWith(" [Empty]")
-      )
+        bed.label.endsWith(" [Empty]");
+      const displayLabel = cleanBedLabel(bed.label);
+      if (activeAssignment) {
+        occupiedBeds++;
+        const resRel = activeAssignment.residents;
+        const res = Array.isArray(resRel) ? resRel[0] : resRel;
+        occupiedBedDetails.push({
+          bedId: bed.id,
+          roomName,
+          bedLabel: displayLabel,
+          residentName: res?.full_name ?? "Unknown resident",
+          residentId: res?.id ?? null,
+        });
+      } else if (isEmpty) {
         emptyMarkedBeds++;
+      } else {
+        openBedDetails.push({
+          bedId: bed.id,
+          roomName,
+          bedLabel: displayLabel,
+        });
+      }
     }
   }
   const openBeds = totalBeds - occupiedBeds - emptyMarkedBeds;
@@ -414,6 +466,8 @@ export async function loadStateOfHouseData(
         full_name: r.full_name,
         move_in_date: r.move_in_date,
       })),
+      occupiedBedDetails,
+      openBedDetails,
     },
     discharges,
     voluntaryDepartures,
@@ -439,6 +493,11 @@ export async function loadStateOfHouseData(
       inStock,
       outOfStock,
       outOfStockNames,
+      items: supplies.map((s) => ({
+        id: s.id,
+        name: s.name,
+        isInStock: s.is_in_stock,
+      })),
     },
   };
 }

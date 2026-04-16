@@ -102,12 +102,17 @@ alter table public.users
   add column if not exists account_status text not null default 'pending'
     check (account_status in ('pending', 'active', 'rejected'));
 
--- Backfill: any row that already has a user_roles entry is considered
--- active (pre-existing account). Rows with no role stay 'pending'.
+-- Backfill: any users row that already existed before this column was
+-- added (i.e. created more than a minute ago) is treated as an existing,
+-- approved account and flipped to 'active'. Otherwise an existing admin
+-- whose user_roles row has been deleted (or whose role lives elsewhere)
+-- would be accidentally locked out by the new status gate.
+-- New self-signups go through the signup server action which explicitly
+-- writes 'pending', so they are not affected by this backfill.
 update public.users u
   set account_status = 'active'
   where account_status <> 'active'
-    and exists (select 1 from public.user_roles ur where ur.user_id = u.id);
+    and u.created_at < now() - interval '1 minute';
 
 -- Allow a newly-signed-up user to insert their own public.users row.
 -- Without this, self-signup fails under RLS because the only existing

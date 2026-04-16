@@ -18,15 +18,12 @@ export async function approvePendingUser(
 
   const admin = createAdminClient();
 
-  // Promote the account and stamp the role. Use upsert for user_roles so
-  // re-approving a previously-rejected account cleanly overwrites any
-  // stale row.
-  const { error: statusErr } = await admin
-    .from("users")
-    .update({ account_status: "active" })
-    .eq("id", userId);
-  if (statusErr) return { error: statusErr.message };
-
+  // Role MUST be written before status is flipped to 'active'. These are
+  // two separate writes (no transaction available via PostgREST), so if
+  // the role upsert fails after we've already promoted the account, the
+  // user can sign in and would silently fall back to the 'resident'
+  // default in getSessionUser. Doing the role first means the worst-case
+  // partial failure leaves the account 'pending' — safe.
   const { error: roleErr } = await admin
     .from("user_roles")
     .upsert(
@@ -34,6 +31,12 @@ export async function approvePendingUser(
       { onConflict: "user_id" }
     );
   if (roleErr) return { error: roleErr.message };
+
+  const { error: statusErr } = await admin
+    .from("users")
+    .update({ account_status: "active" })
+    .eq("id", userId);
+  if (statusErr) return { error: statusErr.message };
 
   revalidatePath("/admin/pending-users");
   revalidatePath("/admin");

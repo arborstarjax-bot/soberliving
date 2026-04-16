@@ -64,6 +64,27 @@ export async function createDemerit(
     metadata: { points: parsed.data.points, reason: parsed.data.reason },
   });
 
+  // Notify the resident that they received a demerit (manual issuance; the
+  // auto-missed-chore path in generateMissedChoreDemerits already sends its
+  // own notification).
+  const { data: residentUser } = await supabase
+    .from("residents")
+    .select("user_id")
+    .eq("id", parsed.data.resident_id)
+    .single();
+
+  if (residentUser?.user_id) {
+    await sendNotification({
+      userId: residentUser.user_id,
+      type: "demerit_issued",
+      title: "Demerit Issued",
+      message: `You received a ${parsed.data.points}-point demerit: ${parsed.data.reason}`,
+      actionUrl: "/discipline",
+      entityType: "demerit",
+      entityId: data.id,
+    });
+  }
+
   revalidatePath("/discipline");
   revalidatePath(`/residents/${parsed.data.resident_id}`);
   return {};
@@ -386,6 +407,24 @@ export async function createRestriction(
     metadata: { restriction_type: restrictionType, is_house_commitment: isHouseCommitment },
   });
 
+  const { data: residentUser } = await supabase
+    .from("residents")
+    .select("user_id")
+    .eq("id", residentId)
+    .single();
+
+  if (residentUser?.user_id) {
+    await sendNotification({
+      userId: residentUser.user_id,
+      type: "restriction_created",
+      title: isHouseCommitment ? "House Commitment Added" : "Restriction Added",
+      message: description,
+      actionUrl: "/discipline",
+      entityType: "restriction",
+      entityId: data.id,
+    });
+  }
+
   revalidatePath("/discipline");
   revalidatePath(`/residents/${residentId}`);
   return {};
@@ -424,6 +463,24 @@ export async function liftRestriction(restrictionId: string) {
     entityId: restrictionId,
     description: `Restriction lifted by ${user.full_name}: ${restriction.description}`,
   });
+
+  const { data: residentUser } = await supabase
+    .from("residents")
+    .select("user_id")
+    .eq("id", restriction.resident_id)
+    .single();
+
+  if (residentUser?.user_id) {
+    await sendNotification({
+      userId: residentUser.user_id,
+      type: "restriction_lifted",
+      title: "Restriction Lifted",
+      message: restriction.description,
+      actionUrl: "/discipline",
+      entityType: "restriction",
+      entityId: restrictionId,
+    });
+  }
 
   revalidatePath("/discipline");
   revalidatePath(`/residents/${restriction.resident_id}`);
