@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Pencil } from "lucide-react";
 import { updateResident } from "../actions";
-import { changeUserRole } from "../../users/actions";
+import { changeUserRole, assignManagerToHouses } from "../../users/actions";
 
 interface EditResidentFormProps {
   residentId: string;
@@ -26,13 +26,17 @@ interface EditResidentFormProps {
   userId?: string | null;
   currentRole?: string | null;
   isAdmin?: boolean;
+  houses?: { id: string; name: string }[];
+  assignedHouseIds?: string[];
 }
 
-export function EditResidentForm({ residentId, resident, userId, currentRole, isAdmin }: EditResidentFormProps) {
+export function EditResidentForm({ residentId, resident, userId, currentRole, isAdmin, houses, assignedHouseIds }: EditResidentFormProps) {
   const [editing, setEditing] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [selectedRole, setSelectedRole] = useState(currentRole ?? "resident");
+  const [selectedHouses, setSelectedHouses] = useState<Set<string>>(new Set(assignedHouseIds ?? []));
 
   function handleSubmit(formData: FormData) {
     setError(null);
@@ -50,6 +54,20 @@ export function EditResidentForm({ residentId, resident, userId, currentRole, is
         const roleResult = await changeUserRole(userId, newRole);
         if (roleResult?.error) {
           setError(roleResult.error);
+          return;
+        }
+      }
+
+      // Update house assignments if role is manager
+      if (isAdmin && userId && newRole === "manager") {
+        const houseFormData = new FormData();
+        houseFormData.append("user_id", userId);
+        for (const houseId of selectedHouses) {
+          houseFormData.append("house_ids", houseId);
+        }
+        const houseResult = await assignManagerToHouses(undefined, houseFormData);
+        if (houseResult?.error) {
+          setError(houseResult.error);
           return;
         }
       }
@@ -117,12 +135,39 @@ export function EditResidentForm({ residentId, resident, userId, currentRole, is
               id="role"
               name="role"
               defaultValue={currentRole ?? "resident"}
+              value={selectedRole}
+              onChange={(e) => setSelectedRole(e.target.value)}
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
             >
               <option value="resident">Resident</option>
               <option value="manager">Manager</option>
               <option value="admin">Admin</option>
             </select>
+          </div>
+        )}
+        {isAdmin && selectedRole === "manager" && houses && houses.length > 0 && (
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label>Manages Houses</Label>
+            <div className="space-y-2 border rounded-md p-3 bg-background">
+              {houses.map((house) => (
+                <label key={house.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedHouses.has(house.id)}
+                    onChange={() => {
+                      setSelectedHouses((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(house.id)) next.delete(house.id);
+                        else next.add(house.id);
+                        return next;
+                      });
+                    }}
+                    className="h-4 w-4 rounded border-input"
+                  />
+                  {house.name}
+                </label>
+              ))}
+            </div>
           </div>
         )}
       </div>

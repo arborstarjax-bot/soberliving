@@ -108,6 +108,22 @@ export default async function ResidentDetailPage(
     residentRole = roleData?.role ?? null;
   }
 
+  // Fetch all houses + manager house assignments (for role editing)
+  const { data: allHouses } = await supabase
+    .from("houses")
+    .select("id, name")
+    .order("name");
+
+  let assignedHouseIds: string[] = [];
+  if (resident.user_id) {
+    const { data: assignments } = await supabase
+      .from("manager_house_assignments")
+      .select("house_id")
+      .eq("user_id", resident.user_id)
+      .is("unassigned_at", null);
+    assignedHouseIds = (assignments ?? []).map((a) => a.house_id);
+  }
+
   const milestones = resident.sobriety_date
     ? calculateMilestones(resident.sobriety_date)
     : [];
@@ -147,6 +163,8 @@ export default async function ResidentDetailPage(
               userId={resident.user_id ?? null}
               currentRole={residentRole}
               isAdmin={user.role === "admin"}
+              houses={(allHouses ?? []).map((h) => ({ id: h.id, name: h.name }))}
+              assignedHouseIds={assignedHouseIds}
             />
           )}
           {isStaff && (
