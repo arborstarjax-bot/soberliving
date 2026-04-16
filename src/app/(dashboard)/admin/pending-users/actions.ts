@@ -18,6 +18,21 @@ export async function approvePendingUser(
 
   const admin = createAdminClient();
 
+  // Defend against stale UI / concurrent approvals. If the target isn't
+  // pending anymore (another admin already approved or rejected), do
+  // nothing and return an explicit error instead of silently flipping
+  // the account's role/status out from under it.
+  const { data: target, error: targetErr } = await admin
+    .from("users")
+    .select("account_status")
+    .eq("id", userId)
+    .maybeSingle();
+  if (targetErr) return { error: targetErr.message };
+  if (!target) return { error: "User not found" };
+  if (target.account_status !== "pending") {
+    return { error: "User is no longer pending" };
+  }
+
   // Role MUST be written before status is flipped to 'active'. These are
   // two separate writes (no transaction available via PostgREST), so if
   // the role upsert fails after we've already promoted the account, the
@@ -32,11 +47,19 @@ export async function approvePendingUser(
     );
   if (roleErr) return { error: roleErr.message };
 
-  const { error: statusErr } = await admin
+  // The status flip is guarded by account_status='pending' so a race
+  // with another admin's approval / rejection becomes a no-op instead
+  // of overwriting an already-active account's status.
+  const { data: updated, error: statusErr } = await admin
     .from("users")
     .update({ account_status: "active" })
-    .eq("id", userId);
+    .eq("id", userId)
+    .eq("account_status", "pending")
+    .select("id");
   if (statusErr) return { error: statusErr.message };
+  if (!updated || updated.length === 0) {
+    return { error: "User is no longer pending" };
+  }
 
   revalidatePath("/admin/pending-users");
   revalidatePath("/admin");
@@ -50,11 +73,19 @@ export async function rejectPendingUser(
   if (user.role !== "admin") return { error: "Not authorized" };
 
   const admin = createAdminClient();
-  const { error } = await admin
+  // Guarded on account_status='pending' so a bug or stale UI can never
+  // accidentally lock out an already-active user by calling reject on
+  // their id.
+  const { data: updated, error } = await admin
     .from("users")
     .update({ account_status: "rejected" })
-    .eq("id", userId);
+    .eq("id", userId)
+    .eq("account_status", "pending")
+    .select("id");
   if (error) return { error: error.message };
+  if (!updated || updated.length === 0) {
+    return { error: "User is no longer pending" };
+  }
 
   revalidatePath("/admin/pending-users");
   revalidatePath("/admin");

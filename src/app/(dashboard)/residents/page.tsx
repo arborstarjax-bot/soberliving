@@ -13,21 +13,20 @@ export default async function ResidentsPage() {
   const isAdmin = user.role === "admin";
   const isStaff = user.role === "admin" || user.role === "manager";
 
-  // Fetch residents
-  let query = supabase
+  // Build the independent top-level queries. Residents, houses, staff
+  // roster, the intake users list, and the check-in batches are all
+  // independent — fire them in parallel so the page isn't bounded by
+  // the sum of their latencies.
+  let residentsQuery = supabase
     .from("residents")
     .select(
       "id, full_name, status, move_in_date, sobriety_date, house_id, user_id, houses(name)"
     )
     .order("full_name");
-
   if (houseFilter) {
-    query = query.in("house_id", houseFilter);
+    residentsQuery = residentsQuery.in("house_id", houseFilter);
   }
 
-  const { data: residents } = await query;
-
-  // Fetch houses (with address for intake review form)
   let housesQuery = supabase
     .from("houses")
     .select("id, name, address")
@@ -36,9 +35,7 @@ export default async function ResidentsPage() {
   if (houseFilter) {
     housesQuery = housesQuery.in("id", houseFilter);
   }
-  const { data: houses } = await housesQuery;
 
-  // Fetch staff users (admins + managers) with house assignments
   type RawStaffUser = {
     id: string;
     full_name: string;
@@ -51,17 +48,45 @@ export default async function ResidentsPage() {
       unassigned_at: string | null;
     }>;
   };
+  const staffQuery = isStaff
+    ? supabase
+        .from("users")
+        .select(
+          "id, full_name, email, is_active, user_roles(role), manager_house_assignments(house_id, houses(name), unassigned_at)"
+        )
+        .order("full_name")
+    : null;
 
-  let rawStaffUsers: RawStaffUser[] = [];
-  if (isStaff) {
-    const { data } = await supabase
-      .from("users")
-      .select(
-        "id, full_name, email, is_active, user_roles(role), manager_house_assignments(house_id, houses(name), unassigned_at)"
-      )
-      .order("full_name");
-    rawStaffUsers = (data as RawStaffUser[] | null) ?? [];
-  }
+  const adminClient = isStaff ? createAdminClient() : null;
+  const intakeUsersQuery = isStaff && adminClient
+    ? adminClient
+        .from("users")
+        .select("id, full_name, email, phone, intake_completed, commitment_signed, is_active, created_at")
+        .eq("intake_completed", true)
+        .eq("commitment_signed", false)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false })
+    : null;
+
+  const checkInBatchesPromise = isStaff ? getCheckInBatches() : null;
+
+  const nullRes = Promise.resolve({ data: null });
+
+  const [
+    { data: residents },
+    { data: houses },
+    staffRes,
+    intakeUsersRes,
+    checkInBatchesResult,
+  ] = await Promise.all([
+    residentsQuery,
+    housesQuery,
+    staffQuery ?? nullRes,
+    intakeUsersQuery ?? nullRes,
+    checkInBatchesPromise ?? Promise.resolve(null),
+  ]);
+
+  const rawStaffUsers = (staffRes.data as RawStaffUser[] | null) ?? [];
 
   // Normalize residents for the tabs component
   const normalizedResidents = (residents ?? []).map((r) => ({
@@ -125,41 +150,39 @@ export default async function ResidentsPage() {
     email: string;
   }> = [];
 
-  if (isStaff) {
-    const adminClient = createAdminClient();
+  if (isStaff && adminClient) {
+    type IntakeUser = {
+      id: string;
+      full_name: string;
+      email: string;
+      phone: string | null;
+      created_at: string;
+    };
+    const intakeUsers = (intakeUsersRes.data as IntakeUser[] | null) ?? [];
+    const intakeUserIds = intakeUsers.map((u) => u.id);
 
-    // Get users who completed intake but don't have commitment_signed
-    const { data: intakeUsers } = await adminClient
-      .from("users")
-      .select("id, full_name, email, phone, intake_completed, commitment_signed, is_active, created_at")
-      .eq("intake_completed", true)
-      .eq("commitment_signed", false)
-      .eq("is_active", true)
-      .order("created_at", { ascending: false });
-
-    const intakeUserIds = (intakeUsers ?? []).map((u) => u.id);
-    const { data: existingCommitments } = await adminClient
-      .from("house_commitments")
-      .select("user_id, status")
-      .in("user_id", intakeUserIds.length > 0 ? intakeUserIds : ["none"]);
+    // Commitments and intake forms both key off the intakeUsers ids,
+    // but neither depends on the other. Fetch them in parallel.
+    const [{ data: existingCommitments }, { data: intakeForms }] = await Promise.all([
+      adminClient
+        .from("house_commitments")
+        .select("user_id, status")
+        .in("user_id", intakeUserIds.length > 0 ? intakeUserIds : ["none"]),
+      adminClient
+        .from("intake_forms")
+        .select("user_id, form_data, completed_at")
+        .in("user_id", intakeUserIds.length > 0 ? intakeUserIds : ["none"])
+        .eq("status", "completed"),
+    ]);
 
     const usersWithCommitments = new Set(
       (existingCommitments ?? []).map((c) => c.user_id)
     );
-
-    const pendingUsers = (intakeUsers ?? []).filter((u) => !usersWithCommitments.has(u.id));
+    const pendingUsers = intakeUsers.filter((u) => !usersWithCommitments.has(u.id));
     const awaitingSignature = (existingCommitments ?? [])
       .filter((c) => c.status === "pending_resident_signature")
       .map((c) => c.user_id);
-    const awaitingUsers = (intakeUsers ?? []).filter((u) => awaitingSignature.includes(u.id));
-
-    // Get intake form data for pending users
-    const pendingIds = pendingUsers.map((u) => u.id);
-    const { data: intakeForms } = await adminClient
-      .from("intake_forms")
-      .select("user_id, form_data, completed_at")
-      .in("user_id", pendingIds.length > 0 ? pendingIds : ["none"])
-      .eq("status", "completed");
+    const awaitingUsers = intakeUsers.filter((u) => awaitingSignature.includes(u.id));
 
     const intakeMap = new Map(
       (intakeForms ?? []).map((f) => [f.user_id, f])
@@ -185,8 +208,8 @@ export default async function ResidentsPage() {
     }));
   }
 
-  // Fetch check-in batches for staff
-  let checkInBatches: Array<{
+  // Check-in batches already fetched in the top-level Promise.all
+  type CheckInBatch = {
     id: string;
     createdBy: string;
     houseNames: string;
@@ -202,12 +225,9 @@ export default async function ResidentsPage() {
       formData: Record<string, unknown> | null;
       houseId: string;
     }>;
-  }> = [];
-
-  if (isStaff) {
-    const result = await getCheckInBatches();
-    checkInBatches = result.batches ?? [];
-  }
+  };
+  const checkInBatches: CheckInBatch[] =
+    (checkInBatchesResult as { batches?: CheckInBatch[] } | null)?.batches ?? [];
 
   return (
     <div className="space-y-6">

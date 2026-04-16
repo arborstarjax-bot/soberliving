@@ -7,6 +7,8 @@ import { DollarSign } from "lucide-react";
 import { CreatePaymentDialog } from "./create-payment-dialog";
 import { VoidPaymentDialog } from "./void-payment-dialog";
 import { RentConfigDialog } from "./rent-config-dialog";
+import { Pagination } from "@/components/pagination";
+import { getPageParams, buildPaginationMeta } from "@/lib/pagination";
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-US", {
@@ -48,13 +50,22 @@ function formatPaymentMethod(method: string | null) {
   return method.replace(/_/g, " ");
 }
 
-export default async function PaymentsPage() {
+interface PaymentsPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function PaymentsPage({ searchParams }: PaymentsPageProps) {
   const user = await requireAuth();
   const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
   const isStaff = user.role === "admin" || user.role === "manager";
 
-  // For residents, look up their resident record to filter payments
+  const params = await searchParams;
+  const { page, offset, pageSize } = getPageParams(params);
+
+  // For residents, look up their resident record to filter payments.
+  // This has to happen before the payments query runs because the filter
+  // depends on its id, but every other query runs in parallel after.
   let residentRecord: { id: string } | null = null;
   if (user.role === "resident") {
     const { data } = await supabase
@@ -66,14 +77,16 @@ export default async function PaymentsPage() {
     residentRecord = data;
   }
 
-  // Payments list
+  // Payments list — paginated so the grid doesn't try to render 1000+
+  // rows at once when a facility has been running for a while.
   let paymentsQuery = supabase
     .from("payments")
     .select(
-      "*, resident:residents(full_name), house:houses(name), recorder:users!recorded_by(full_name)"
+      "*, resident:residents(full_name), house:houses(name), recorder:users!recorded_by(full_name)",
+      { count: "exact" }
     )
     .order("paid_at", { ascending: false })
-    .limit(100);
+    .range(offset, offset + pageSize - 1);
 
   if (user.role === "resident" && residentRecord) {
     paymentsQuery = paymentsQuery.eq("resident_id", residentRecord.id);
@@ -81,78 +94,73 @@ export default async function PaymentsPage() {
     paymentsQuery = paymentsQuery.in("house_id", houseFilter);
   }
 
-  const { data: payments } = await paymentsQuery;
-
-  // Separate aggregation queries for accurate summary stats (not subject to .limit(100))
-  let completedCount = 0;
-  let totalCollected = 0;
-  let pendingCount = 0;
-  let totalPending = 0;
-
-  if (isStaff) {
-    // Completed payments stats
-    let completedStatsQuery = supabase
-      .from("payments")
-      .select("amount")
-      .eq("status", "completed");
-    if (houseFilter) {
-      completedStatsQuery = completedStatsQuery.in("house_id", houseFilter);
-    }
-    const { data: completedData } = await completedStatsQuery;
-    completedCount = (completedData ?? []).length;
-    totalCollected = (completedData ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
-
-    // Pending payments stats
-    let pendingStatsQuery = supabase
-      .from("payments")
-      .select("amount")
-      .eq("status", "pending");
-    if (houseFilter) {
-      pendingStatsQuery = pendingStatsQuery.in("house_id", houseFilter);
-    }
-    const { data: pendingData } = await pendingStatsQuery;
-    pendingCount = (pendingData ?? []).length;
-    totalPending = (pendingData ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
+  // Staff-only aggregation / dialog data. Build all six queries up
+  // front and fire them in one Promise.all so the page doesn't wait
+  // for them sequentially.
+  let completedStatsQuery = isStaff
+    ? supabase.from("payments").select("amount").eq("status", "completed")
+    : null;
+  if (completedStatsQuery && houseFilter) {
+    completedStatsQuery = completedStatsQuery.in("house_id", houseFilter);
   }
 
-  // Houses, residents, and rent configs only needed for staff dialogs
-  let houses: { id: string; name: string }[] = [];
-  let residents: { id: string; full_name: string; house_id: string }[] = [];
-  let rentConfigs: {
-    house_id: string;
-    monthly_amount: number;
-    due_day_of_month: number;
-    late_fee: number;
-    grace_period_days: number;
-  }[] = [];
-
-  if (isStaff) {
-    let housesQuery = supabase
-      .from("houses")
-      .select("id, name")
-      .eq("is_active", true)
-      .order("name");
-    if (houseFilter) housesQuery = housesQuery.in("id", houseFilter);
-    const { data: housesData } = await housesQuery;
-    houses = housesData ?? [];
-
-    let residentsQuery = supabase
-      .from("residents")
-      .select("id, full_name, house_id")
-      .eq("status", "active")
-      .order("full_name");
-    if (houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
-    const { data: residentsData } = await residentsQuery;
-    residents = residentsData ?? [];
-
-    let rentConfigsQuery = supabase
-      .from("rent_configs")
-      .select("house_id, monthly_amount, due_day_of_month, late_fee, grace_period_days")
-      .eq("is_active", true);
-    if (houseFilter) rentConfigsQuery = rentConfigsQuery.in("house_id", houseFilter);
-    const { data: rentConfigsData } = await rentConfigsQuery;
-    rentConfigs = rentConfigsData ?? [];
+  let pendingStatsQuery = isStaff
+    ? supabase.from("payments").select("amount").eq("status", "pending")
+    : null;
+  if (pendingStatsQuery && houseFilter) {
+    pendingStatsQuery = pendingStatsQuery.in("house_id", houseFilter);
   }
+
+  let housesQuery = isStaff
+    ? supabase.from("houses").select("id, name").eq("is_active", true).order("name")
+    : null;
+  if (housesQuery && houseFilter) housesQuery = housesQuery.in("id", houseFilter);
+
+  let residentsQuery = isStaff
+    ? supabase
+        .from("residents")
+        .select("id, full_name, house_id")
+        .eq("status", "active")
+        .order("full_name")
+    : null;
+  if (residentsQuery && houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
+
+  let rentConfigsQuery = isStaff
+    ? supabase
+        .from("rent_configs")
+        .select("house_id, monthly_amount, due_day_of_month, late_fee, grace_period_days")
+        .eq("is_active", true)
+    : null;
+  if (rentConfigsQuery && houseFilter) rentConfigsQuery = rentConfigsQuery.in("house_id", houseFilter);
+
+  const nullRes = Promise.resolve({ data: null });
+
+  const [
+    { data: payments, count: paymentsCount },
+    completedRes,
+    pendingRes,
+    housesRes,
+    residentsRes,
+    rentConfigsRes,
+  ] = await Promise.all([
+    paymentsQuery,
+    completedStatsQuery ?? nullRes,
+    pendingStatsQuery ?? nullRes,
+    housesQuery ?? nullRes,
+    residentsQuery ?? nullRes,
+    rentConfigsQuery ?? nullRes,
+  ]);
+
+  const meta = buildPaginationMeta(paymentsCount ?? 0, page, pageSize);
+  const completedData = completedRes.data ?? [];
+  const pendingData = pendingRes.data ?? [];
+  const completedCount = completedData.length;
+  const totalCollected = completedData.reduce((sum, p) => sum + Number(p.amount), 0);
+  const pendingCount = pendingData.length;
+  const totalPending = pendingData.reduce((sum, p) => sum + Number(p.amount), 0);
+  const houses = housesRes.data ?? [];
+  const residents = residentsRes.data ?? [];
+  const rentConfigs = rentConfigsRes.data ?? [];
 
   const configMap: Record<
     string,
@@ -264,6 +272,7 @@ export default async function PaymentsPage() {
           </CardContent>
         </Card>
       ) : (
+        <>
         <div className="space-y-2">
           {(payments ?? []).map((payment) => {
             const residentName =
@@ -339,6 +348,13 @@ export default async function PaymentsPage() {
             );
           })}
         </div>
+        <Pagination
+          meta={meta}
+          basePath="/payments"
+          searchParams={params}
+          itemLabel="payments"
+        />
+        </>
       )}
     </div>
   );
