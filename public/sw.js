@@ -83,8 +83,13 @@ self.addEventListener("fetch", (event) => {
       (async () => {
         try {
           const fresh = await fetch(req);
-          const cache = await caches.open(RUNTIME_CACHE);
-          cache.put(req, fresh.clone()).catch(() => {});
+          // Only cache successful responses. A 404/500 stored here
+          // would be returned from the catch block below when the
+          // user later goes offline, shadowing the /offline fallback.
+          if (fresh.ok) {
+            const cache = await caches.open(RUNTIME_CACHE);
+            cache.put(req, fresh.clone()).catch(() => {});
+          }
           return fresh;
         } catch {
           const cache = await caches.open(RUNTIME_CACHE);
