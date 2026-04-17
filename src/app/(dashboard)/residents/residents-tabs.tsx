@@ -655,6 +655,19 @@ export function ResidentsTabs({
               </CardContent>
             </Card>
           )}
+            </TabsContent>
+
+            <TabsContent value="denied" className="space-y-6 mt-4">
+              {intakeDenied.length === 0 && (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <p className="text-muted-foreground">
+                      No denied applications. Applicants you deny will show
+                      up here with their denial reason.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
 
           {/* 5. Denied */}
           {intakeDenied.length > 0 && (

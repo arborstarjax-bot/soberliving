@@ -9,6 +9,7 @@ import { LiftRestrictionButton, DeleteRestrictionButton } from "./lift-restricti
 
 const RESTRICTION_TYPE_LABELS: Record<string, string> = {
   no_leave: "No Leave",
+  no_overnight: "No Overnight",
   weekend_restriction: "Weekend",
   house_commitment: "House Commitment",
   curfew: "Curfew",

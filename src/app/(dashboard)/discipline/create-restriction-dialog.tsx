@@ -17,6 +17,7 @@ import { ShieldAlert } from "lucide-react";
 
 const RESTRICTION_TYPES = [
   { value: "no_leave", label: "No Leave" },
+  { value: "no_overnight", label: "No Overnight" },
   { value: "weekend_restriction", label: "Weekend Restriction" },
   { value: "house_commitment", label: "House Commitment (New Intake)" },
   { value: "curfew", label: "Curfew" },
