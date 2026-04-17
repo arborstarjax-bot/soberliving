@@ -184,7 +184,13 @@ export function ResidentPaymentsPanel({
 
       {/* Next Due hero card */}
       {nextCharge ? (
-        <NextDueCard charge={nextCharge} />
+        <NextDueCard
+          charge={nextCharge}
+          canRecordPayment={canRecordPayment && !!houseId}
+          residentId={residentId}
+          residentName={residentName}
+          houseId={houseId ?? ""}
+        />
       ) : (
         <Card>
           <CardContent className="py-6 text-center space-y-1">
@@ -215,26 +221,9 @@ export function ResidentPaymentsPanel({
         </div>
       )}
 
-      {/* Open charges list */}
-      {sortedCharges.length > 0 && (
-        <section className="space-y-2">
-          <h3 className="text-sm font-semibold px-0.5">
-            Open Charges ({sortedCharges.length})
-          </h3>
-          <div className="space-y-2">
-            {sortedCharges.map((c) => (
-              <OpenChargeRow
-                key={c.id}
-                charge={c}
-                canRecordPayment={canRecordPayment && !!houseId}
-                residentId={residentId}
-                residentName={residentName}
-                houseId={houseId ?? ""}
-              />
-            ))}
-          </div>
-        </section>
-      )}
+      {/* Open charges list removed — Next Due hero above + summary
+          tiles cover everything actionable. Record Payment is wired
+          into the hero card itself. */}
 
       {/* Recent receipts */}
       <section className="space-y-2">
@@ -303,7 +292,19 @@ export function ResidentPaymentsPanel({
 
 // --- Sub-components ---
 
-function NextDueCard({ charge }: { charge: OpenCharge }) {
+function NextDueCard({
+  charge,
+  canRecordPayment,
+  residentId,
+  residentName,
+  houseId,
+}: {
+  charge: OpenCharge;
+  canRecordPayment: boolean;
+  residentId: string;
+  residentName: string;
+  houseId: string;
+}) {
   const days = daysUntil(charge.due_date);
   const isPastDue = days < 0;
   const isDueSoon = days >= 0 && days <= 3;
@@ -320,7 +321,7 @@ function NextDueCard({ charge }: { charge: OpenCharge }) {
             : ""
       }
     >
-      <CardContent className="py-4 space-y-2">
+      <CardContent className="py-4 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-0.5">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -360,66 +361,16 @@ function NextDueCard({ charge }: { charge: OpenCharge }) {
             </span>
           )}
         </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function OpenChargeRow({
-  charge,
-  canRecordPayment,
-  residentId,
-  residentName,
-  houseId,
-}: {
-  charge: OpenCharge;
-  canRecordPayment: boolean;
-  residentId: string;
-  residentName: string;
-  houseId: string;
-}) {
-  const days = daysUntil(charge.due_date);
-  const isPastDue = days < 0;
-  const remaining = Math.max(0, charge.amount - charge.paid_amount);
-  const isPartial = charge.paid_amount > 0;
-
-  return (
-    <Card className={isPastDue ? "border-destructive/50" : ""}>
-      <CardContent className="py-3 space-y-2">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-medium truncate">
-                {chargeTypeLabel(charge.charge_type)}
-              </p>
-              {isPartial && (
-                <Badge variant="outline" className="text-[10px] h-4 px-1.5">
-                  Partial
-                </Badge>
-              )}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Due {formatDate(charge.due_date)}
-              {isPastDue && ` · ${Math.abs(days)}d late`}
-              {isPartial &&
-                ` · ${formatMoney(charge.paid_amount)} of ${formatMoney(charge.amount)} paid`}
-            </p>
-          </div>
-          <div className="text-right shrink-0">
-            <p
-              className={`text-sm font-semibold ${isPastDue ? "text-destructive" : ""}`}
-            >
-              {formatMoney(remaining)}
-            </p>
-          </div>
-        </div>
-        {canRecordPayment && remaining > 0 && (
-          <div className="flex justify-end">
+        {canRecordPayment && (
+          <div className="pt-1">
             <RecordChargePaymentDialog
               residentId={residentId}
               residentName={residentName}
               houseId={houseId}
               charge={charge}
+              variant="default"
+              size="default"
+              label={`Record Payment · ${formatMoney(remaining)}`}
             />
           </div>
         )}

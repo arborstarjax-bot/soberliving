@@ -131,12 +131,15 @@ export async function openRentChargesForCommitment(
 
   // Strategy: open every past-due / current-month charge, PLUS exactly
   // one upcoming charge so residents always see a "Next Rent Due" tile
-  // on their dashboard. We track `openedFuture` separately so the break
-  // condition doesn't depend on whether prior charges existed (the old
-  // `openedCount > 0 || existingDates.length > 0` check skipped the
-  // future charge on every subsequent call).
+  // on their dashboard. We only open that one future charge if the
+  // commitment doesn't ALREADY have an unpaid future charge on the
+  // books — otherwise each page load would stack on another month,
+  // producing the 4-month-preview we saw on Shane's profile.
+  const hasExistingFuture = existingDates.some(
+    (d) => d.getTime() > today.getTime()
+  );
   let openedCount = 0;
-  let openedFuture = false;
+  let openedFuture = hasExistingFuture;
   let safety = 0;
   while (safety++ < 60) {
     const due = nextDueDate(start, [

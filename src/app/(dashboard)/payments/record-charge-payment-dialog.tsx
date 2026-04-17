@@ -104,6 +104,13 @@ export function RecordChargePaymentDialog({
 
   const todayIso = new Date().toISOString().slice(0, 10);
 
+  // Past-due charges that are being partially paid need a note
+  // explaining the shortfall (for our internal records). Paying a
+  // chunk early against a future charge doesn't — splitting up rent
+  // over multiple weeks is normal and shouldn't require paperwork.
+  const isPastDue = charge.due_date < todayIso;
+  const noteRequired = isPartial && isPastDue;
+
   return (
     <>
       <Button
@@ -188,16 +195,21 @@ export function RecordChargePaymentDialog({
 
             <div>
               <Label htmlFor="note">
-                Note {isPartial && <span className="text-amber-600">(required for partial)</span>}
+                Note{" "}
+                {noteRequired && (
+                  <span className="text-amber-600">
+                    (required — past-due partial)
+                  </span>
+                )}
               </Label>
               <Textarea
                 id="note"
                 name="note"
                 rows={2}
-                required={isPartial}
+                required={noteRequired}
                 placeholder={
-                  isPartial
-                    ? "Reason for partial payment"
+                  noteRequired
+                    ? "Why can't the resident cover the full past-due amount?"
                     : "Optional note (internal)"
                 }
               />

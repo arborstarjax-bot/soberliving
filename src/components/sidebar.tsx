@@ -11,8 +11,6 @@ import {
   ClipboardCheck,
   AlertTriangle,
   CalendarClock,
-  UserCog,
-  Activity,
   Settings,
   LogOut,
   LogOut as SignOutIcon,
@@ -120,12 +118,8 @@ const NAV_ITEMS: NavItem[] = [
   },
   // Intake Review is now a tab inside the Residents page
   // Users & Roles folded into Residents page — /users route still works for direct access
-  {
-    label: "Activity Log",
-    href: "/activity",
-    icon: Activity,
-    roles: ["admin", "manager"],
-  },
+  // Activity Log is no longer a primary nav item — reachable from the
+  // admin dashboard Activity tile or the per-resident profile timeline.
   // Settings is no longer a primary nav item — admins reach it via
   // the gear icon in the user footer area at the bottom of the
   // sidebar (see navContent below). Residents and managers don't have
