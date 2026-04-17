@@ -23,6 +23,7 @@ import {
   Bell,
   FileText,
   Folder,
+  DollarSign,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -84,6 +85,16 @@ const NAV_ITEMS: NavItem[] = [
     label: "Sign Out Sheet",
     href: "/sign-out-sheet",
     icon: SignOutIcon,
+    roles: ["admin", "manager"],
+  },
+  {
+    // Staff-only Payments hub — By Resident / Outstanding / Paid tabs.
+    // Residents have their own payments view at /payments but reach it
+    // via the Next Due hero card on their dashboard, not a nav link,
+    // so the sidebar stays uncluttered for them.
+    label: "Payments",
+    href: "/payments",
+    icon: DollarSign,
     roles: ["admin", "manager"],
   },
   {
