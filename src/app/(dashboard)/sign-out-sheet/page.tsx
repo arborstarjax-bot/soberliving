@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { SignOutToggle } from "./sign-out-toggle";
 import { SignInOnBehalfDialog } from "./sign-in-on-behalf-dialog";
 import { MapPin, Clock } from "lucide-react";
+import { redirect } from "next/navigation";
 
 interface SignOutRow {
   id: string;
@@ -36,6 +37,12 @@ function formatDuration(start: string, end: string) {
 
 export default async function SignOutSheetPage() {
   const user = await requireAuth();
+  // Staff-only page. Residents sign in / out from their dashboard
+  // toggle and don't get a roster of who else is out; bounce them
+  // back to /dashboard if they hit this URL directly.
+  if (user.role === "resident") {
+    redirect("/dashboard");
+  }
   const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
   const isStaff = user.role === "admin" || user.role === "manager";

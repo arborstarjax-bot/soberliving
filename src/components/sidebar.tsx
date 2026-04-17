@@ -77,10 +77,13 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["admin", "manager", "resident"],
   },
   {
+    // Staff-only nav link. Residents don't see this — they sign in /
+    // out via the toggle at the top of their dashboard and don't need
+    // a roster of who else is out.
     label: "Sign Out Sheet",
     href: "/sign-out-sheet",
     icon: SignOutIcon,
-    roles: ["admin", "manager", "resident"],
+    roles: ["admin", "manager"],
   },
   {
     label: "Bulletin",
