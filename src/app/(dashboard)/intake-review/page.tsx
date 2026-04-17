@@ -228,30 +228,33 @@ export default async function IntakeReviewPage({
                             Awaiting Resident Signature
                           </Badge>
                           {commit && !commit.parent_commitment_id && (
-                            <EditPendingCommitmentDialog
-                              userId={user.id}
-                              residentName={user.full_name}
-                              current={{
-                                paymentFrequency:
-                                  (commit.payment_frequency as
-                                    | "weekly"
-                                    | "monthly") ?? "monthly",
-                                rentAmount: Number(commit.rent_amount ?? 0),
-                                adminFee: Number(commit.admin_fee ?? 0),
-                                commitmentStartDate:
-                                  (commit.commitment_start_date as string) ??
-                                  new Date().toISOString().split("T")[0],
-                                commitmentTerm:
-                                  (commit.commitment_term as string) ??
-                                  "181 days",
-                                notes: (commit.notes as string | null) ?? null,
-                              }}
-                            />
+                            <>
+                              <EditPendingCommitmentDialog
+                                userId={user.id}
+                                residentName={user.full_name}
+                                current={{
+                                  paymentFrequency:
+                                    (commit.payment_frequency as
+                                      | "weekly"
+                                      | "monthly") ?? "monthly",
+                                  rentAmount: Number(commit.rent_amount ?? 0),
+                                  adminFee: Number(commit.admin_fee ?? 0),
+                                  commitmentStartDate:
+                                    (commit.commitment_start_date as string) ??
+                                    new Date().toISOString().split("T")[0],
+                                  commitmentTerm:
+                                    (commit.commitment_term as string) ??
+                                    "181 days",
+                                  notes:
+                                    (commit.notes as string | null) ?? null,
+                                }}
+                              />
+                              <ResendCommitmentButton
+                                userId={user.id}
+                                userName={user.full_name}
+                              />
+                            </>
                           )}
-                          <ResendCommitmentButton
-                            userId={user.id}
-                            userName={user.full_name}
-                          />
                           <MarkCompleteButton
                             userId={user.id}
                             userName={user.full_name}
