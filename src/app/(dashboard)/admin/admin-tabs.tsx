@@ -138,7 +138,7 @@ export function AdminTabs({
       </div>
 
       {/* Overview Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+      <div className="grid gap-3 grid-cols-2 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
         <StatCard label="Houses" value={houses.length} icon={Home} />
         <StatCard label="Active Residents" value={residents.length} icon={Users} />
         <StatCard label="Pending Leave" value={pendingLeave.length} icon={CalendarClock} />

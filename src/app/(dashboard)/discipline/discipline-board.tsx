@@ -99,7 +99,7 @@ export function DisciplineBoard({
 
                 return (
                   <tr key={resident.id} className="border-b hover:bg-muted/30">
-                    <td className="py-2 px-3 font-medium whitespace-nowrap">
+                    <td className="py-2 px-3 font-medium whitespace-nowrap sticky left-0 z-10 bg-background">
                       {resident.full_name}
                     </td>
                     <td className="py-2 px-2 text-xs text-muted-foreground whitespace-nowrap">

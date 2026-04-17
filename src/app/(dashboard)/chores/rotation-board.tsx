@@ -97,20 +97,25 @@ export function RotationBoard({
         </div>
       </CardHeader>
       <CardContent>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border">
+        {/* On phones we keep the grid but make the "Chore" column
+            sticky to the left so the chore name is always in view
+            while the resident/days columns horizontally scroll. The
+            `min-w-[640px]` on the table guarantees the sticky column
+            actually has something to scroll under on narrow screens. */}
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+          <table className="w-full text-sm border min-w-[640px]">
             <thead>
               <tr>
-                <th className="border p-2 text-left bg-muted min-w-[180px]">
+                <th className="border p-2 text-left bg-muted min-w-[140px] sm:min-w-[180px] sticky left-0 z-10">
                   Chore
                 </th>
-                <th className="border p-2 text-left bg-muted min-w-[160px]">
+                <th className="border p-2 text-left bg-muted min-w-[140px] sm:min-w-[160px]">
                   Assigned To
                 </th>
                 {ALL_DAYS.map((day) => (
                   <th
                     key={day}
-                    className={`border p-2 text-center bg-muted text-xs ${day === todayDay ? "bg-primary/10 font-bold" : ""}`}
+                    className={`border p-2 text-center bg-muted text-xs min-w-[44px] ${day === todayDay ? "bg-primary/10 font-bold" : ""}`}
                   >
                     {DAY_LABELS[day]}
                     {day === todayDay && <span className="block text-[10px] text-primary">Today</span>}
@@ -127,7 +132,7 @@ export function RotationBoard({
 
                 return (
                   <tr key={chore.id}>
-                    <td className="border p-2 font-medium">{chore.name}</td>
+                    <td className="border p-2 font-medium sticky left-0 z-10 bg-background">{chore.name}</td>
                     <td className="border p-2">
                       {assignment ? (
                         <div className="flex items-center gap-1">
@@ -253,7 +258,7 @@ function SignoffButton({ signoffId }: { signoffId: string }) {
       <button
         type="button"
         disabled={pending}
-        className="inline-flex items-center justify-center h-7 w-7 rounded-full border-2 border-dashed border-primary/40 text-primary/60 hover:border-primary hover:text-primary hover:bg-primary/10 transition-colors text-xs"
+        className="touch-hit-area inline-flex items-center justify-center h-7 w-7 rounded-full border-2 border-dashed border-primary/40 text-primary/60 hover:border-primary hover:text-primary hover:bg-primary/10 active:scale-95 transition text-xs"
         title="Mark as done"
         onClick={() => {
           setError(null);
@@ -318,7 +323,7 @@ function VerifyButtons({ signoffId }: { signoffId: string }) {
           <button
             type="button"
             disabled={pending}
-            className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-green-100 text-green-700 hover:bg-green-200 transition-colors"
+            className="touch-hit-area inline-flex items-center justify-center h-6 w-6 rounded-full bg-green-100 text-green-700 hover:bg-green-200 active:scale-95 transition"
             title="Approve"
             onClick={() => {
               setError(null);
