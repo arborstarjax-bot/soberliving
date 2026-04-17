@@ -13,6 +13,7 @@ import { EditResidentForm } from "./edit-resident-form";
 import { DischargeDialog } from "./discharge-dialog";
 import { ChangeBedDialog, type BedOption } from "./change-bed-dialog";
 import { DocumentsList } from "@/components/documents-list";
+import { ResidentPaymentsPanel } from "./payments-panel";
 
 export default async function ResidentDetailPage(
   props: PageProps<"/residents/[id]">
@@ -44,13 +45,16 @@ export default async function ResidentDetailPage(
     .eq("resident_id", id)
     .order("start_date", { ascending: false });
 
-  // Chore rotation assignments
-  const { data: choreAssignments } = await supabase
+  // Chore rotation assignments — only current cycles. Past rotations
+  // are noise in the resident's profile; the /chores calendar is the
+  // place to go back through history.
+  const { data: choreAssignmentsRaw } = await supabase
     .from("chore_rotation_assignments")
-    .select("*, chore:chores(name), rotation:chore_rotations(cycle_start_date, cycle_end_date, is_current), chore_signoffs(*)")
+    .select("*, chore:chores(name), rotation:chore_rotations!inner(cycle_start_date, cycle_end_date, is_current), chore_signoffs(*)")
     .eq("resident_id", id)
-    .order("created_at", { ascending: false })
-    .limit(20);
+    .eq("rotation.is_current", true)
+    .order("created_at", { ascending: false });
+  const choreAssignments = choreAssignmentsRaw ?? [];
 
   // Incidents
   const { data: incidents } = await supabase
@@ -65,6 +69,27 @@ export default async function ResidentDetailPage(
     .select("*")
     .eq("resident_id", id)
     .order("created_at", { ascending: false });
+
+  // Open charges + recent payments for this resident. Pulled here so
+  // the Payments tab and the "Next Due" header tile on this page both
+  // render off the same data without a second round trip.
+  const { data: residentOpenCharges } = await supabase
+    .from("payment_charges")
+    .select(
+      "id, charge_type, amount, paid_amount, due_date, period_start, period_end, status"
+    )
+    .eq("resident_id", id)
+    .in("status", ["open", "partial"])
+    .order("due_date", { ascending: true });
+
+  const { data: residentRecentPayments } = await supabase
+    .from("payments")
+    .select(
+      "id, amount, payment_type, payment_method, paid_at, status, receipt_number, receipt_storage_path, note"
+    )
+    .eq("resident_id", id)
+    .order("paid_at", { ascending: false })
+    .limit(20);
 
   // Notes (staff only)
   const { data: notes } = await supabase
@@ -81,13 +106,14 @@ export default async function ResidentDetailPage(
     .eq("is_active", true)
     .order("created_at", { ascending: false });
 
-  // Activity log
+  // Activity log — pull a large window; the client Timeline pages
+  // through this in chunks of 20.
   const { data: activity } = await supabase
     .from("activity_log")
     .select("*")
     .eq("resident_id", id)
     .order("created_at", { ascending: false })
-    .limit(50);
+    .limit(500);
 
   // Documents (linked via user_id)
   const { data: documents } = resident.user_id
@@ -196,6 +222,7 @@ export default async function ResidentDetailPage(
                 date_of_birth: resident.date_of_birth ?? null,
                 sobriety_date: resident.sobriety_date ?? null,
                 move_in_date: resident.move_in_date,
+                move_out_date: resident.move_out_date ?? null,
                 emergency_contact_name: resident.emergency_contact_name ?? null,
                 emergency_contact_phone: resident.emergency_contact_phone ?? null,
                 emergency_contact_relationship: resident.emergency_contact_relationship ?? null,
@@ -328,6 +355,9 @@ export default async function ResidentDetailPage(
           <TabsTrigger value="leave">
             Leave ({leaveRequests?.length ?? 0})
           </TabsTrigger>
+          <TabsTrigger value="payments">
+            Payments ({(residentOpenCharges ?? []).length})
+          </TabsTrigger>
           {isStaff && (
             <TabsTrigger value="notes">
               Notes ({notes?.length ?? 0})
@@ -420,6 +450,14 @@ export default async function ResidentDetailPage(
               No incidents
             </p>
           )}
+        </TabsContent>
+
+        <TabsContent value="payments" className="mt-4">
+          <ResidentPaymentsPanel
+            openCharges={residentOpenCharges ?? []}
+            recentPayments={residentRecentPayments ?? []}
+            canVoid={user.role === "admin"}
+          />
         </TabsContent>
 
         <TabsContent value="leave" className="mt-4">

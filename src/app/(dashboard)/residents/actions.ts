@@ -100,12 +100,17 @@ export async function updateResident(residentId: string, formData: FormData) {
 
   const parsed = updateResidentSchema.safeParse({
     full_name: formData.get("full_name") || undefined, // name should never be cleared
+    date_of_birth: fieldVal("date_of_birth"),
     phone: fieldVal("phone"),
     email: fieldVal("email"),
     emergency_contact_name: fieldVal("emergency_contact_name"),
     emergency_contact_phone: fieldVal("emergency_contact_phone"),
     emergency_contact_relationship: fieldVal("emergency_contact_relationship"),
     sobriety_date: fieldVal("sobriety_date"),
+    // move_in_date must always have a value — never write an empty
+    // string back; skip the key when blank so the DB keeps its value.
+    move_in_date: formData.get("move_in_date") || undefined,
+    move_out_date: fieldVal("move_out_date"),
     notes: fieldVal("notes"),
   });
 

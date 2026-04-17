@@ -18,6 +18,7 @@ interface EditResidentFormProps {
     date_of_birth: string | null;
     sobriety_date: string | null;
     move_in_date: string;
+    move_out_date: string | null;
     emergency_contact_name: string | null;
     emergency_contact_phone: string | null;
     emergency_contact_relationship: string | null;
@@ -125,8 +126,20 @@ export function EditResidentForm({ residentId, resident, userId, currentRole, is
           <Input id="email" name="email" type="email" defaultValue={resident.email ?? ""} />
         </div>
         <div className="space-y-1.5">
+          <Label htmlFor="date_of_birth">Date of Birth</Label>
+          <Input id="date_of_birth" name="date_of_birth" type="date" defaultValue={resident.date_of_birth ?? ""} />
+        </div>
+        <div className="space-y-1.5">
           <Label htmlFor="sobriety_date">Sobriety Date</Label>
           <Input id="sobriety_date" name="sobriety_date" type="date" defaultValue={resident.sobriety_date ?? ""} />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="move_in_date">Move-in Date</Label>
+          <Input id="move_in_date" name="move_in_date" type="date" defaultValue={resident.move_in_date} required />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="move_out_date">Move-out Date</Label>
+          <Input id="move_out_date" name="move_out_date" type="date" defaultValue={resident.move_out_date ?? ""} />
         </div>
         {isAdmin && userId && (
           <div className="space-y-1.5">

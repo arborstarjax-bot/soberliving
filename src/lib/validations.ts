@@ -65,6 +65,7 @@ export const updateResidentSchema = z.object({
   emergency_contact_relationship: z.string().nullish(),
   sobriety_date: z.string().nullish(),
   move_in_date: z.string().optional(),
+  move_out_date: z.string().nullish(),
   notes: z.string().nullish(),
 });
 
