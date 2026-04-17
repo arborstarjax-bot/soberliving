@@ -1,7 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-const publicRoutes = ["/login", "/signup", "/register", "/reset-password"];
+// Public routes that should never trigger a redirect-to-login even if
+// the session has expired. The proxy still runs `getUser()` on these
+// paths so that stale access tokens get silently refreshed, which
+// keeps users logged in across browser restarts.
+const publicRoutes = [
+  "/login",
+  "/signup",
+  "/register",
+  "/reset-password",
+  "/forgot-password",
+  "/application-denied",
+  "/offline",
+];
+
+// Keep the Supabase auth cookie around for ~1 year so the refresh
+// token survives PWA cold starts and infrequent use. Must match
+// AUTH_COOKIE_MAX_AGE in src/lib/supabase/server.ts.
+const AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
 export default async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -15,18 +32,17 @@ export default async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow public routes without any auth check
-  if (publicRoutes.some((r) => pathname.startsWith(r))) {
-    return NextResponse.next();
-  }
-
-  // For protected routes, check auth
   let supabaseResponse = NextResponse.next({ request: req });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions: {
+        maxAge: AUTH_COOKIE_MAX_AGE,
+        sameSite: "lax",
+        path: "/",
+      },
       cookies: {
         getAll() {
           return req.cookies.getAll();
@@ -44,9 +60,19 @@ export default async function proxy(req: NextRequest) {
     }
   );
 
+  // Always call `getUser()` — even on public routes — so that a stale
+  // access token gets refreshed from the refresh token and the new
+  // cookies get written back on `supabaseResponse`. This is what
+  // actually keeps users logged in across sessions.
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  // On public routes we never redirect — the page itself decides
+  // what to do with an authed / unauthed visitor.
+  if (publicRoutes.some((r) => pathname === r || pathname.startsWith(`${r}/`))) {
+    return supabaseResponse;
+  }
 
   if (!user) {
     const loginUrl = new URL("/login", req.nextUrl);

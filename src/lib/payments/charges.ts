@@ -308,7 +308,7 @@ export async function materializeNextRentCharge(commitmentId: string): Promise<{
   const { data: commitment } = await supabase
     .from("house_commitments")
     .select(
-      "id, resident_id, house_id, rent_amount, admin_fee, commitment_start_date, status, created_at"
+      "id, resident_id, house_id, rent_amount, admin_fee, commitment_start_date, status, created_at, billing_anchor_date, skip_initial_admin_fee"
     )
     .eq("id", commitmentId)
     .single<CommitmentRow>();
@@ -316,7 +316,13 @@ export async function materializeNextRentCharge(commitmentId: string): Promise<{
   if (!commitment || commitment.status !== "active") return null;
   if (!commitment.resident_id) return null;
 
-  const start = parseIsoDate(commitment.commitment_start_date);
+  // Existing-tenant activations carry a `billing_anchor_date` that
+  // overrides `commitment_start_date` as the rent-cycle anchor. Honor
+  // it here so "Pay Upcoming Rent" materializes charges on the same
+  // schedule that openRentChargesForCommitment uses.
+  const start = parseIsoDate(
+    commitment.billing_anchor_date ?? commitment.commitment_start_date
+  );
 
   // If there's already an open/partial rent charge, surface it instead
   // of opening another one. That row is the "next rent" from the
