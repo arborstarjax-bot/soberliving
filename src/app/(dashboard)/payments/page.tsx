@@ -8,6 +8,7 @@ import { DollarSign, AlertCircle } from "lucide-react";
 import { CreatePaymentDialog } from "./create-payment-dialog";
 import { VoidPaymentDialog } from "./void-payment-dialog";
 import { DeletePaymentDialog } from "./delete-payment-dialog";
+import { RecordChargePaymentDialog } from "./record-charge-payment-dialog";
 import { RentConfigDialog } from "./rent-config-dialog";
 import { DownloadReceiptButton } from "./download-receipt-button";
 import { Pagination } from "@/components/pagination";
@@ -492,13 +493,34 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
                               )}
                             </p>
                           </div>
-                          <span
-                            className={`font-semibold ${
-                              pastDue ? "text-destructive" : ""
-                            }`}
-                          >
-                            {formatCurrency(balance)}
-                          </span>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span
+                              className={`font-semibold ${
+                                pastDue ? "text-destructive" : ""
+                              }`}
+                            >
+                              {formatCurrency(balance)}
+                            </span>
+                            <RecordChargePaymentDialog
+                              residentId={c.resident_id as string}
+                              residentName={resident}
+                              houseId={c.house_id as string}
+                              charge={{
+                                id: c.id as string,
+                                charge_type: c.charge_type as string,
+                                amount: Number(c.amount),
+                                paid_amount: Number(c.paid_amount),
+                                due_date: c.due_date as string,
+                                period_start:
+                                  (c.period_start as string | null) ?? null,
+                                period_end:
+                                  (c.period_end as string | null) ?? null,
+                              }}
+                              variant={pastDue ? "default" : "outline"}
+                              size="sm"
+                              label="Record Payment"
+                            />
+                          </div>
                         </div>
                       );
                     })}
