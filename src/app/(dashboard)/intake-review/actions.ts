@@ -515,6 +515,143 @@ export async function markIntakeComplete(userId: string) {
   return {};
 }
 
+// ──────────────────────────────────────────────────────────
+// Edit / resend a pending (unsigned) house commitment.
+//
+// Different from proposeAmendment: that targets an ACTIVE commitment
+// and creates a new row with parent_commitment_id. This updates the
+// ORIGINAL pending row in place because no PDF has been signed yet
+// and no charges have opened — the commitment is still a draft.
+// ──────────────────────────────────────────────────────────
+
+const updatePendingCommitmentSchema = z.object({
+  userId: z.string().uuid(),
+  paymentFrequency: z.enum(["weekly", "monthly"]),
+  rentAmount: z.number().positive(),
+  adminFee: z.number().min(0),
+  rentDueDate: z.string().min(1),
+  commitmentStartDate: z.string().min(1),
+  commitmentTerm: z.string().min(1),
+  notes: z.string().optional(),
+});
+
+export async function updatePendingCommitment(
+  formData: z.infer<typeof updatePendingCommitmentSchema>
+) {
+  const currentUser = await requireRole("admin");
+  const adminClient = createAdminClient();
+
+  const parsed = updatePendingCommitmentSchema.safeParse(formData);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0].message };
+  }
+  const data = parsed.data;
+
+  // Find the pending commitment. Only one can exist per user (enforced
+  // by uq_house_commitments_one_pending_per_user). Guard against the
+  // zero-row case so we give a clear message instead of a cryptic
+  // update-affected-0-rows outcome.
+  const { data: pending } = await adminClient
+    .from("house_commitments")
+    .select("id, user_id, resident_id, house_id, parent_commitment_id")
+    .eq("user_id", data.userId)
+    .eq("status", "pending_resident_signature")
+    .is("parent_commitment_id", null)
+    .maybeSingle();
+
+  if (!pending) {
+    return {
+      error:
+        "No pending commitment found for this user. It may already be signed or cancelled.",
+    };
+  }
+
+  const { error: updErr } = await adminClient
+    .from("house_commitments")
+    .update({
+      payment_frequency: data.paymentFrequency,
+      rent_amount: data.rentAmount,
+      admin_fee: data.adminFee,
+      rent_due_date: data.rentDueDate,
+      commitment_start_date: data.commitmentStartDate,
+      commitment_term: data.commitmentTerm,
+      notes: data.notes || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", pending.id);
+
+  if (updErr) {
+    return { error: `Update failed: ${updErr.message}` };
+  }
+
+  // Notify the resident again — the prior notification may have been
+  // missed or the terms may have changed meaningfully.
+  await sendNotification({
+    userId: data.userId,
+    type: "commitment_updated",
+    title: "Updated Commitment — Signature Required",
+    message:
+      "Your house commitment has been updated. Please review and sign the latest version.",
+    actionUrl: "/sign-commitment",
+    entityType: "house_commitment",
+    entityId: pending.id as string,
+  });
+
+  await logActivity({
+    actorId: currentUser.id,
+    eventType: "pending_commitment_updated",
+    entityType: "house_commitment",
+    entityId: pending.id as string,
+    description: `${currentUser.full_name} edited the pending commitment (rent $${data.rentAmount.toFixed(2)}, admin fee $${data.adminFee.toFixed(2)}, starts ${data.commitmentStartDate})`,
+  });
+
+  revalidatePath("/intake-review");
+  revalidatePath(`/residents/${pending.resident_id}`);
+  revalidatePath("/sign-commitment");
+  return {};
+}
+
+export async function resendPendingCommitmentNotification(userId: string) {
+  const currentUser = await requireRole("admin");
+  const adminClient = createAdminClient();
+
+  const { data: pending } = await adminClient
+    .from("house_commitments")
+    .select("id, resident_id")
+    .eq("user_id", userId)
+    .eq("status", "pending_resident_signature")
+    .is("parent_commitment_id", null)
+    .maybeSingle();
+
+  if (!pending) {
+    return {
+      error:
+        "No pending commitment found for this user. It may already be signed.",
+    };
+  }
+
+  await sendNotification({
+    userId,
+    type: "commitment_reminder",
+    title: "Reminder — House Commitment Awaiting Signature",
+    message:
+      "Your house commitment is ready for signature. Please review and sign to finalize your move-in.",
+    actionUrl: "/sign-commitment",
+    entityType: "house_commitment",
+    entityId: pending.id as string,
+  });
+
+  await logActivity({
+    actorId: currentUser.id,
+    eventType: "pending_commitment_resent",
+    entityType: "house_commitment",
+    entityId: pending.id as string,
+    description: `${currentUser.full_name} resent the pending commitment signature request`,
+  });
+
+  return {};
+}
+
 export async function denyIntakeApplication(userId: string, reason: string) {
   // Denial is admin-only. Managers can assign/approve applicants but
   // only admins can mark an application rejected (matches the user's
