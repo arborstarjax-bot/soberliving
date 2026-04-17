@@ -68,6 +68,12 @@ interface CommitmentRow {
   commitment_start_date: string;
   status: string;
   created_at: string;
+  // Existing-tenant activation support. When set, rent cycles anchor
+  // to this date instead of commitment_start_date, and the startup
+  // admin-fee charge is suppressed. Both are optional — legacy
+  // commitments keep the original behaviour.
+  billing_anchor_date?: string | null;
+  skip_initial_admin_fee?: boolean | null;
 }
 
 // Opens rent charges for a resident up through the current calendar
@@ -87,7 +93,7 @@ export async function openRentChargesForCommitment(
   const { data: commitment } = await supabase
     .from("house_commitments")
     .select(
-      "id, resident_id, house_id, rent_amount, admin_fee, commitment_start_date, status, created_at"
+      "id, resident_id, house_id, rent_amount, admin_fee, commitment_start_date, status, created_at, billing_anchor_date, skip_initial_admin_fee"
     )
     .eq("id", commitmentId)
     .single<CommitmentRow>();
@@ -95,7 +101,14 @@ export async function openRentChargesForCommitment(
   if (!commitment || commitment.status !== "active") return 0;
   if (!commitment.resident_id) return 0;
 
-  const start = parseIsoDate(commitment.commitment_start_date);
+  // When a commitment has an explicit billing_anchor_date (existing-
+  // tenant activation), use it as both the rent-cycle anchor AND the
+  // backfill cutoff. That way the first opened charge is the future
+  // rent payment the admin scheduled, nothing is retroactively
+  // created back to commitment_start_date.
+  const start = parseIsoDate(
+    commitment.billing_anchor_date ?? commitment.commitment_start_date
+  );
 
   // System-recorded cutoff. For migration-in residents whose real
   // move-in date predates this app by months (or years), we don't
@@ -226,13 +239,18 @@ export async function openStartupChargesForCommitment(
   const { data: commitment } = await supabase
     .from("house_commitments")
     .select(
-      "id, resident_id, house_id, rent_amount, admin_fee, commitment_start_date, status"
+      "id, resident_id, house_id, rent_amount, admin_fee, commitment_start_date, status, created_at, billing_anchor_date, skip_initial_admin_fee"
     )
     .eq("id", commitmentId)
     .single<CommitmentRow>();
 
   if (!commitment || commitment.status !== "active") return;
   if (!commitment.resident_id) return;
+
+  // Existing-tenant activations may have the admin fee marked as
+  // already collected/waived. In that case we skip opening it so it
+  // doesn't show up as outstanding against the resident.
+  if (commitment.skip_initial_admin_fee) return;
 
   const startIso = commitment.commitment_start_date;
 

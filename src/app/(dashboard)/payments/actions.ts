@@ -603,8 +603,27 @@ export async function proposeAmendment(
       admin_fee: newAdminFee,
       // New rent schedule anchors on the effective date — future
       // rent charges opened against this commitment will use it as
-      // their cycle day.
-      rent_due_date: active.rent_due_date,
+      // their cycle day. Also re-derive the human-readable rent_due_date
+      // string from that date so the signed commitment PDF and UI
+      // display the new schedule (previously we copied the old string
+      // which could read e.g. "1st of each month" even after moving
+      // the anchor to the 15th).
+      rent_due_date: (() => {
+        const [y, m, d] = effectiveDate.split("-").map(Number);
+        if (!y || !m || !d) return active.rent_due_date;
+        const dt = new Date(y, m - 1, d);
+        const freq = active.payment_frequency as string | null;
+        if (freq === "weekly") {
+          const weekday = dt.toLocaleDateString("en-US", { weekday: "long" });
+          return `Every ${weekday}`;
+        }
+        const ordinal = (n: number) => {
+          const s = ["th", "st", "nd", "rd"];
+          const v = n % 100;
+          return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
+        };
+        return `${ordinal(d)} of each month`;
+      })(),
       commitment_start_date: effectiveDate,
       commitment_term: active.commitment_term,
       property_location: active.property_location,

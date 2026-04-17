@@ -59,8 +59,15 @@ export function EditTermsDialog({
     if (!open || isPending || !submittedRef.current) return;
     if (state && !state.error) {
       submittedRef.current = false;
-      setOpen(false);
-      router.refresh();
+      // Defer to the next microtask so we're not calling setState
+      // synchronously inside the effect body (avoids the react-hooks
+      // set-state-in-effect warning — the underlying pattern is fine
+      // because we only fire after the server action resolves, not on
+      // every render).
+      queueMicrotask(() => {
+        setOpen(false);
+        router.refresh();
+      });
     }
   }, [state, isPending, open, router]);
 

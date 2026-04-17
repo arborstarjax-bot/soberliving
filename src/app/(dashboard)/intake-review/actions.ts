@@ -45,7 +45,32 @@ const completeIntakeReviewSchema = z.object({
   checkInRestrictions: z.array(checkInRestrictionSchema).optional(),
   // Move-in payment — null when "no payment collected" is checked.
   moveInPayment: moveInPaymentSchema.nullable().optional(),
-});
+  // Existing-tenant activation. When true, the resident is already
+  // living in the house and caught up on rent; we skip the move-in
+  // payment flow entirely and anchor the first rent charge at
+  // nextRentDueDate instead of commitmentStartDate.
+  existingTenant: z.boolean().optional(),
+  nextRentDueDate: z.string().optional(),
+  skipInitialAdminFee: z.boolean().optional(),
+})
+  .refine(
+    (d) => !d.existingTenant || !d.moveInPayment,
+    {
+      message:
+        "A move-in payment cannot be collected when activating an existing tenant.",
+      path: ["moveInPayment"],
+    }
+  )
+  .refine(
+    (d) =>
+      !d.existingTenant ||
+      (typeof d.nextRentDueDate === "string" &&
+        /^\d{4}-\d{2}-\d{2}$/.test(d.nextRentDueDate)),
+    {
+      message: "Next rent due date is required for existing-tenant activation.",
+      path: ["nextRentDueDate"],
+    }
+  );
 
 export async function completeIntakeReview(formData: z.infer<typeof completeIntakeReviewSchema>) {
   // Intake is admin-only. Managers handle operational intake (in-person
@@ -191,6 +216,14 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
       staff_signed_at: new Date().toISOString(),
       staff_signer_id: currentUser.id,
       status: "pending_resident_signature",
+      // Existing-tenant activation flags — consumed by the charge
+      // openers in lib/payments/charges.ts.
+      billing_anchor_date:
+        data.existingTenant && data.nextRentDueDate
+          ? data.nextRentDueDate
+          : null,
+      skip_initial_admin_fee:
+        data.existingTenant && data.skipInitialAdminFee ? true : false,
     })
     .select("id")
     .single();
