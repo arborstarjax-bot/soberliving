@@ -157,10 +157,3 @@ export function EditTermsDialog({
     </>
   );
 }
-DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
