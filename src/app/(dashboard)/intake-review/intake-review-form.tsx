@@ -47,10 +47,32 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
   const [paymentFrequency, setPaymentFrequency] = useState<"weekly" | "monthly">("monthly");
   const [rentAmount, setRentAmount] = useState("800");
   const [adminFee, setAdminFee] = useState("200");
-  const [rentDueDate, setRentDueDate] = useState("1st of each month");
   const [commitmentStartDate, setCommitmentStartDate] = useState(
     new Date().toISOString().split("T")[0]
   );
+
+  // Rent Due Date is derived from frequency + start date so admins
+  // can't accidentally enter something inconsistent with the schedule.
+  // Monthly → "<ordinal> of each month" based on the start day-of-month.
+  // Weekly  → "Every <Weekday>" based on the start weekday.
+  // Uses a local-date parser so date-only strings don't drift a day in
+  // US Pacific.
+  const rentDueDate = (() => {
+    if (!commitmentStartDate) return "";
+    const [y, m, d] = commitmentStartDate.split("-").map(Number);
+    if (!y || !m || !d) return "";
+    const dt = new Date(y, m - 1, d);
+    if (paymentFrequency === "weekly") {
+      const weekday = dt.toLocaleDateString("en-US", { weekday: "long" });
+      return `Every ${weekday}`;
+    }
+    const ordinal = (n: number) => {
+      const s = ["th", "st", "nd", "rd"];
+      const v = n % 100;
+      return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
+    };
+    return `${ordinal(d)} of each month`;
+  })();
   const [commitmentTerm, setCommitmentTerm] = useState("181 days");
   const [notes, setNotes] = useState("");
   const [checkInRestrictions, setCheckInRestrictions] = useState<CheckInRestriction[]>([]);
@@ -243,9 +265,13 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
           <Label>Rent Due Date *</Label>
           <Input
             value={rentDueDate}
-            onChange={(e) => setRentDueDate(e.target.value)}
-            placeholder="e.g. 1st of each month"
+            readOnly
+            disabled
+            className="bg-muted/50"
           />
+          <p className="text-xs text-muted-foreground">
+            Auto-calculated from Payment Frequency + Commitment Start Date.
+          </p>
         </div>
 
         <div className="space-y-2">
