@@ -236,3 +236,72 @@ create policy "warnings_mutate"
   with check (
     exists (select 1 from public.user_roles ur where ur.user_id = auth.uid() and ur.role in ('admin','manager'))
   );
+
+-- ---- Sign Out Sheet ----
+-- Quick in/out log for residents leaving the house for short trips
+-- (work, meeting, store, family). Separate from leave_requests — no
+-- approval workflow, just a running log with a destination + time out
+-- and (eventually) a time in. One "open" row per resident at a time
+-- (time_in IS NULL).
+create table if not exists public.sign_out_sheet (
+  id uuid primary key default uuid_generate_v4(),
+  resident_id uuid not null references public.residents(id) on delete cascade,
+  house_id uuid not null references public.houses(id) on delete cascade,
+  destination text not null,
+  destination_category text,
+  notes text,
+  time_out timestamptz not null default now(),
+  time_in timestamptz,
+  signed_out_by uuid references public.users(id) on delete set null,
+  signed_in_by uuid references public.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_sign_out_sheet_resident_time_out_desc
+  on public.sign_out_sheet (resident_id, time_out desc);
+create index if not exists idx_sign_out_sheet_house_time_out_desc
+  on public.sign_out_sheet (house_id, time_out desc);
+-- Partial index for "currently out" lookups across a house.
+create index if not exists idx_sign_out_sheet_house_open
+  on public.sign_out_sheet (house_id) where time_in is null;
+
+-- One open sign-out at a time per resident. A resident must sign back
+-- in before starting another trip. Enforced with a partial unique
+-- index on resident_id where time_in IS NULL.
+create unique index if not exists uq_sign_out_sheet_open_per_resident
+  on public.sign_out_sheet (resident_id) where time_in is null;
+
+alter table public.sign_out_sheet enable row level security;
+
+-- Everyone authenticated can read (RLS-friendly, list filtering
+-- happens in app code based on role and house scope).
+drop policy if exists "sign_out_sheet_select" on public.sign_out_sheet;
+create policy "sign_out_sheet_select"
+  on public.sign_out_sheet for select to authenticated using (true);
+
+-- Residents can sign themselves in/out; staff can sign anyone in their
+-- house in/out. We check role via user_roles and let app code enforce
+-- the house-assignment scoping.
+drop policy if exists "sign_out_sheet_mutate" on public.sign_out_sheet;
+create policy "sign_out_sheet_mutate"
+  on public.sign_out_sheet for all to authenticated
+  using (
+    exists (
+      select 1 from public.residents r
+      where r.id = sign_out_sheet.resident_id and r.user_id = auth.uid()
+    )
+    or exists (
+      select 1 from public.user_roles ur
+      where ur.user_id = auth.uid() and ur.role in ('admin','manager')
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.residents r
+      where r.id = sign_out_sheet.resident_id and r.user_id = auth.uid()
+    )
+    or exists (
+      select 1 from public.user_roles ur
+      where ur.user_id = auth.uid() and ur.role in ('admin','manager')
+    )
+  );

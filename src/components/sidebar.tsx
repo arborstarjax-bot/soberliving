@@ -15,6 +15,7 @@ import {
   Activity,
   Settings,
   LogOut,
+  LogOut as SignOutIcon,
   Menu,
   X,
   ShieldAlert,
@@ -95,12 +96,10 @@ const NAV_ITEMS: NavItem[] = [
     icon: Activity,
     roles: ["admin", "manager"],
   },
-  {
-    label: "Settings",
-    href: "/settings",
-    icon: Settings,
-    roles: ["admin"],
-  },
+  // Settings is no longer a primary nav item — admins reach it via
+  // the gear icon in the user footer area at the bottom of the
+  // sidebar (see navContent below). Residents and managers don't have
+  // meaningful settings today, so there's no entry for them either.
 ];
 
 interface SidebarProps {
@@ -183,6 +182,16 @@ export function Sidebar({ role, userName, hasNoLeaveRestriction, unreadNotificat
             <p className="text-sm font-medium truncate text-sidebar-foreground">{userName}</p>
             <p className="text-xs text-sidebar-foreground/60 capitalize">{role}</p>
           </div>
+          {role === "admin" && (
+            <Link
+              href="/settings"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Settings"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors"
+            >
+              <Settings className="h-4 w-4" />
+            </Link>
+          )}
         </div>
         <form action="/api/auth/logout" method="POST">
           <button

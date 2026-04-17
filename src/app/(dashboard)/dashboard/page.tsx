@@ -8,6 +8,7 @@ import { Home, Users, ClipboardCheck, AlertTriangle, CalendarClock, Bed, Activit
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SobrietyDateSetter } from "./sobriety-date-setter";
+import { SignOutToggle } from "../sign-out-sheet/sign-out-toggle";
 
 export default async function DashboardPage() {
   const user = await requireAuth();
@@ -202,6 +203,32 @@ async function ResidentDashboard({ userId }: { userId: string }) {
     .order("created_at", { ascending: false })
     .limit(5);
 
+  // Currently open sign-out row (if any) + active No Leave restriction
+  // so we can render the Sign Out / Sign In toggle at the top of the
+  // resident dashboard. Residents under a No Leave or House Commitment
+  // restriction don't see the button at all.
+  const [openSignOutRes, restrictionsRes] = resident?.id
+    ? await Promise.all([
+        supabase
+          .from("sign_out_sheet")
+          .select("id, destination, time_out")
+          .eq("resident_id", resident.id)
+          .is("time_in", null)
+          .maybeSingle(),
+        supabase
+          .from("restrictions")
+          .select("restriction_type")
+          .eq("resident_id", resident.id)
+          .eq("is_active", true),
+      ])
+    : [{ data: null }, { data: [] as { restriction_type: string }[] }];
+  const openSignOut = openSignOutRes.data ?? null;
+  const residentHasNoLeave = (restrictionsRes.data ?? []).some((r) =>
+    ["no_leave", "house_commitment"].includes(
+      (r as { restriction_type: string }).restriction_type
+    )
+  );
+
   if (!resident) {
     return (
       <div className="space-y-4">
@@ -225,6 +252,14 @@ async function ResidentDashboard({ userId }: { userId: string }) {
           Welcome, {resident.full_name}
         </p>
       </div>
+
+      {!residentHasNoLeave && (
+        <SignOutToggle
+          residentId={resident.id}
+          residentName={resident.full_name}
+          openSignOut={openSignOut}
+        />
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card>

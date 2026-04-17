@@ -53,6 +53,8 @@ export const ACTIVITY_EVENT_TO_CATEGORY: Record<string, string> = {
   leave_approved: "Leave",
   leave_denied: "Leave",
   leave_returned: "Leave",
+  resident_signed_out: "Leave",
+  resident_signed_in: "Leave",
 
   // Notes
   note_added: "Notes",

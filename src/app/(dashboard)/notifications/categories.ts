@@ -10,6 +10,8 @@ export const NOTIFICATION_TYPE_TO_CATEGORY: Record<string, string> = {
   leave_rejected: "Leave",
   leave_returned: "Leave",
   leave_requested: "Leave",
+  resident_signed_out: "Leave",
+  resident_signed_in: "Leave",
   chore_reminder: "Chores",
   chore_assigned: "Chores",
   chore_completed: "Chores",
