@@ -61,8 +61,9 @@ export default async function ResidentsPage() {
   const intakeUsersQuery = isStaff && adminClient
     ? adminClient
         .from("users")
-        .select("id, full_name, email, phone, intake_completed, commitment_signed, is_active, account_status, denial_reason, denied_at, created_at")
-        .eq("intake_completed", true)
+        .select(
+          "id, full_name, email, phone, intake_completed, commitment_signed, is_active, account_status, denial_reason, denied_at, created_at, user_roles(role)"
+        )
         .eq("commitment_signed", false)
         .eq("is_active", true)
         .order("created_at", { ascending: false })
