@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 import { MarkCompleteButton } from "./mark-complete-button";
 import { ReopenButton } from "./reopen-button";
 import { ApplicationReview } from "./application-review";
+import { EditPendingCommitmentDialog } from "./edit-pending-commitment-dialog";
+import { ResendCommitmentButton } from "./resend-commitment-button";
 
 type Tab = "pending" | "approved" | "denied";
 
@@ -57,7 +59,9 @@ export default async function IntakeReviewPage({
         .order("created_at", { ascending: false }),
       adminClient
         .from("house_commitments")
-        .select("user_id, status, commitment_start_date, house_id"),
+        .select(
+          "user_id, status, commitment_start_date, house_id, payment_frequency, rent_amount, admin_fee, commitment_term, notes, parent_commitment_id"
+        ),
       adminClient
         .from("houses")
         .select("id, name, address")
@@ -223,6 +227,34 @@ export default async function IntakeReviewPage({
                           >
                             Awaiting Resident Signature
                           </Badge>
+                          {commit && !commit.parent_commitment_id && (
+                            <>
+                              <EditPendingCommitmentDialog
+                                userId={user.id}
+                                residentName={user.full_name}
+                                current={{
+                                  paymentFrequency:
+                                    (commit.payment_frequency as
+                                      | "weekly"
+                                      | "monthly") ?? "monthly",
+                                  rentAmount: Number(commit.rent_amount ?? 0),
+                                  adminFee: Number(commit.admin_fee ?? 0),
+                                  commitmentStartDate:
+                                    (commit.commitment_start_date as string) ??
+                                    new Date().toISOString().split("T")[0],
+                                  commitmentTerm:
+                                    (commit.commitment_term as string) ??
+                                    "181 days",
+                                  notes:
+                                    (commit.notes as string | null) ?? null,
+                                }}
+                              />
+                              <ResendCommitmentButton
+                                userId={user.id}
+                                userName={user.full_name}
+                              />
+                            </>
+                          )}
                           <MarkCompleteButton
                             userId={user.id}
                             userName={user.full_name}

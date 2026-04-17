@@ -103,6 +103,25 @@ export default async function ResidentDetailPage(
         .maybeSingle()
     : { data: null };
 
+  // Pending INITIAL commitment (never signed). Distinct from an
+  // amendment — parent_commitment_id is null. Shows up when the admin
+  // ran intake review but the resident hasn't signed yet. Surfaces an
+  // Edit/Resend/Mark Complete control set so staff don't have to
+  // bounce back to Intake Review.
+  const { data: pendingInitialCommitment } = resident.user_id
+    ? await supabase
+        .from("house_commitments")
+        .select(
+          "id, rent_amount, admin_fee, payment_frequency, commitment_start_date, commitment_term, rent_due_date, notes, created_at"
+        )
+        .eq("user_id", resident.user_id)
+        .eq("status", "pending_resident_signature")
+        .is("parent_commitment_id", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    : { data: null };
+
   // Backfill-on-view: open any missing admin_fee / rent charges for
   // this commitment. Residents activated before the intake-review
   // opener was wired up have commitments but zero charges; this
@@ -547,6 +566,36 @@ export default async function ResidentDetailPage(
                       (pendingAmendment.amendment_reason as string | null) ??
                       null,
                     created_at: pendingAmendment.created_at as string,
+                  }
+                : null
+            }
+            pendingInitialCommitment={
+              pendingInitialCommitment
+                ? {
+                    id: pendingInitialCommitment.id as string,
+                    paymentFrequency:
+                      ((pendingInitialCommitment.payment_frequency as
+                        | "weekly"
+                        | "monthly"
+                        | null) ?? "monthly"),
+                    rentAmount: Number(
+                      pendingInitialCommitment.rent_amount ?? 0
+                    ),
+                    adminFee: Number(
+                      pendingInitialCommitment.admin_fee ?? 0
+                    ),
+                    commitmentStartDate:
+                      (pendingInitialCommitment.commitment_start_date as string) ??
+                      "",
+                    commitmentTerm:
+                      (pendingInitialCommitment.commitment_term as string) ??
+                      "",
+                    rentDueDate:
+                      (pendingInitialCommitment.rent_due_date as
+                        | string
+                        | null) ?? null,
+                    notes:
+                      (pendingInitialCommitment.notes as string | null) ?? null,
                   }
                 : null
             }
