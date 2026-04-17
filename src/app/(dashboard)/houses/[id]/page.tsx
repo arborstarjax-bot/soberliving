@@ -195,7 +195,7 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
           so switching tabs updates the URL (and preserves state-of-house
           query params). */}
       <Tabs value={tabParam}>
-        <TabsList className="w-full overflow-x-auto justify-start no-scrollbar">
+        <TabsList className="w-full overflow-x-auto justify-start no-scrollbar [&>a]:flex-none [&>a]:whitespace-nowrap [&>button]:flex-none [&>button]:whitespace-nowrap">
           <TabsTrigger
             value="occupancy"
             nativeButton={false}

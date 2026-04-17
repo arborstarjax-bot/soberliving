@@ -148,7 +148,7 @@ export function AdminTabs({
       </div>
 
       <Tabs defaultValue="houses">
-        <TabsList className="w-full overflow-x-auto justify-start no-scrollbar">
+        <TabsList className="w-full overflow-x-auto justify-start no-scrollbar [&>button]:flex-none [&>button]:whitespace-nowrap">
           <TabsTrigger value="houses">
             <Home className="h-3.5 w-3.5 mr-1" /> Houses & Beds
           </TabsTrigger>
