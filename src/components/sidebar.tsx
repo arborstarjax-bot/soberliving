@@ -24,6 +24,7 @@ import {
   DollarSign,
 } from "lucide-react";
 import { useState } from "react";
+import { InstallAppButton } from "@/components/pwa/install-app-button";
 
 interface NavItem {
   label: string;
@@ -216,6 +217,13 @@ export function Sidebar({ role, userName, hasNoLeaveRestriction, unreadNotificat
               <Settings className="h-4 w-4" />
             </Link>
           )}
+        </div>
+        {/* PWA install affordance. The button self-hides when the app
+            is already running in standalone mode, or on browsers that
+            don't support install prompts, so it won't linger as a dead
+            element for already-installed users. */}
+        <div className="px-3 pb-2">
+          <InstallAppButton className="w-full" />
         </div>
         <form action="/api/auth/logout" method="POST">
           <button

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { ServiceWorkerRegistrar } from "@/components/pwa/service-worker-registrar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,6 +16,19 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Sober Living",
   description: "Sober living house management platform",
+  // Points browsers + app stores at the web app manifest emitted by
+  // src/app/manifest.ts. Next 16 advertises this automatically, but
+  // keeping it explicit helps non-Next tooling (Lighthouse, some
+  // mobile browsers) find it.
+  manifest: "/manifest.webmanifest",
+  icons: {
+    // Served from public/ at the URL root.
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
   // iOS home-screen / PWA meta. `apple-mobile-web-app-capable` puts the
   // app into standalone mode on iOS when added to home screen; the
   // status bar style keeps the notch area legible against our sidebar
@@ -59,7 +73,10 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        <ServiceWorkerRegistrar />
+      </body>
     </html>
   );
 }
