@@ -125,7 +125,7 @@ export function Sidebar({ role, userName, hasNoLeaveRestriction, unreadNotificat
 
   const navContent = (
     <>
-      <div className="flex h-14 items-center border-b border-sidebar-border px-4">
+      <div className="flex items-center border-b border-sidebar-border px-4 pt-[env(safe-area-inset-top)] h-[calc(3.5rem+env(safe-area-inset-top))]">
         <Link
           href="/dashboard"
           className="flex items-center gap-2 font-semibold text-sidebar-foreground"
@@ -147,10 +147,14 @@ export function Sidebar({ role, userName, hasNoLeaveRestriction, unreadNotificat
               href={item.href}
               onClick={() => setMobileOpen(false)}
               className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                // Nav rows are the primary tap target on phones — give
+                // them at least 44px of effective height (py-3 = 48px
+                // total) so they meet Apple's HIG minimum without
+                // changing desktop density at lg: breakpoint.
+                "flex items-center gap-3 rounded-md px-3 py-3 lg:py-2 text-sm font-medium transition active:scale-[0.98]",
                 isActive
                   ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground active:bg-sidebar-accent/60"
               )}
             >
               <item.icon className="h-4 w-4 shrink-0" />
@@ -195,12 +199,15 @@ export function Sidebar({ role, userName, hasNoLeaveRestriction, unreadNotificat
 
   return (
     <>
-      {/* Mobile toggle */}
-      <div className="sticky top-0 z-40 flex h-14 items-center border-b border-sidebar-border bg-sidebar px-4 lg:hidden text-sidebar-foreground">
+      {/* Mobile toggle — sticks to the top on phones, respects notch /
+          Dynamic Island via safe-area-inset-top so the bar isn't
+          behind the camera cutout on notched devices. */}
+      <div className="sticky top-0 z-40 flex h-14 items-center border-b border-sidebar-border bg-sidebar px-4 lg:hidden text-sidebar-foreground pt-[env(safe-area-inset-top)] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] h-[calc(3.5rem+env(safe-area-inset-top))]">
         <button
           type="button"
           onClick={() => setMobileOpen(!mobileOpen)}
-          className="inline-flex items-center justify-center h-9 w-9 rounded-md text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
+          aria-label={mobileOpen ? "Close menu" : "Open menu"}
+          className="inline-flex items-center justify-center h-11 w-11 -ml-2 rounded-md text-sidebar-foreground hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60 active:scale-95 transition"
         >
           {mobileOpen ? (
             <X className="h-5 w-5" />
@@ -208,7 +215,7 @@ export function Sidebar({ role, userName, hasNoLeaveRestriction, unreadNotificat
             <Menu className="h-5 w-5" />
           )}
         </button>
-        <span className="ml-3 font-semibold">Sober Living</span>
+        <span className="ml-2 font-semibold">Sober Living</span>
       </div>
 
       {/* Mobile overlay */}

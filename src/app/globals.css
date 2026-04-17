@@ -123,8 +123,44 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Disable tap-highlight blue flash + lock text scaling on iOS
+       rotation. User-space Dynamic Type is still respected through
+       the root font-size; this just stops Safari from enlarging
+       type 20% when the device is held landscape. */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
   }
   html {
     @apply font-sans;
+  }
+
+  /* iOS Safari zooms the page whenever a focused input has a
+     font-size below 16px. Most of our form fields use text-sm
+     (14px) which is fine on desktop but causes an annoying zoom
+     on phones. Bump only the text input primitives on small
+     screens — leave desktop alone so the existing density stays. */
+  @media (max-width: 640px) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+    textarea,
+    select {
+      font-size: 16px;
+    }
+  }
+}
+
+@layer utilities {
+  /* Hit-area expander: use on icon-only buttons smaller than 44px
+     so the tappable surface meets Apple's 44x44 minimum without
+     changing the visual size of the button. */
+  .touch-hit-area {
+    position: relative;
+  }
+  .touch-hit-area::after {
+    content: "";
+    position: absolute;
+    inset: 50% 50% 50% 50%;
+    margin: -22px;
+    min-width: 44px;
+    min-height: 44px;
   }
 }

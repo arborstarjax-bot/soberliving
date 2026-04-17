@@ -76,10 +76,17 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    // h-dvh (dynamic viewport height) instead of h-screen so the shell
+    // tracks mobile browser chrome (address bar collapse, keyboard
+    // open). 100vh on iOS Safari is locked to the tallest possible
+    // height which makes the bottom of the app hide behind the URL bar.
+    <div className="flex h-dvh overflow-hidden">
       <Sidebar role={user.role} userName={user.full_name} hasNoLeaveRestriction={hasNoLeaveRestriction} unreadNotificationCount={unreadNotificationCount} />
       <main className="flex-1 overflow-y-auto">
-        <div className="container mx-auto p-4 lg:p-6 max-w-7xl">
+        {/* Safe-area insets so the main scroll region respects the
+            iPhone notch, Dynamic Island, and home-indicator rail. No
+            visual change on desktop — the env() values resolve to 0. */}
+        <div className="container mx-auto p-4 lg:p-6 max-w-7xl pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] lg:pt-[max(1.5rem,env(safe-area-inset-top))] lg:pb-[max(1.5rem,env(safe-area-inset-bottom))]">
           {children}
         </div>
       </main>
