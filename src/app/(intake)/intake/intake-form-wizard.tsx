@@ -288,6 +288,7 @@ function Field({
   type = "text",
   required,
   placeholder,
+  max,
 }: {
   label: string;
   name: string;
@@ -296,6 +297,7 @@ function Field({
   type?: string;
   required?: boolean;
   placeholder?: string;
+  max?: string;
 }) {
   return (
     <div className="space-y-1.5">
@@ -311,6 +313,7 @@ function Field({
         onChange={(e) => onChange(name, e.target.value)}
         placeholder={placeholder}
         required={required}
+        max={max}
       />
     </div>
   );

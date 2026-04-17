@@ -1,7 +1,7 @@
 import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
-import { getDaysSober } from "@/lib/milestones";
+import { getDaysSober, isSobrietyDateFuture } from "@/lib/milestones";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Home, Users, ClipboardCheck, AlertTriangle, CalendarClock, Bed, Activity, DollarSign } from "lucide-react";
@@ -376,7 +376,9 @@ async function ResidentDashboard({ userId }: { userId: string }) {
                   {getDaysSober(resident.sobriety_date)} days
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Since {new Date(resident.sobriety_date).toLocaleDateString()}
+                  {isSobrietyDateFuture(resident.sobriety_date)
+                    ? `Starts ${new Date(resident.sobriety_date).toLocaleDateString()}`
+                    : `Since ${new Date(resident.sobriety_date).toLocaleDateString()}`}
                 </p>
               </div>
             ) : (

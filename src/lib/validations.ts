@@ -1,5 +1,19 @@
 import { z } from "zod";
 
+// Shared refine for a sobriety_date string value. Accepts empty/unset;
+// rejects any date strictly in the future (compared to today in the
+// server's local time). Used by every entry point that writes
+// residents.sobriety_date so a future date can never land in the DB.
+function notFutureDate(val: string | null | undefined): boolean {
+  if (!val) return true;
+  const entered = new Date(val);
+  if (isNaN(entered.getTime())) return true; // let other checks handle bad format
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  return entered.getTime() <= today.getTime();
+}
+const FUTURE_DATE_ERROR = "Sobriety date cannot be in the future";
+
 // --- Houses ---
 
 export const createHouseSchema = z.object({
@@ -63,7 +77,10 @@ export const updateResidentSchema = z.object({
   emergency_contact_name: z.string().nullish(),
   emergency_contact_phone: z.string().nullish(),
   emergency_contact_relationship: z.string().nullish(),
-  sobriety_date: z.string().nullish(),
+  sobriety_date: z
+    .string()
+    .nullish()
+    .refine(notFutureDate, { message: FUTURE_DATE_ERROR }),
   move_in_date: z.string().optional(),
   move_out_date: z.string().nullish(),
   notes: z.string().nullish(),

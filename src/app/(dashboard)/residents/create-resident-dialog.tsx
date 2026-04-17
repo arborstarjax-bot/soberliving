@@ -85,7 +85,12 @@ export function CreateResidentDialog({ houses }: Props) {
 
           <div className="space-y-2">
             <Label htmlFor="sobriety_date">Sobriety Date</Label>
-            <Input id="sobriety_date" name="sobriety_date" type="date" />
+            <Input
+              id="sobriety_date"
+              name="sobriety_date"
+              type="date"
+              max={new Date().toISOString().slice(0, 10)}
+            />
           </div>
 
           <div className="border-t pt-4">

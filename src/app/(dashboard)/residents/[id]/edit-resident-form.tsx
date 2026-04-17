@@ -131,7 +131,13 @@ export function EditResidentForm({ residentId, resident, userId, currentRole, is
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="sobriety_date">Sobriety Date</Label>
-          <Input id="sobriety_date" name="sobriety_date" type="date" defaultValue={resident.sobriety_date ?? ""} />
+          <Input
+            id="sobriety_date"
+            name="sobriety_date"
+            type="date"
+            defaultValue={resident.sobriety_date ?? ""}
+            max={new Date().toISOString().slice(0, 10)}
+          />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="move_in_date">Move-in Date</Label>
