@@ -64,7 +64,10 @@ export const createResidentSchema = z.object({
   emergency_contact_name: z.string().min(1, "Emergency contact name is required"),
   emergency_contact_phone: z.string().min(1, "Emergency contact phone is required"),
   emergency_contact_relationship: z.string().optional(),
-  sobriety_date: z.string().optional(),
+  sobriety_date: z
+    .string()
+    .optional()
+    .refine(notFutureDate, { message: FUTURE_DATE_ERROR }),
   move_in_date: z.string().min(1, "Move-in date is required"),
   notes: z.string().optional(),
 });
