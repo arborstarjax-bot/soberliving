@@ -4,7 +4,7 @@ import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { DollarSign, AlertCircle, Calendar } from "lucide-react";
+import { DollarSign, AlertCircle } from "lucide-react";
 import { CreatePaymentDialog } from "./create-payment-dialog";
 import { VoidPaymentDialog } from "./void-payment-dialog";
 import { RentConfigDialog } from "./rent-config-dialog";
@@ -12,6 +12,7 @@ import { DownloadReceiptButton } from "./download-receipt-button";
 import { Pagination } from "@/components/pagination";
 import { getPageParams, buildPaginationMeta } from "@/lib/pagination";
 import { sweepOpenChargesForActiveCommitments } from "@/lib/payments/charges";
+import { ResidentPaymentsView } from "./resident-view";
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-US", {
@@ -92,6 +93,12 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
   // This has to happen before the payments query runs because the filter
   // depends on its id, but every other query runs in parallel after.
   let residentRecord: { id: string } | null = null;
+  let residentTerms: {
+    rent_amount: number;
+    admin_fee: number | null;
+    commitment_start_date: string;
+    pdf_storage_path: string | null;
+  } | null = null;
   if (user.role === "resident") {
     const { data } = await supabase
       .from("residents")
@@ -100,6 +107,35 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
       .eq("status", "active")
       .single();
     residentRecord = data;
+
+    // Pull the active commitment for the Payment Terms card. Treat
+    // this as display-only — the source of truth stays on the signed
+    // PDF; terms changes flow through a new commitment amendment.
+    if (residentRecord) {
+      const { data: commitment } = await supabase
+        .from("house_commitments")
+        .select(
+          "rent_amount, admin_fee, commitment_start_date, pdf_storage_path"
+        )
+        .eq("resident_id", residentRecord.id)
+        .eq("status", "active")
+        .order("commitment_start_date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (commitment) {
+        residentTerms = {
+          rent_amount: Number(commitment.rent_amount ?? 0),
+          admin_fee:
+            commitment.admin_fee !== null && commitment.admin_fee !== undefined
+              ? Number(commitment.admin_fee)
+              : null,
+          commitment_start_date:
+            commitment.commitment_start_date as string,
+          pdf_storage_path:
+            (commitment.pdf_storage_path as string | null) ?? null,
+        };
+      }
+    }
   }
 
   // Payments list — paginated so the grid doesn't try to render 1000+
@@ -213,10 +249,6 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
     configMap[rc.house_id] = rc;
   }
 
-  const residentNextDue = openChargeRows
-    .filter((c) => c.charge_type === "rent")
-    .sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -247,27 +279,34 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
         )}
       </div>
 
-      {/* Resident "Next Due" card — replaces the deprecated pending-stats tile */}
-      {user.role === "resident" && residentNextDue && (
-        <Card className="border-amber-500/30 bg-amber-500/5">
-          <CardContent className="flex items-start justify-between gap-4 p-4">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">
-                Next Rent Due
-              </p>
-              <p className="mt-1 text-2xl font-bold">
-                {formatCurrency(
-                  Number(residentNextDue.amount) -
-                    Number(residentNextDue.paid_amount)
-                )}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Due {formatDueDate(residentNextDue.due_date)}
-              </p>
-            </div>
-            <Calendar className="h-8 w-8 text-amber-600/60 shrink-0" />
-          </CardContent>
-        </Card>
+      {/* Resident view — Payment Terms card + Upcoming/Past tabs
+          with next-due hero, open charges, and paginated receipts. */}
+      {user.role === "resident" && (
+        <ResidentPaymentsView
+          terms={residentTerms}
+          openCharges={openChargeRows.map((c) => ({
+            id: c.id,
+            charge_type: c.charge_type,
+            amount: Number(c.amount),
+            paid_amount: Number(c.paid_amount),
+            due_date: c.due_date,
+            period_start: c.period_start,
+            period_end: c.period_end,
+            status: c.status,
+          }))}
+          payments={(payments ?? []).map((p) => ({
+            id: p.id as string,
+            amount: Number(p.amount),
+            payment_type: (p.payment_type as string | null) ?? null,
+            payment_method: (p.payment_method as string | null) ?? null,
+            paid_at: p.paid_at as string,
+            status: p.status as string,
+            receipt_number: (p.receipt_number as string | null) ?? null,
+            receipt_storage_path:
+              (p.receipt_storage_path as string | null) ?? null,
+            note: (p.note as string | null) ?? null,
+          }))}
+        />
       )}
 
       {isStaff && (
@@ -426,21 +465,7 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
             />
           </TabsContent>
         </Tabs>
-      ) : (payments ?? []).length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <DollarSign className="mx-auto h-12 w-12 text-muted-foreground/50" />
-            <p className="mt-4 text-muted-foreground">No payments recorded</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <PaymentLedgerList
-          payments={payments ?? []}
-          userRole={user.role}
-          meta={meta}
-          params={params}
-        />
-      )}
+      ) : null}
     </div>
   );
 }

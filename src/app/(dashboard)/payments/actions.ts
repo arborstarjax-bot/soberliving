@@ -85,11 +85,11 @@ export async function createPayment(
 
   // If a charge was selected, pull it and prefill period / due_date
   // from it so the receipt reflects which billing period this covers.
+  // We only need the period fields here — the paid_amount math is
+  // done server-side by apply_payment_to_charge so we no longer
+  // read/write paid_amount from JS.
   type ChargeRow = {
     id: string;
-    amount: number;
-    paid_amount: number;
-    payment_id: string | null;
     due_date: string;
     period_start: string | null;
     period_end: string | null;
@@ -98,7 +98,7 @@ export async function createPayment(
   if (parsed.data.charge_id) {
     const { data } = await supabase
       .from("payment_charges")
-      .select("id, amount, paid_amount, payment_id, due_date, period_start, period_end")
+      .select("id, due_date, period_start, period_end")
       .eq("id", parsed.data.charge_id)
       .single();
     chargeRow = (data as unknown as ChargeRow | null) ?? null;
@@ -151,20 +151,17 @@ export async function createPayment(
     return { error: error?.message ?? "Failed to record payment" };
   }
 
-  // Update the charge if one was linked. If full amount covers the
-  // charge → paid. Otherwise mark partial with the running total.
+  // Update the charge atomically via RPC. Doing the read-modify-write
+  // in JS let two concurrent $250 payments each read paid_amount=0 and
+  // both write 250 — the charge was undercredited. The RPC does the
+  // entire update in one statement so the arithmetic is performed on
+  // the server under row lock.
   if (chargeRow) {
-    const newPaid = Number(chargeRow.paid_amount) + Number(parsed.data.amount);
-    const status = newPaid >= Number(chargeRow.amount) ? "paid" : "partial";
-    await admin
-      .from("payment_charges")
-      .update({
-        paid_amount: newPaid,
-        status,
-        payment_id: status === "paid" ? inserted.id : chargeRow.payment_id ?? null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", chargeRow.id);
+    await admin.rpc("apply_payment_to_charge", {
+      p_charge_id: chargeRow.id,
+      p_amount: parsed.data.amount,
+      p_payment_id: inserted.id,
+    });
   }
 
   // Generate + upload the receipt PDF. Any failure here is logged
@@ -289,36 +286,15 @@ export async function voidPayment(
   if (error) return { error: error.message };
 
   // If this payment was applied to a charge, unwind the application
-  // so the charge re-opens with the correct paid_amount.
+  // atomically. The RPC does a single UPDATE that subtracts the
+  // amount, re-derives status, and nulls out payment_id under row
+  // lock, so two concurrent voids against different payments on the
+  // same charge can't clobber each other.
   if (payment.charge_id) {
-    const { data: charge } = await admin
-      .from("payment_charges")
-      .select("amount, paid_amount")
-      .eq("id", payment.charge_id)
-      .single();
-    if (charge) {
-      const newPaid = Math.max(
-        0,
-        Number(charge.paid_amount) - Number(payment.amount)
-      );
-      const newStatus =
-        newPaid === 0 ? "open" : newPaid >= Number(charge.amount) ? "paid" : "partial";
-      // Null out payment_id regardless of post-void status. If the
-      // charge remains "paid" because of other non-voided payments,
-      // we don't want to leave a dangling reference to the voided
-      // payment — the app treats payment_id as "the settling payment"
-      // and a voided row isn't valid. Callers that need the full
-      // application history can look at the payments table directly.
-      await admin
-        .from("payment_charges")
-        .update({
-          paid_amount: newPaid,
-          status: newStatus,
-          payment_id: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", payment.charge_id);
-    }
+    await admin.rpc("reverse_payment_from_charge", {
+      p_charge_id: payment.charge_id,
+      p_amount: payment.amount,
+    });
   }
 
   const residentName = (

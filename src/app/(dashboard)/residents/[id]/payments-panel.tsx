@@ -10,8 +10,11 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
+  FileText,
+  ClipboardList,
 } from "lucide-react";
 import { DownloadReceiptButton } from "@/app/(dashboard)/payments/download-receipt-button";
+import { getDocumentUrl } from "@/app/(intake)/actions";
 
 // --- Types ---
 // Kept local so the parent page can pass the raw Supabase row shape
@@ -41,10 +44,19 @@ interface RecentPayment {
   note: string | null;
 }
 
+interface PaymentTerms {
+  rent_amount: number;
+  admin_fee: number | null;
+  commitment_start_date: string;
+  pdf_storage_path: string | null;
+}
+
 interface Props {
   openCharges: OpenCharge[];
   recentPayments: RecentPayment[];
   canVoid: boolean;
+  terms: PaymentTerms | null;
+  isAdmin: boolean;
 }
 
 const PAGE_SIZE = 20;
@@ -83,6 +95,12 @@ function formatDate(value: string): string {
   return new Date(value).toLocaleDateString();
 }
 
+function ordinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
+}
+
 function daysUntil(dateStr: string): number {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -96,6 +114,7 @@ function daysUntil(dateStr: string): number {
 export function ResidentPaymentsPanel({
   openCharges,
   recentPayments,
+  terms,
 }: Props) {
   const [page, setPage] = useState(0);
 
@@ -123,6 +142,10 @@ export function ResidentPaymentsPanel({
 
   return (
     <div className="space-y-6">
+      {/* Payment Terms — the current signed commitment drives rent
+          schedule. Source of truth; edits require a new amendment. */}
+      {terms && <PaymentTermsCard terms={terms} />}
+
       {/* Next Due hero card */}
       {nextCharge ? (
         <NextDueCard charge={nextCharge} />
@@ -372,6 +395,80 @@ function ReceiptRow({ payment }: { payment: RecentPayment }) {
             receiptNumber={payment.receipt_number}
           />
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PaymentTermsCard({ terms }: { terms: PaymentTerms }) {
+  const [downloading, setDownloading] = useState(false);
+  const start = new Date(terms.commitment_start_date);
+  const dueDay = start.getDate();
+
+  async function openCommitment() {
+    if (!terms.pdf_storage_path) return;
+    setDownloading(true);
+    try {
+      const res = await getDocumentUrl(terms.pdf_storage_path);
+      if (res.url) window.open(res.url, "_blank");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  return (
+    <Card className="border-primary/20">
+      <CardContent className="py-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <ClipboardList className="h-4 w-4 text-primary" />
+            <p className="text-sm font-semibold">Payment Terms</p>
+          </div>
+          <Badge variant="outline" className="text-[10px]">
+            From Commitment
+          </Badge>
+        </div>
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <p className="text-xs text-muted-foreground">Monthly Rent</p>
+            <p className="font-semibold">{formatMoney(terms.rent_amount)}</p>
+          </div>
+          {terms.admin_fee !== null && terms.admin_fee > 0 && (
+            <div>
+              <p className="text-xs text-muted-foreground">Admin Fee</p>
+              <p className="font-semibold">{formatMoney(terms.admin_fee)}</p>
+            </div>
+          )}
+          <div>
+            <p className="text-xs text-muted-foreground">Due Day</p>
+            <p className="font-semibold">{ordinal(dueDay)} of each month</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Effective</p>
+            <p className="font-semibold">
+              {formatDate(terms.commitment_start_date)}
+            </p>
+          </div>
+        </div>
+        {terms.pdf_storage_path && (
+          <div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5"
+              disabled={downloading}
+              onClick={openCommitment}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              View Signed Commitment
+            </Button>
+          </div>
+        )}
+        <p className="text-[11px] text-muted-foreground">
+          To change these terms, a new commitment amendment needs to be
+          drafted and signed by the resident.
+        </p>
       </CardContent>
     </Card>
   );

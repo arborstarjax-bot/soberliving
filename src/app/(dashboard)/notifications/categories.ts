@@ -15,6 +15,7 @@ export const NOTIFICATION_TYPE_TO_CATEGORY: Record<string, string> = {
   chore_reminder: "Chores",
   chore_assigned: "Chores",
   chore_completed: "Chores",
+  chore_submitted: "Chores",
   chore_approved: "Chores",
   chore_rejected: "Chores",
   missed_chore: "Discipline",

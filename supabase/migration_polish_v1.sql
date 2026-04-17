@@ -427,3 +427,62 @@ begin
 end$$;
 
 grant execute on function public.next_receipt_number(int) to authenticated;
+
+-- ---- Atomic charge-balance updates ----
+-- createPayment / voidPayment used to read payment_charges.paid_amount,
+-- add/subtract in JS, then write the new value back. Two concurrent
+-- payments against the same charge could clobber each other. These two
+-- RPCs collapse the read-modify-write into a single atomic UPDATE so
+-- the math is performed server-side.
+create or replace function public.apply_payment_to_charge(
+  p_charge_id uuid,
+  p_amount numeric,
+  p_payment_id uuid
+)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.payment_charges
+     set paid_amount = paid_amount + p_amount,
+         status      = case
+                         when paid_amount + p_amount >= amount then 'paid'
+                         else 'partial'
+                       end,
+         payment_id  = case
+                         when paid_amount + p_amount >= amount then p_payment_id
+                         else payment_id
+                       end,
+         updated_at  = now()
+   where id = p_charge_id;
+$$;
+
+grant execute on function public.apply_payment_to_charge(uuid, numeric, uuid) to authenticated;
+
+create or replace function public.reverse_payment_from_charge(
+  p_charge_id uuid,
+  p_amount numeric
+)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.payment_charges
+     set paid_amount = greatest(0, paid_amount - p_amount),
+         status      = case
+                         when greatest(0, paid_amount - p_amount) = 0 then 'open'
+                         when greatest(0, paid_amount - p_amount) >= amount then 'paid'
+                         else 'partial'
+                       end,
+         -- Always null out payment_id on a void — callers that need
+         -- the full application history can consult the payments
+         -- table. A dangling reference to a voided payment is worse
+         -- than a null.
+         payment_id  = null,
+         updated_at  = now()
+   where id = p_charge_id;
+$$;
+
+grant execute on function public.reverse_payment_from_charge(uuid, numeric) to authenticated;

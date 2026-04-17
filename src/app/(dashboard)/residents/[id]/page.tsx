@@ -89,7 +89,22 @@ export default async function ResidentDetailPage(
     )
     .eq("resident_id", id)
     .order("paid_at", { ascending: false })
-    .limit(20);
+    .limit(100);
+
+  // Active commitment — source of truth for payment terms (rent,
+  // admin fee, due day). Shown as a "Payment Terms" card on the
+  // Payments tab so admins know what's currently in force without
+  // cross-referencing the signed PDF.
+  const { data: activeCommitment } = await supabase
+    .from("house_commitments")
+    .select(
+      "id, rent_amount, admin_fee, commitment_start_date, status, pdf_storage_path"
+    )
+    .eq("resident_id", id)
+    .eq("status", "active")
+    .order("commitment_start_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   // Notes (staff only)
   const { data: notes } = await supabase
@@ -457,6 +472,24 @@ export default async function ResidentDetailPage(
             openCharges={residentOpenCharges ?? []}
             recentPayments={residentRecentPayments ?? []}
             canVoid={user.role === "admin"}
+            terms={
+              activeCommitment
+                ? {
+                    rent_amount: Number(activeCommitment.rent_amount ?? 0),
+                    admin_fee:
+                      activeCommitment.admin_fee !== null &&
+                      activeCommitment.admin_fee !== undefined
+                        ? Number(activeCommitment.admin_fee)
+                        : null,
+                    commitment_start_date:
+                      activeCommitment.commitment_start_date as string,
+                    pdf_storage_path:
+                      (activeCommitment.pdf_storage_path as string | null) ??
+                      null,
+                  }
+                : null
+            }
+            isAdmin={user.role === "admin"}
           />
         </TabsContent>
 
