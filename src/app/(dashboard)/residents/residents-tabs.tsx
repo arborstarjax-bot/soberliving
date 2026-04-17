@@ -10,6 +10,8 @@ import { DeleteResidentButton } from "./delete-resident-button";
 import { MarkCompleteButton } from "../intake-review/mark-complete-button";
 import { ApplicationReview } from "../intake-review/application-review";
 import { ReopenButton } from "../intake-review/reopen-button";
+import { EditPendingCommitmentDialog } from "../intake-review/edit-pending-commitment-dialog";
+import { ResendCommitmentButton } from "../intake-review/resend-commitment-button";
 import { ResendInviteButton } from "../users/resend-invite-button";
 import { SendCheckInDialog } from "./check-ins/send-checkin-dialog";
 import { CheckInList } from "./check-ins/checkin-list";
@@ -58,6 +60,15 @@ interface IntakeAwaitingUser {
   id: string;
   full_name: string;
   email: string;
+  commitment: {
+    paymentFrequency: "weekly" | "monthly";
+    rentAmount: number;
+    adminFee: number;
+    commitmentStartDate: string;
+    commitmentTerm: string;
+    notes: string | null;
+    isAmendment: boolean;
+  } | null;
 }
 
 interface IntakeDeniedUser {
@@ -638,6 +649,29 @@ export function ResidentsTabs({
                         </p>
                       </div>
                       <div className="flex shrink-0 flex-wrap items-center gap-2">
+                        {user.commitment && !user.commitment.isAmendment && (
+                          <>
+                            <EditPendingCommitmentDialog
+                              userId={user.id}
+                              residentName={user.full_name}
+                              current={{
+                                paymentFrequency:
+                                  user.commitment.paymentFrequency,
+                                rentAmount: user.commitment.rentAmount,
+                                adminFee: user.commitment.adminFee,
+                                commitmentStartDate:
+                                  user.commitment.commitmentStartDate,
+                                commitmentTerm:
+                                  user.commitment.commitmentTerm,
+                                notes: user.commitment.notes,
+                              }}
+                            />
+                            <ResendCommitmentButton
+                              userId={user.id}
+                              userName={user.full_name}
+                            />
+                          </>
+                        )}
                         <MarkCompleteButton
                           userId={user.id}
                           userName={user.full_name}

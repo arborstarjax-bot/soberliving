@@ -162,6 +162,15 @@ export default async function ResidentsPage() {
     id: string;
     full_name: string;
     email: string;
+    commitment: {
+      paymentFrequency: "weekly" | "monthly";
+      rentAmount: number;
+      adminFee: number;
+      commitmentStartDate: string;
+      commitmentTerm: string;
+      notes: string | null;
+      isAmendment: boolean;
+    } | null;
   }> = [];
   let intakeDenied: Array<{
     id: string;
@@ -211,7 +220,9 @@ export default async function ResidentsPage() {
     const [{ data: existingCommitments }, { data: intakeForms }] = await Promise.all([
       adminClient
         .from("house_commitments")
-        .select("user_id, status")
+        .select(
+          "user_id, status, payment_frequency, rent_amount, admin_fee, commitment_start_date, commitment_term, notes, parent_commitment_id"
+        )
         .in("user_id", activeIntakeIds.length > 0 ? activeIntakeIds : ["none"]),
       adminClient
         .from("intake_forms")
@@ -220,7 +231,7 @@ export default async function ResidentsPage() {
     ]);
 
     const commitmentByUser = new Map(
-      (existingCommitments ?? []).map((c) => [c.user_id, c.status])
+      (existingCommitments ?? []).map((c) => [c.user_id, c])
     );
     const intakeFormByUser = new Map(
       (intakeForms ?? []).map((f) => [f.user_id, f])
@@ -230,11 +241,27 @@ export default async function ResidentsPage() {
       const commitment = commitmentByUser.get(u.id);
       const form = intakeFormByUser.get(u.id);
 
-      if (commitment === "pending_resident_signature") {
+      if (commitment?.status === "pending_resident_signature") {
         intakeAwaiting.push({
           id: u.id,
           full_name: u.full_name,
           email: u.email,
+          commitment: {
+            paymentFrequency:
+              ((commitment.payment_frequency as
+                | "weekly"
+                | "monthly"
+                | null) ?? "monthly"),
+            rentAmount: Number(commitment.rent_amount ?? 0),
+            adminFee: Number(commitment.admin_fee ?? 0),
+            commitmentStartDate:
+              (commitment.commitment_start_date as string | null) ??
+              new Date().toISOString().split("T")[0],
+            commitmentTerm:
+              (commitment.commitment_term as string | null) ?? "181 days",
+            notes: (commitment.notes as string | null) ?? null,
+            isAmendment: Boolean(commitment.parent_commitment_id),
+          },
         });
         continue;
       }
