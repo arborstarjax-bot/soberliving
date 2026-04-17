@@ -467,6 +467,10 @@ export async function markIntakeComplete(userId: string) {
   // back so we can seed the initial charges — without this call the
   // resident lands on their dashboard with no Next Due card and the
   // payment ledger stays empty until a charge is manually created.
+  // Also grab resident_id so we can revalidate the resident detail
+  // page (this action is now also called from the resident payments
+  // panel, where the draft card otherwise stays visible until manual
+  // refresh).
   const { data: activated } = await adminClient
     .from("house_commitments")
     .update({
@@ -475,7 +479,7 @@ export async function markIntakeComplete(userId: string) {
     })
     .eq("user_id", userId)
     .eq("status", "pending_resident_signature")
-    .select("id")
+    .select("id, resident_id")
     .maybeSingle();
 
   // Mark user as commitment signed
@@ -512,6 +516,9 @@ export async function markIntakeComplete(userId: string) {
 
   revalidatePath("/intake-review");
   revalidatePath("/users");
+  if (activated?.resident_id) {
+    revalidatePath(`/residents/${activated.resident_id}`);
+  }
   return {};
 }
 
