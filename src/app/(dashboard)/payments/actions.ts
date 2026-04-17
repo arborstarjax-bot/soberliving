@@ -364,6 +364,29 @@ export async function upsertRentConfig(
     .eq("is_active", true)
     .neq("id", inserted.id);
 
+  // Rent config changes are financially significant — keep the
+  // audit trail entry so we can see who changed the rent schedule
+  // and when from the Activity feed.
+  const { data: house } = await supabase
+    .from("houses")
+    .select("name")
+    .eq("id", parsed.data.house_id)
+    .single();
+
+  await logActivity({
+    houseId: parsed.data.house_id,
+    actorId: user.id,
+    eventType: "rent_config_updated",
+    entityType: "rent_config",
+    entityId: parsed.data.house_id,
+    description: `Rent config updated for ${house?.name ?? "house"}: $${parsed.data.monthly_amount}/mo, due day ${parsed.data.due_day_of_month}`,
+    metadata: {
+      monthly_amount: parsed.data.monthly_amount,
+      due_day: parsed.data.due_day_of_month,
+    },
+  });
+
   revalidatePath("/payments");
+  revalidatePath(`/houses/${parsed.data.house_id}`);
   return {};
 }

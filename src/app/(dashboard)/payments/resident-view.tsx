@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { DownloadReceiptButton } from "./download-receipt-button";
 import { getDocumentUrl } from "@/app/(intake)/actions";
+import { daysUntilLocal, dayOfMonthLocal } from "@/lib/local-date";
 
 // Resident-facing payments view. Single component because the page
 // already does all the data fetching; this just handles presentation
@@ -93,11 +94,9 @@ function ordinal(n: number): string {
 }
 
 function daysUntil(iso: string): number {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const d = new Date(iso);
-  d.setHours(0, 0, 0, 0);
-  return Math.round((d.getTime() - today.getTime()) / 86400000);
+  // Parsing the date-only string as local avoids the US-timezone
+  // off-by-one where `new Date("2026-04-15")` becomes April 14.
+  return daysUntilLocal(iso);
 }
 
 export function ResidentPaymentsView({ openCharges, payments, terms }: Props) {
@@ -249,7 +248,7 @@ export function ResidentPaymentsView({ openCharges, payments, terms }: Props) {
 
 function PaymentTermsCard({ terms }: { terms: PaymentTerms }) {
   const [loading, setLoading] = useState(false);
-  const dueDay = new Date(terms.commitment_start_date).getDate();
+  const dueDay = dayOfMonthLocal(terms.commitment_start_date);
 
   async function open() {
     if (!terms.pdf_storage_path) return;

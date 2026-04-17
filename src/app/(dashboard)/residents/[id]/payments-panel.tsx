@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { DownloadReceiptButton } from "@/app/(dashboard)/payments/download-receipt-button";
 import { getDocumentUrl } from "@/app/(intake)/actions";
+import { daysUntilLocal, dayOfMonthLocal } from "@/lib/local-date";
 
 // --- Types ---
 // Kept local so the parent page can pass the raw Supabase row shape
@@ -102,12 +103,9 @@ function ordinal(n: number): string {
 }
 
 function daysUntil(dateStr: string): number {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const due = new Date(dateStr);
-  due.setHours(0, 0, 0, 0);
-  const ms = due.getTime() - today.getTime();
-  return Math.round(ms / (1000 * 60 * 60 * 24));
+  // Uses parseIsoLocal so date-only strings ("2026-04-15") don't drift
+  // a day when rendered in US Pacific. See src/lib/local-date.ts.
+  return daysUntilLocal(dateStr);
 }
 
 // --- Component ---
@@ -402,8 +400,10 @@ function ReceiptRow({ payment }: { payment: RecentPayment }) {
 
 function PaymentTermsCard({ terms }: { terms: PaymentTerms }) {
   const [downloading, setDownloading] = useState(false);
-  const start = new Date(terms.commitment_start_date);
-  const dueDay = start.getDate();
+  // Pull the day-of-month directly from the ISO string — going
+  // through `new Date(iso).getDate()` drifts a day in US timezones
+  // because date-only strings parse as UTC midnight.
+  const dueDay = dayOfMonthLocal(terms.commitment_start_date);
 
   async function openCommitment() {
     if (!terms.pdf_storage_path) return;

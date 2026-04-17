@@ -58,6 +58,7 @@ import { issueDemerit, resolveDemerit } from "./actions";
 // flow. We don't want two parallel UIs drifting apart.
 import { CreatePaymentDialog } from "@/app/(dashboard)/payments/create-payment-dialog";
 import { DownloadReceiptButton } from "@/app/(dashboard)/payments/download-receipt-button";
+import { todayLocalIso } from "@/lib/local-date";
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -132,7 +133,7 @@ export function AdminTabs({
   openCharges,
   recentPayments,
 }: AdminTabsProps) {
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = todayLocalIso();
   const pastDueCount = openCharges.filter((c) => c.due_date < todayIso).length;
   return (
     <div className="space-y-6">
@@ -1446,12 +1447,16 @@ function PaymentsTab({
   openCharges: OpenChargeRow[];
   recentPayments: RecentPaymentRow[];
 }) {
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = todayLocalIso();
   const weekAhead = new Date();
   weekAhead.setDate(weekAhead.getDate() + 7);
-  const weekAheadIso = weekAhead.toISOString().slice(0, 10);
-  const monthStartIso =
-    new Date().toISOString().slice(0, 7) + "-01";
+  const weekAheadIso = `${weekAhead.getFullYear()}-${String(
+    weekAhead.getMonth() + 1
+  ).padStart(2, "0")}-${String(weekAhead.getDate()).padStart(2, "0")}`;
+  const monthStartNow = new Date();
+  const monthStartIso = `${monthStartNow.getFullYear()}-${String(
+    monthStartNow.getMonth() + 1
+  ).padStart(2, "0")}-01`;
 
   // Bucket open charges by urgency so the summary tiles + the list
   // groups read off the same filtered arrays (no duplicate logic).
