@@ -149,28 +149,6 @@
 }
 
 @layer utilities {
-  /* Hit-area expander: use on icon-only buttons smaller than 44px
-     so the tappable surface meets Apple's 44x44 minimum without
-     changing the visual size of the button.
-     pointer-events: none on ::after is REQUIRED — the pseudo
-     element's touch zone extends beyond the button and was causing
-     adjacent taps to land on the wrong element on iOS Safari when
-     multiple touch-hit-area icons sat side by side in a row (e.g.
-     chore signoff table). Without pointer-events:none the ::after
-     of button A would intercept taps landing on button B. */
-  .touch-hit-area {
-    position: relative;
-  }
-  .touch-hit-area::after {
-    content: "";
-    position: absolute;
-    inset: 50% 50% 50% 50%;
-    margin: -16px;
-    min-width: 44px;
-    min-height: 44px;
-    pointer-events: none;
-  }
-
   /* Hide the scrollbar track for horizontally-scrollable tab strips
      and pill rows on mobile, while keeping scroll behavior intact.
      Used by TabsList and similar overflow-x-auto rows so the strip

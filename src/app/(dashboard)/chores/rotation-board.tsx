@@ -258,7 +258,7 @@ function SignoffButton({ signoffId }: { signoffId: string }) {
       <button
         type="button"
         disabled={pending}
-        className="touch-hit-area inline-flex items-center justify-center h-7 w-7 rounded-full border-2 border-dashed border-primary/40 text-primary/60 hover:border-primary hover:text-primary hover:bg-primary/10 active:scale-95 transition text-xs"
+        className="inline-flex items-center justify-center h-9 w-9 rounded-full border-2 border-dashed border-primary/40 text-primary/60 hover:border-primary hover:text-primary hover:bg-primary/10 active:scale-95 transition text-xs"
         title="Mark as done"
         onClick={() => {
           setError(null);
@@ -323,7 +323,7 @@ function VerifyButtons({ signoffId }: { signoffId: string }) {
           <button
             type="button"
             disabled={pending}
-            className="touch-hit-area inline-flex items-center justify-center h-6 w-6 rounded-full bg-green-100 text-green-700 hover:bg-green-200 active:scale-95 transition"
+            className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-green-100 text-green-700 hover:bg-green-200 active:scale-95 transition"
             title="Approve"
             onClick={() => {
               setError(null);
@@ -338,7 +338,7 @@ function VerifyButtons({ signoffId }: { signoffId: string }) {
           <button
             type="button"
             disabled={pending}
-            className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
+            className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
             title="Reject"
             onClick={() => setShowRejectNote(true)}
           >
