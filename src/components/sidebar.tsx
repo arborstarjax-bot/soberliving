@@ -77,6 +77,12 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["admin", "manager", "resident"],
   },
   {
+    label: "Sign Out Sheet",
+    href: "/sign-out-sheet",
+    icon: SignOutIcon,
+    roles: ["admin", "manager", "resident"],
+  },
+  {
     label: "Bulletin",
     href: "/bulletin",
     icon: MessageSquare,

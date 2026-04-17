@@ -238,10 +238,12 @@ async function ResidentDashboard({ userId }: { userId: string }) {
         { data: null },
       ];
   const openSignOut = openSignOutRes.data ?? null;
-  const residentHasNoLeave = (restrictionsRes.data ?? []).some((r) =>
-    ["no_leave", "house_commitment"].includes(
-      (r as { restriction_type: string }).restriction_type
-    )
+  // Per product spec: the Sign Out toggle is only hidden by an active
+  // No Leave restriction. House Commitment and No Overnight do NOT
+  // hide it (No Overnight is about curfew, not whether they can step
+  // out at all).
+  const residentHasNoLeave = (restrictionsRes.data ?? []).some(
+    (r) => (r as { restriction_type: string }).restriction_type === "no_leave"
   );
   const nextDueCharge =
     (nextDueRes?.data as unknown as {
@@ -269,13 +271,10 @@ async function ResidentDashboard({ userId }: { userId: string }) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">My Dashboard</h1>
-        <p className="text-muted-foreground">
-          Welcome, {resident.full_name}
-        </p>
-      </div>
-
+      {/* Sign Out toggle is the very first thing on the resident
+          dashboard — one tap to step out or back in without hunting
+          through the app. Hidden only when a No Leave restriction is
+          active. */}
       {!residentHasNoLeave && (
         <SignOutToggle
           residentId={resident.id}
@@ -283,6 +282,13 @@ async function ResidentDashboard({ userId }: { userId: string }) {
           openSignOut={openSignOut}
         />
       )}
+
+      <div>
+        <h1 className="text-2xl font-bold">My Dashboard</h1>
+        <p className="text-muted-foreground">
+          Welcome, {resident.full_name}
+        </p>
+      </div>
 
       {nextDueCharge && (() => {
         const balance =
