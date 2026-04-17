@@ -509,6 +509,7 @@ export default async function ResidentDetailPage(
             terms={
               activeCommitment
                 ? {
+                    commitment_id: activeCommitment.id as string,
                     rent_amount: Number(activeCommitment.rent_amount ?? 0),
                     admin_fee:
                       activeCommitment.admin_fee !== null &&

@@ -19,6 +19,7 @@ import { daysUntilLocal, dayOfMonthLocal } from "@/lib/local-date";
 import { EditTermsDialog } from "@/app/(dashboard)/payments/edit-terms-dialog";
 import { cancelPendingAmendment } from "@/app/(dashboard)/payments/actions";
 import { RecordChargePaymentDialog } from "@/app/(dashboard)/payments/record-charge-payment-dialog";
+import { RecordUpcomingRentDialog } from "@/app/(dashboard)/payments/record-upcoming-rent-dialog";
 import { DeletePaymentDialog } from "@/app/(dashboard)/payments/delete-payment-dialog";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
@@ -52,6 +53,9 @@ interface RecentPayment {
 }
 
 interface PaymentTerms {
+  // Passed through so "Pay Upcoming Rent" can materialize the next
+  // rent charge on demand via the server action.
+  commitment_id: string;
   rent_amount: number;
   admin_fee: number | null;
   commitment_start_date: string;
@@ -193,7 +197,13 @@ export function ResidentPaymentsPanel({
           houseId={houseId ?? ""}
         />
       ) : terms ? (
-        <VirtualNextDueCard terms={terms} />
+        <VirtualNextDueCard
+          terms={terms}
+          canRecordPayment={canRecordPayment && !!houseId}
+          residentId={residentId}
+          residentName={residentName}
+          houseId={houseId ?? ""}
+        />
       ) : (
         <Card>
           <CardContent className="py-6 text-center space-y-1">
@@ -394,7 +404,19 @@ function NextDueCard({
 // This is purely informational: no DB row is created, no action is
 // possible on it, and it disappears as soon as the opener creates the
 // real charge (the morning of the due day).
-function VirtualNextDueCard({ terms }: { terms: PaymentTerms }) {
+function VirtualNextDueCard({
+  terms,
+  canRecordPayment,
+  residentId,
+  residentName,
+  houseId,
+}: {
+  terms: PaymentTerms;
+  canRecordPayment: boolean;
+  residentId: string;
+  residentName: string;
+  houseId: string;
+}) {
   const start = new Date(terms.commitment_start_date);
   const dayOfMonth = start.getDate();
   const today = new Date();
@@ -451,9 +473,33 @@ function VirtualNextDueCard({ terms }: { terms: PaymentTerms }) {
           <Calendar className="h-3.5 w-3.5" />
           {candidate.toLocaleDateString()}
         </div>
+        {canRecordPayment && (
+          <div className="pt-2 border-t">
+            <RecordUpcomingRentDialog
+              commitmentId={terms.commitment_id}
+              residentId={residentId}
+              residentName={residentName}
+              houseId={houseId}
+              rentAmount={terms.rent_amount}
+              nextDueDate={toIsoLocal(candidate)}
+              size="default"
+              label={`Record Payment · ${formatMoney(terms.rent_amount)}`}
+            />
+          </div>
+        )}
       </CardContent>
     </Card>
   );
+}
+
+// Local YYYY-MM-DD formatter — avoids the toISOString() UTC drift
+// on the PDT boundary (which would shift the virtual due day by
+// one on evenings in US Pacific).
+function toIsoLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function ReceiptRow({

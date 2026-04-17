@@ -196,6 +196,12 @@ export const createPaymentSchema = z.object({
   // state since there's no late-fee / auto-reconciliation workflow.
   // Admins can void a completed payment from the list row.
   charge_id: z.string().uuid().optional(),
+  // Optional commitment hook used by the "Pay Upcoming Rent" flow.
+  // When no charge_id is provided but commitment_id is, the server
+  // materializes the next rent cycle's charge for that commitment on
+  // the fly and applies the payment to it. Lets staff collect rent
+  // before the scheduled due day without pre-opening the whole year.
+  commitment_id: z.string().uuid().optional(),
   period_start: z.string().optional(),
   period_end: z.string().optional(),
   due_date: z.string().optional(),

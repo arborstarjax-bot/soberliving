@@ -12,6 +12,7 @@ import {
   upsertRentConfigSchema,
 } from "@/lib/validations";
 import { generateReceiptPdf } from "@/lib/payments/receipt-pdf";
+import { materializeNextRentCharge } from "@/lib/payments/charges";
 import { sendNotification } from "@/lib/notifications";
 
 // Facility display name shown in the receipt header. Centralised here
@@ -51,6 +52,7 @@ export async function createPayment(
     payment_type: formData.get("payment_type"),
     payment_method: formData.get("payment_method") || undefined,
     charge_id: formData.get("charge_id") || undefined,
+    commitment_id: formData.get("commitment_id") || undefined,
     period_start: formData.get("period_start") || undefined,
     period_end: formData.get("period_end") || undefined,
     due_date: formData.get("due_date") || undefined,
@@ -97,11 +99,26 @@ export async function createPayment(
     period_end: string | null;
   };
   let chargeRow: ChargeRow | null = null;
-  if (parsed.data.charge_id) {
+  let chargeIdForPayment: string | null = parsed.data.charge_id ?? null;
+
+  // "Pay Upcoming Rent" path — caller passed a commitment_id with no
+  // charge_id. Materialize the next rent cycle on the fly, then apply
+  // the payment to it. This keeps the opener's single-cycle guarantee
+  // (no pre-opening months of future rows) while still letting staff
+  // collect rent early.
+  if (!chargeIdForPayment && parsed.data.commitment_id) {
+    const next = await materializeNextRentCharge(parsed.data.commitment_id);
+    if (!next) {
+      return { error: "No active commitment found for upcoming rent" };
+    }
+    chargeIdForPayment = next.id;
+  }
+
+  if (chargeIdForPayment) {
     const { data } = await supabase
       .from("payment_charges")
       .select("id, due_date, period_start, period_end")
-      .eq("id", parsed.data.charge_id)
+      .eq("id", chargeIdForPayment)
       .single();
     chargeRow = (data as unknown as ChargeRow | null) ?? null;
   }
@@ -268,6 +285,7 @@ export async function voidPayment(
 
   const parsed = voidPaymentSchema.safeParse({
     payment_id: formData.get("payment_id"),
+    reason: formData.get("reason"),
   });
 
   if (!parsed.success) return { error: parsed.error.issues[0].message };
