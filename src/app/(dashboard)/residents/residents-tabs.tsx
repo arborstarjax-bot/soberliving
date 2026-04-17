@@ -9,6 +9,8 @@ import Link from "next/link";
 import { DeleteResidentButton } from "./delete-resident-button";
 import { MarkCompleteButton } from "../intake-review/mark-complete-button";
 import { ApplicationReview } from "../intake-review/application-review";
+import { ReopenButton } from "../intake-review/reopen-button";
+import { ResendInviteButton } from "../users/resend-invite-button";
 import { SendCheckInDialog } from "./check-ins/send-checkin-dialog";
 import { CheckInList } from "./check-ins/checkin-list";
 
@@ -58,6 +60,28 @@ interface IntakeAwaitingUser {
   email: string;
 }
 
+interface IntakeDeniedUser {
+  id: string;
+  full_name: string;
+  email: string;
+  denialReason: string | null;
+  deniedAt: string | null;
+}
+
+interface IntakeInvitedUser {
+  id: string;
+  full_name: string;
+  email: string;
+  createdAt: string;
+}
+
+interface IntakeInProgressUser {
+  id: string;
+  full_name: string;
+  email: string;
+  lastUpdatedAt: string | null;
+}
+
 interface CheckInResponseSummary {
   id: string;
   residentName: string;
@@ -103,8 +127,11 @@ interface ResidentsTabsProps {
   staffUsers: StaffUser[];
   isAdmin: boolean;
   isStaff: boolean;
+  intakeInvited?: IntakeInvitedUser[];
+  intakeInProgress?: IntakeInProgressUser[];
   intakePending?: IntakePendingUser[];
   intakeAwaiting?: IntakeAwaitingUser[];
+  intakeDenied?: IntakeDeniedUser[];
   checkInBatches?: CheckInBatch[];
 }
 
@@ -114,8 +141,11 @@ export function ResidentsTabs({
   staffUsers,
   isAdmin,
   isStaff,
+  intakeInvited = [],
+  intakeInProgress = [],
   intakePending = [],
   intakeAwaiting = [],
+  intakeDenied = [],
   checkInBatches = [],
 }: ResidentsTabsProps) {
   const [topTab, setTopTab] = useState<string>("residents");
@@ -263,7 +293,8 @@ export function ResidentsTabs({
     );
   }
 
-  const intakeCount = intakePending.length + intakeAwaiting.length;
+  const intakeCount =
+    intakePending.length + intakeAwaiting.length + intakeDenied.length;
 
   // Houses with address for intake form
   const housesWithAddress = houses.map((h) => ({
@@ -426,11 +457,145 @@ export function ResidentsTabs({
       {/* Intake view */}
       {topTab === "intake" && (
         <div className="space-y-6">
-          {/* Awaiting Resident Signature */}
+          {/* Empty state for the whole intake pipeline */}
+          {intakeCount === 0 && (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <p className="text-muted-foreground">
+                  No users in intake. New residents show up here after you
+                  invite them, and move through each stage until their
+                  commitment is signed.
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 1. Invited — awaiting intake */}
+          {intakeInvited.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  Invited — Awaiting Intake
+                  <Badge variant="secondary">{intakeInvited.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {intakeInvited.map((user) => (
+                    <div
+                      key={user.id}
+                      className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium">{user.full_name}</p>
+                        <p className="text-sm text-muted-foreground break-all">
+                          {user.email}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Invited{" "}
+                          {new Date(user.createdAt).toLocaleDateString()} ·
+                          Account created — hasn&apos;t started the intake form
+                          yet.
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <ResendInviteButton
+                          userId={user.id}
+                          userName={user.full_name}
+                          email={user.email}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 2. Intake in progress */}
+          {intakeInProgress.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  Intake In Progress
+                  <Badge variant="secondary">{intakeInProgress.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {intakeInProgress.map((user) => (
+                    <div
+                      key={user.id}
+                      className="flex flex-col gap-2 rounded-lg border bg-blue-50/50 p-3 sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium">{user.full_name}</p>
+                        <p className="text-sm text-muted-foreground break-all">
+                          {user.email}
+                        </p>
+                        {user.lastUpdatedAt && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Last updated{" "}
+                            {new Date(user.lastUpdatedAt).toLocaleDateString()}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Badge
+                          variant="outline"
+                          className="text-blue-700 border-blue-400"
+                        >
+                          Filling out application
+                        </Badge>
+                        <ResendInviteButton
+                          userId={user.id}
+                          userName={user.full_name}
+                          email={user.email}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 3. Awaiting Review */}
+          {intakePending.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  Awaiting Review
+                  <Badge variant="secondary">{intakePending.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {intakePending.map((user) => (
+                  <div
+                    key={user.id}
+                    className="rounded-lg border bg-background p-4"
+                  >
+                    <ApplicationReview
+                      userId={user.id}
+                      userName={user.full_name}
+                      email={user.email}
+                      phone={user.phone}
+                      submittedAt={user.completedAt}
+                      houses={housesWithAddress}
+                      isAdmin={isAdmin}
+                      formData={user.intakeFormData}
+                    />
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 4. Awaiting Resident Signature */}
           {intakeAwaiting.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+                <CardTitle className="flex items-center gap-2 text-base">
                   Awaiting Resident Signature
                   <Badge variant="secondary">{intakeAwaiting.length}</Badge>
                 </CardTitle>
@@ -440,15 +605,23 @@ export function ResidentsTabs({
                   {intakeAwaiting.map((user) => (
                     <div
                       key={user.id}
-                      className="flex items-center justify-between p-3 rounded-lg border bg-yellow-50"
+                      className="flex flex-col gap-2 rounded-lg border bg-yellow-50 p-3 sm:flex-row sm:items-center sm:justify-between"
                     >
-                      <div>
+                      <div className="min-w-0">
                         <p className="font-medium">{user.full_name}</p>
-                        <p className="text-sm text-muted-foreground">{user.email}</p>
+                        <p className="text-sm text-muted-foreground break-all">
+                          {user.email}
+                        </p>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <MarkCompleteButton userId={user.id} userName={user.full_name} />
-                        <Badge variant="outline" className="text-yellow-700 border-yellow-400">
+                      <div className="flex shrink-0 flex-wrap items-center gap-2">
+                        <MarkCompleteButton
+                          userId={user.id}
+                          userName={user.full_name}
+                        />
+                        <Badge
+                          variant="outline"
+                          className="text-yellow-700 border-yellow-400"
+                        >
                           Pending Resident Signature
                         </Badge>
                       </div>
@@ -459,32 +632,56 @@ export function ResidentsTabs({
             </Card>
           )}
 
-          {/* Pending Intake Reviews */}
-          {intakePending.length === 0 && intakeAwaiting.length === 0 ? (
+          {/* 5. Denied */}
+          {intakeDenied.length > 0 && (
             <Card>
-              <CardContent className="py-12 text-center">
-                <p className="text-muted-foreground">
-                  No pending intake reviews. New applications will appear here when residents complete their intake form.
-                </p>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base text-muted-foreground">
+                  Denied Applications
+                  <Badge variant="secondary">{intakeDenied.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {intakeDenied.map((user) => (
+                    <div
+                      key={user.id}
+                      className="flex flex-col gap-2 rounded-lg border bg-red-50/50 p-3 sm:flex-row sm:items-start sm:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium">{user.full_name}</p>
+                        <p className="text-sm text-muted-foreground break-all">
+                          {user.email}
+                        </p>
+                        {user.deniedAt && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Denied{" "}
+                            {new Date(user.deniedAt).toLocaleDateString()}
+                          </p>
+                        )}
+                        {user.denialReason?.trim() && (
+                          <p className="mt-2 rounded-md border bg-background p-2 text-xs text-muted-foreground">
+                            <span className="font-medium text-foreground">
+                              Reason:
+                            </span>{" "}
+                            {user.denialReason}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Badge variant="destructive">Denied</Badge>
+                        {isAdmin && (
+                          <ReopenButton
+                            userId={user.id}
+                            userName={user.full_name}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </CardContent>
             </Card>
-          ) : (
-            intakePending.map((user) => (
-              <Card key={user.id}>
-                <CardContent className="pt-6">
-                  <ApplicationReview
-                    userId={user.id}
-                    userName={user.full_name}
-                    email={user.email}
-                    phone={user.phone}
-                    submittedAt={user.completedAt}
-                    houses={housesWithAddress}
-                    isAdmin={isAdmin}
-                    formData={user.intakeFormData}
-                  />
-                </CardContent>
-              </Card>
-            ))
           )}
         </div>
       )}

@@ -61,7 +61,7 @@ export default async function ResidentsPage() {
   const intakeUsersQuery = isStaff && adminClient
     ? adminClient
         .from("users")
-        .select("id, full_name, email, phone, intake_completed, commitment_signed, is_active, created_at")
+        .select("id, full_name, email, phone, intake_completed, commitment_signed, is_active, account_status, denial_reason, denied_at, created_at")
         .eq("intake_completed", true)
         .eq("commitment_signed", false)
         .eq("is_active", true)
@@ -134,7 +134,20 @@ export default async function ResidentsPage() {
       };
     });
 
-  // Fetch intake data for staff (pending reviews + awaiting signatures)
+  // Fetch intake data for staff (full lifecycle: invited, in progress,
+  // awaiting review, awaiting signature, denied).
+  let intakeInvited: Array<{
+    id: string;
+    full_name: string;
+    email: string;
+    createdAt: string;
+  }> = [];
+  let intakeInProgress: Array<{
+    id: string;
+    full_name: string;
+    email: string;
+    lastUpdatedAt: string | null;
+  }> = [];
   let intakePending: Array<{
     id: string;
     full_name: string;
@@ -149,6 +162,13 @@ export default async function ResidentsPage() {
     full_name: string;
     email: string;
   }> = [];
+  let intakeDenied: Array<{
+    id: string;
+    full_name: string;
+    email: string;
+    denialReason: string | null;
+    deniedAt: string | null;
+  }> = [];
 
   if (isStaff && adminClient) {
     type IntakeUser = {
@@ -156,55 +176,110 @@ export default async function ResidentsPage() {
       full_name: string;
       email: string;
       phone: string | null;
+      intake_completed: boolean;
+      account_status: string | null;
+      denial_reason: string | null;
+      denied_at: string | null;
       created_at: string;
+      user_roles: { role: string } | Array<{ role: string }> | null;
     };
-    const intakeUsers = (intakeUsersRes.data as IntakeUser[] | null) ?? [];
-    const intakeUserIds = intakeUsers.map((u) => u.id);
+    const rawIntakeUsers = (intakeUsersRes.data as IntakeUser[] | null) ?? [];
+    // Only residents show up in the intake funnel — admins and managers
+    // share the users table but should never appear here.
+    const intakeUsers = rawIntakeUsers.filter((u) => {
+      const roles = u.user_roles;
+      const role = Array.isArray(roles) ? roles[0]?.role : roles?.role;
+      return role === "resident" || role == null;
+    });
 
-    // Commitments and intake forms both key off the intakeUsers ids,
+    // Split denied out before any commitment/intake-form joins — they
+    // don't need the review packet surfaced, just a "Denied" row with
+    // Reopen for admins. This is what stops already-denied applicants
+    // from reappearing in the Pending list and letting staff "re-deny"
+    // them (which the server rejects with "already denied").
+    const deniedUsers = intakeUsers.filter((u) => u.account_status === "rejected");
+    const activeIntakeUsers = intakeUsers.filter(
+      (u) => u.account_status !== "rejected"
+    );
+    const activeIntakeIds = activeIntakeUsers.map((u) => u.id);
+
+    // Commitments and intake forms both key off the active intake ids,
     // but neither depends on the other. Fetch them in parallel.
+    // We pull ALL intake-form rows (draft + completed) so we can tell
+    // "still filling it out" apart from "never started."
     const [{ data: existingCommitments }, { data: intakeForms }] = await Promise.all([
       adminClient
         .from("house_commitments")
         .select("user_id, status")
-        .in("user_id", intakeUserIds.length > 0 ? intakeUserIds : ["none"]),
+        .in("user_id", activeIntakeIds.length > 0 ? activeIntakeIds : ["none"]),
       adminClient
         .from("intake_forms")
-        .select("user_id, form_data, completed_at")
-        .in("user_id", intakeUserIds.length > 0 ? intakeUserIds : ["none"])
-        .eq("status", "completed"),
+        .select("user_id, form_data, completed_at, status, updated_at")
+        .in("user_id", activeIntakeIds.length > 0 ? activeIntakeIds : ["none"]),
     ]);
 
-    const usersWithCommitments = new Set(
-      (existingCommitments ?? []).map((c) => c.user_id)
+    const commitmentByUser = new Map(
+      (existingCommitments ?? []).map((c) => [c.user_id, c.status])
     );
-    const pendingUsers = intakeUsers.filter((u) => !usersWithCommitments.has(u.id));
-    const awaitingSignature = (existingCommitments ?? [])
-      .filter((c) => c.status === "pending_resident_signature")
-      .map((c) => c.user_id);
-    const awaitingUsers = intakeUsers.filter((u) => awaitingSignature.includes(u.id));
-
-    const intakeMap = new Map(
+    const intakeFormByUser = new Map(
       (intakeForms ?? []).map((f) => [f.user_id, f])
     );
 
-    intakePending = pendingUsers.map((u) => {
-      const intake = intakeMap.get(u.id);
-      return {
+    for (const u of activeIntakeUsers) {
+      const commitment = commitmentByUser.get(u.id);
+      const form = intakeFormByUser.get(u.id);
+
+      if (commitment === "pending_resident_signature") {
+        intakeAwaiting.push({
+          id: u.id,
+          full_name: u.full_name,
+          email: u.email,
+        });
+        continue;
+      }
+      if (commitment) {
+        // Commitment exists in some other state (e.g. already signed
+        // but flags not yet flipped, or cancelled) — skip.
+        continue;
+      }
+      if (u.intake_completed && form?.status === "completed") {
+        intakePending.push({
+          id: u.id,
+          full_name: u.full_name,
+          email: u.email,
+          phone: u.phone ?? null,
+          created_at: u.created_at,
+          intakeFormData: (form.form_data ?? {}) as Record<string, unknown>,
+          completedAt: form.completed_at ?? null,
+        });
+        continue;
+      }
+      if (form && form.status !== "completed") {
+        intakeInProgress.push({
+          id: u.id,
+          full_name: u.full_name,
+          email: u.email,
+          lastUpdatedAt:
+            (form as { updated_at?: string | null }).updated_at ?? null,
+        });
+        continue;
+      }
+      // No form row yet — they were invited but haven't logged in or
+      // haven't opened the intake form.
+      intakeInvited.push({
         id: u.id,
         full_name: u.full_name,
         email: u.email,
-        phone: u.phone ?? null,
-        created_at: u.created_at,
-        intakeFormData: (intake?.form_data ?? {}) as Record<string, unknown>,
-        completedAt: intake?.completed_at ?? null,
-      };
-    });
+        createdAt: u.created_at,
+      });
+    }
 
-    intakeAwaiting = awaitingUsers.map((u) => ({
+    intakeDenied = deniedUsers.map((u) => ({
       id: u.id,
       full_name: u.full_name,
       email: u.email,
+      denialReason: u.denial_reason,
+      deniedAt: u.denied_at,
     }));
   }
 
@@ -248,8 +323,11 @@ export default async function ResidentsPage() {
         staffUsers={normalizedStaff}
         isAdmin={isAdmin}
         isStaff={isStaff}
+        intakeInvited={intakeInvited}
+        intakeInProgress={intakeInProgress}
         intakePending={intakePending}
         intakeAwaiting={intakeAwaiting}
+        intakeDenied={intakeDenied}
         checkInBatches={checkInBatches}
       />
     </div>

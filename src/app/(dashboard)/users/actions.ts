@@ -125,6 +125,84 @@ export async function createUser(
   return { inviteLink };
 }
 
+/**
+ * Re-generate a Supabase invite link for an already-invited user who
+ * hasn't set their password yet, and re-send the invite email. Used
+ * by the Intake lifecycle list on /residents so staff can nudge a
+ * stalled applicant without going through the New Resident dialog
+ * (which would create a duplicate user record).
+ */
+export async function resendInviteLink(
+  userId: string
+): Promise<{ error?: string; inviteLink?: string }> {
+  const user = await requireAuth();
+  if (user.role === "resident") return { error: "Not authorized" };
+
+  const supabase = await createClient();
+  const adminClient = createAdminClient();
+
+  const { data: target, error: targetError } = await supabase
+    .from("users")
+    .select("id, email, full_name")
+    .eq("id", userId)
+    .single();
+
+  if (targetError || !target?.email) {
+    return { error: "User not found" };
+  }
+
+  const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
+    type: "invite",
+    email: target.email,
+    options: {
+      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/reset-password`,
+    },
+  });
+
+  if (linkError) return { error: linkError.message };
+
+  const baseUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    process.env.NEXT_PUBLIC_APP_URL ??
+    "http://localhost:3000";
+  let inviteLink = linkData.properties?.action_link ?? "";
+  if (inviteLink) {
+    try {
+      const url = new URL(inviteLink);
+      url.searchParams.set("redirect_to", `${baseUrl}/reset-password`);
+      inviteLink = url.toString();
+    } catch {
+      // fall back to raw link
+    }
+  } else {
+    inviteLink = `${baseUrl}/login`;
+  }
+
+  try {
+    await sendInviteEmail({
+      to: target.email,
+      fullName: target.full_name || target.email.split("@")[0],
+      role: "resident",
+      inviteLink,
+    });
+  } catch {
+    // Email send failed — staff can still share the link manually
+  }
+
+  await logActivity({
+    actorId: user.id,
+    eventType: "user_reinvited",
+    entityType: "user",
+    entityId: userId,
+    description: `Invite link re-sent to ${target.email} by ${user.full_name}`,
+  });
+
+  revalidatePath("/residents");
+  revalidatePath("/users");
+
+  return { inviteLink };
+}
+
 export async function changeUserRole(userId: string, newRole: string) {
   const user = await requireRole("admin");
   const supabase = await createClient();

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, CheckCircle2 } from "lucide-react";
+import { ArrowRight, CheckCircle2, ChevronDown, ChevronUp, FileText } from "lucide-react";
 import { IntakeReviewForm } from "./intake-review-form";
 import { DenyButton } from "./deny-button";
 
@@ -51,9 +51,13 @@ export function ApplicationReview({
   formData: fd,
 }: Props) {
   const [step, setStep] = useState<"review" | "assign">("review");
+  // Collapse the full PDF packet by default so the Approve/Deny actions
+  // stay above the fold — especially on phones where the packet pushes
+  // the decision buttons many screens down.
+  const [packetOpen, setPacketOpen] = useState(false);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <StepPill active={step === "review"} done={step === "assign"} label="1. Review application" />
@@ -83,19 +87,72 @@ export function ApplicationReview({
       </div>
 
       {step === "review" ? (
-        <ReviewPacket
-          userName={userName}
-          email={email}
-          phone={phone}
-          submittedAt={submittedAt}
-          fd={fd}
-        />
+        <div className="space-y-3">
+          <ApplicantSummary
+            userName={userName}
+            email={email}
+            phone={phone}
+            submittedAt={submittedAt}
+          />
+          <Button
+            variant="outline"
+            className="w-full justify-between"
+            onClick={() => setPacketOpen((v) => !v)}
+            aria-expanded={packetOpen}
+          >
+            <span className="flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              {packetOpen ? "Hide Application" : "View Application"}
+            </span>
+            {packetOpen ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
+          </Button>
+          {packetOpen && (
+            <ReviewPacket
+              userName={userName}
+              email={email}
+              phone={phone}
+              submittedAt={submittedAt}
+              fd={fd}
+            />
+          )}
+        </div>
       ) : (
         <IntakeReviewForm
           userId={userId}
           userName={userName}
           houses={houses}
         />
+      )}
+    </div>
+  );
+}
+
+function ApplicantSummary({
+  userName,
+  email,
+  phone,
+  submittedAt,
+}: {
+  userName: string;
+  email: string | null;
+  phone: string | null;
+  submittedAt: string | null;
+}) {
+  return (
+    <div className="rounded-lg border bg-muted/30 p-4">
+      <p className="text-lg font-semibold">{userName}</p>
+      <p className="text-sm text-muted-foreground break-words">
+        {email ?? "\u2014"}
+        {phone ? ` \u2022 ${phone}` : ""}
+      </p>
+      {submittedAt && (
+        <p className="text-xs text-muted-foreground mt-1">
+          Submitted {new Date(submittedAt).toLocaleDateString()}
+        </p>
       )}
     </div>
   );
