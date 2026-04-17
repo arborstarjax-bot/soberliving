@@ -85,6 +85,24 @@ export default async function ResidentDetailPage(
     .limit(1)
     .maybeSingle();
 
+  // Pending payment-terms amendment awaiting resident signature. Shown
+  // as a callout on the Payment Terms card so admins don't propose a
+  // second amendment while one is in flight (the DB unique index
+  // prevents it, but the callout gives them a clearer reason).
+  const { data: pendingAmendment } = resident.user_id
+    ? await supabase
+        .from("house_commitments")
+        .select(
+          "id, rent_amount, admin_fee, effective_date, amendment_reason, created_at, parent_commitment_id"
+        )
+        .eq("user_id", resident.user_id)
+        .eq("status", "pending_resident_signature")
+        .not("parent_commitment_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    : { data: null };
+
   // Backfill-on-view: open any missing admin_fee / rent charges for
   // this commitment. Residents activated before the intake-review
   // opener was wired up have commitments but zero charges; this
@@ -506,6 +524,28 @@ export default async function ResidentDetailPage(
                 : null
             }
             isAdmin={user.role === "admin"}
+            residentUserId={resident.user_id ?? null}
+            residentName={resident.full_name ?? ""}
+            pendingAmendment={
+              pendingAmendment
+                ? {
+                    id: pendingAmendment.id as string,
+                    rent_amount: Number(pendingAmendment.rent_amount ?? 0),
+                    admin_fee:
+                      pendingAmendment.admin_fee !== null &&
+                      pendingAmendment.admin_fee !== undefined
+                        ? Number(pendingAmendment.admin_fee)
+                        : null,
+                    effective_date:
+                      (pendingAmendment.effective_date as string | null) ??
+                      null,
+                    amendment_reason:
+                      (pendingAmendment.amendment_reason as string | null) ??
+                      null,
+                    created_at: pendingAmendment.created_at as string,
+                  }
+                : null
+            }
           />
         </TabsContent>
 

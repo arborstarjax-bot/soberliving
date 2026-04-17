@@ -11,6 +11,7 @@ import {
   upsertRentConfigSchema,
 } from "@/lib/validations";
 import { generateReceiptPdf } from "@/lib/payments/receipt-pdf";
+import { sendNotification } from "@/lib/notifications";
 
 // Facility display name shown in the receipt header. Centralised here
 // so rebranding is a one-line change. Could be lifted to an env var or
@@ -388,5 +389,190 @@ export async function upsertRentConfig(
 
   revalidatePath("/payments");
   revalidatePath(`/houses/${parsed.data.house_id}`);
+  return {};
+}
+
+// ──────────────────────────────────────────────────────────
+// Commitment amendments
+//
+// Editing payment terms drafts a new house_commitments row linked to
+// the resident's currently active commitment. The resident signs it
+// through the normal `/sign-commitment` flow; on sign we mark the
+// parent 'superseded' and open fresh charges from the effective
+// date forward.
+// ──────────────────────────────────────────────────────────
+
+export async function proposeAmendment(
+  _prev: { error?: string } | undefined,
+  formData: FormData
+): Promise<{ error?: string }> {
+  const user = await requireAuth();
+  if (user.role !== "admin") {
+    return { error: "Only admins can propose amendments" };
+  }
+
+  const userId = String(formData.get("user_id") ?? "");
+  const newRent = Number(formData.get("rent_amount"));
+  const newAdminFee = Number(formData.get("admin_fee") ?? 0);
+  const effectiveDate = String(formData.get("effective_date") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim();
+
+  if (!userId) return { error: "Resident is required" };
+  if (!Number.isFinite(newRent) || newRent < 0) {
+    return { error: "Rent must be a non-negative number" };
+  }
+  if (!Number.isFinite(newAdminFee) || newAdminFee < 0) {
+    return { error: "Admin fee must be non-negative" };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
+    return { error: "Effective date is required" };
+  }
+  if (!reason) return { error: "Reason for the change is required" };
+
+  const admin = createAdminClient();
+
+  // Source commitment = the currently active one. We clone its
+  // per-resident/house context so the amended row is a full standalone
+  // commitment (not a delta) — easier to render in the signing form
+  // and keeps the audit trail simple: one row = one signed PDF.
+  const { data: active } = await admin
+    .from("house_commitments")
+    .select(
+      "id, user_id, resident_id, house_id, room_id, bed_id, payment_frequency, rent_amount, admin_fee, rent_due_date, commitment_start_date, commitment_term, property_location, notes, staff_signature"
+    )
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .order("commitment_start_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!active) return { error: "No active commitment to amend" };
+
+  if (
+    user.role === "admin"
+      ? false
+      : !canAccessHouse(user, active.house_id as string)
+  ) {
+    return { error: "Not authorized" };
+  }
+
+  // Guard: unique partial index uq_house_commitments_one_pending_per_user
+  // enforces this at the DB level, but a preflight check gives a
+  // friendlier error message than the index violation.
+  const { data: pending } = await admin
+    .from("house_commitments")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("status", "pending_resident_signature")
+    .maybeSingle();
+  if (pending) {
+    return {
+      error:
+        "An amendment is already awaiting the resident's signature. Cancel it first before proposing a new one.",
+    };
+  }
+
+  const { data: inserted, error: insertError } = await admin
+    .from("house_commitments")
+    .insert({
+      user_id: userId,
+      resident_id: active.resident_id,
+      house_id: active.house_id,
+      room_id: active.room_id,
+      bed_id: active.bed_id,
+      payment_frequency: active.payment_frequency,
+      rent_amount: newRent,
+      admin_fee: newAdminFee,
+      // New rent schedule anchors on the effective date — future
+      // rent charges opened against this commitment will use it as
+      // their cycle day.
+      rent_due_date: active.rent_due_date,
+      commitment_start_date: effectiveDate,
+      commitment_term: active.commitment_term,
+      property_location: active.property_location,
+      notes: active.notes,
+      // Reuse the original staff signature on file so the admin doesn't
+      // need to sign twice. The amendment is attributed to the acting
+      // admin via staff_signer_id.
+      staff_signature: active.staff_signature,
+      staff_signed_at: new Date().toISOString(),
+      staff_signer_id: user.id,
+      status: "pending_resident_signature",
+      parent_commitment_id: active.id,
+      amendment_reason: reason,
+      effective_date: effectiveDate,
+    })
+    .select("id")
+    .single();
+
+  if (insertError) return { error: insertError.message };
+
+  await sendNotification({
+    userId,
+    type: "commitment_amendment",
+    title: "Updated Payment Terms — Signature Required",
+    message: `Your payment terms have been updated. Please review and sign the amended commitment.`,
+    actionUrl: "/sign-commitment",
+    entityType: "house_commitment",
+    entityId: inserted.id as string,
+  });
+
+  await logActivity({
+    houseId: active.house_id as string,
+    actorId: user.id,
+    eventType: "commitment_amendment_proposed",
+    entityType: "house_commitment",
+    entityId: inserted.id as string,
+    description: `${user.full_name} proposed a payment-terms amendment (new rent $${newRent.toFixed(2)}, effective ${effectiveDate})`,
+    metadata: {
+      parent_commitment_id: active.id,
+      new_rent: newRent,
+      new_admin_fee: newAdminFee,
+      effective_date: effectiveDate,
+      reason,
+    },
+  });
+
+  revalidatePath("/payments");
+  revalidatePath(`/residents/${active.resident_id}`);
+  revalidatePath("/sign-commitment");
+  return {};
+}
+
+export async function cancelPendingAmendment(
+  commitmentId: string
+): Promise<{ error?: string }> {
+  const user = await requireAuth();
+  if (user.role !== "admin") return { error: "Not authorized" };
+
+  const admin = createAdminClient();
+  const { data: row } = await admin
+    .from("house_commitments")
+    .select("id, resident_id, house_id, user_id, parent_commitment_id, status")
+    .eq("id", commitmentId)
+    .single();
+
+  if (!row) return { error: "Amendment not found" };
+  if (row.status !== "pending_resident_signature" || !row.parent_commitment_id) {
+    return { error: "Only pending amendments can be cancelled" };
+  }
+
+  const { error } = await admin
+    .from("house_commitments")
+    .update({ status: "cancelled" })
+    .eq("id", commitmentId);
+  if (error) return { error: error.message };
+
+  await logActivity({
+    houseId: row.house_id as string,
+    actorId: user.id,
+    eventType: "commitment_amendment_cancelled",
+    entityType: "house_commitment",
+    entityId: commitmentId,
+    description: `${user.full_name} cancelled a pending payment-terms amendment`,
+  });
+
+  revalidatePath("/payments");
+  revalidatePath(`/residents/${row.resident_id}`);
   return {};
 }

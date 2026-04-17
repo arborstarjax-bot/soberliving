@@ -41,12 +41,48 @@ export default async function SignCommitmentPage() {
 
   const house = commitment.houses as { name: string; address: string | null } | null;
 
+  // If this is an amendment (parent_commitment_id set), fetch the
+  // parent row so the signing form can show old-vs-new side by side.
+  // Residents agreed to specific terms originally; they should see
+  // exactly what's changing before re-signing.
+  const parentId = commitment.parent_commitment_id as string | null;
+  let parentTerms: {
+    rent_amount: number;
+    admin_fee: number | null;
+    commitment_start_date: string;
+  } | null = null;
+  if (parentId) {
+    const { data: parent } = await adminClient
+      .from("house_commitments")
+      .select("rent_amount, admin_fee, commitment_start_date")
+      .eq("id", parentId)
+      .maybeSingle();
+    if (parent) {
+      parentTerms = {
+        rent_amount: Number(parent.rent_amount ?? 0),
+        admin_fee:
+          parent.admin_fee !== null && parent.admin_fee !== undefined
+            ? Number(parent.admin_fee)
+            : null,
+        commitment_start_date: parent.commitment_start_date as string,
+      };
+    }
+  }
+
+  const isAmendment = Boolean(parentId);
+
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h1 className="text-2xl font-bold">House Commitment Agreement</h1>
+        <h1 className="text-2xl font-bold">
+          {isAmendment
+            ? "Updated Commitment — Amendment"
+            : "House Commitment Agreement"}
+        </h1>
         <p className="text-muted-foreground mt-1">
-          Please review and sign the agreement below to complete your move-in process
+          {isAmendment
+            ? "Your payment terms have been updated. Please review and sign the amendment below."
+            : "Please review and sign the agreement below to complete your move-in process"}
         </p>
       </div>
 
@@ -64,6 +100,10 @@ export default async function SignCommitmentPage() {
         notes={commitment.notes}
         staffSignature={commitment.staff_signature}
         staffSignedAt={commitment.staff_signed_at}
+        amendmentReason={
+          (commitment.amendment_reason as string | null) ?? null
+        }
+        parentTerms={parentTerms}
       />
     </div>
   );

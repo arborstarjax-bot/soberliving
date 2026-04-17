@@ -36,6 +36,9 @@ export const NOTIFICATION_TYPE_TO_CATEGORY: Record<string, string> = {
   intake_submitted: "Housing",
   intake_approved: "Housing",
   intake_reopened: "Housing",
+  commitment_signed: "Housing",
+  commitment_amendment: "Payments",
+  payment_recorded: "Payments",
 };
 
 export const NOTIFICATION_CATEGORIES = [
@@ -47,6 +50,7 @@ export const NOTIFICATION_CATEGORIES = [
   "Check-Ins",
   "Bulletin",
   "Housing",
+  "Payments",
   "Other",
 ] as const;
 

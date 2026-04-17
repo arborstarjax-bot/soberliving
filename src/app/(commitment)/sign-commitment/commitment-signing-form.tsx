@@ -21,6 +21,15 @@ interface CommitmentSigningFormProps {
   notes: string | null;
   staffSignature: string | null;
   staffSignedAt: string | null;
+  // Amendment context — when present, this commitment is a
+  // payment-terms amendment to a previously signed one. We render
+  // an "old vs new" comparison and a banner with the admin's reason.
+  amendmentReason?: string | null;
+  parentTerms?: {
+    rent_amount: number;
+    admin_fee: number | null;
+    commitment_start_date: string;
+  } | null;
 }
 
 export function CommitmentSigningForm({
@@ -37,7 +46,10 @@ export function CommitmentSigningForm({
   notes,
   staffSignature,
   staffSignedAt,
+  amendmentReason,
+  parentTerms,
 }: CommitmentSigningFormProps) {
+  const isAmendment = Boolean(parentTerms);
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -180,6 +192,51 @@ export function CommitmentSigningForm({
 
   return (
     <div className="space-y-6">
+      {/* Amendment banner — only shown when this is an edit to a
+          previously signed commitment. Reason comes from the admin
+          who drafted the amendment. */}
+      {isAmendment && parentTerms && (
+        <Card className="border-amber-400 bg-amber-50">
+          <CardHeader>
+            <CardTitle className="text-amber-900">
+              Payment Terms Amendment
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {amendmentReason && (
+              <p className="text-amber-900">
+                <span className="font-semibold">Reason:</span> {amendmentReason}
+              </p>
+            )}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="p-3 rounded-lg bg-white border">
+                <p className="text-xs text-muted-foreground">Previous Terms</p>
+                <p className="font-medium">
+                  Rent ${parentTerms.rent_amount.toFixed(2)}/mo
+                </p>
+                {parentTerms.admin_fee !== null && (
+                  <p className="text-xs text-muted-foreground">
+                    Admin fee ${parentTerms.admin_fee.toFixed(2)}
+                  </p>
+                )}
+              </div>
+              <div className="p-3 rounded-lg bg-white border border-amber-300">
+                <p className="text-xs text-muted-foreground">New Terms</p>
+                <p className="font-medium">Rent ${rentAmount.toFixed(2)}/mo</p>
+                {adminFee !== null && (
+                  <p className="text-xs text-muted-foreground">
+                    Admin fee ${adminFee.toFixed(2)}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Effective {new Date(commitmentStartDate).toLocaleDateString()}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Agreement Card */}
       <Card>
         <CardHeader>

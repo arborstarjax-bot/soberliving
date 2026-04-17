@@ -486,3 +486,26 @@ as $$
 $$;
 
 grant execute on function public.reverse_payment_from_charge(uuid, numeric) to authenticated;
+
+-- ---- Commitment amendments ----
+-- When admin edits payment terms, we draft a new house_commitments
+-- row (status 'pending_resident_signature') linked to the currently
+-- active commitment via parent_commitment_id. Once the resident
+-- signs, the new row activates and we mark the parent 'superseded'.
+-- The signed PDFs stay intact so each change has its own auditable
+-- document.
+alter table public.house_commitments
+  add column if not exists parent_commitment_id uuid references public.house_commitments(id) on delete set null,
+  add column if not exists amendment_reason text,
+  add column if not exists effective_date date;
+
+create index if not exists idx_house_commitments_parent
+  on public.house_commitments (parent_commitment_id)
+  where parent_commitment_id is not null;
+
+-- A user can have at most one pending amendment at a time. The
+-- partial unique index matches both initial onboarding (parent_id
+-- null) and in-flight amendments.
+create unique index if not exists uq_house_commitments_one_pending_per_user
+  on public.house_commitments (user_id)
+  where status = 'pending_resident_signature';

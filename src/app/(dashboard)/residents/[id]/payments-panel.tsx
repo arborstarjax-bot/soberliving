@@ -16,6 +16,10 @@ import {
 import { DownloadReceiptButton } from "@/app/(dashboard)/payments/download-receipt-button";
 import { getDocumentUrl } from "@/app/(intake)/actions";
 import { daysUntilLocal, dayOfMonthLocal } from "@/lib/local-date";
+import { EditTermsDialog } from "@/app/(dashboard)/payments/edit-terms-dialog";
+import { cancelPendingAmendment } from "@/app/(dashboard)/payments/actions";
+import { useRouter } from "next/navigation";
+import { useTransition } from "react";
 
 // --- Types ---
 // Kept local so the parent page can pass the raw Supabase row shape
@@ -52,12 +56,24 @@ interface PaymentTerms {
   pdf_storage_path: string | null;
 }
 
+interface PendingAmendment {
+  id: string;
+  rent_amount: number;
+  admin_fee: number | null;
+  effective_date: string | null;
+  amendment_reason: string | null;
+  created_at: string;
+}
+
 interface Props {
   openCharges: OpenCharge[];
   recentPayments: RecentPayment[];
   canVoid: boolean;
   terms: PaymentTerms | null;
   isAdmin: boolean;
+  residentUserId: string | null;
+  residentName: string;
+  pendingAmendment: PendingAmendment | null;
 }
 
 const PAGE_SIZE = 20;
@@ -113,6 +129,10 @@ export function ResidentPaymentsPanel({
   openCharges,
   recentPayments,
   terms,
+  isAdmin,
+  residentUserId,
+  residentName,
+  pendingAmendment,
 }: Props) {
   const [page, setPage] = useState(0);
 
@@ -142,7 +162,15 @@ export function ResidentPaymentsPanel({
     <div className="space-y-6">
       {/* Payment Terms — the current signed commitment drives rent
           schedule. Source of truth; edits require a new amendment. */}
-      {terms && <PaymentTermsCard terms={terms} />}
+      {terms && (
+        <PaymentTermsCard
+          terms={terms}
+          isAdmin={isAdmin}
+          residentUserId={residentUserId}
+          residentName={residentName}
+          pendingAmendment={pendingAmendment}
+        />
+      )}
 
       {/* Next Due hero card */}
       {nextCharge ? (
@@ -398,8 +426,22 @@ function ReceiptRow({ payment }: { payment: RecentPayment }) {
   );
 }
 
-function PaymentTermsCard({ terms }: { terms: PaymentTerms }) {
+function PaymentTermsCard({
+  terms,
+  isAdmin,
+  residentUserId,
+  residentName,
+  pendingAmendment,
+}: {
+  terms: PaymentTerms;
+  isAdmin: boolean;
+  residentUserId: string | null;
+  residentName: string;
+  pendingAmendment: PendingAmendment | null;
+}) {
   const [downloading, setDownloading] = useState(false);
+  const router = useRouter();
+  const [cancelPending, startCancel] = useTransition();
   // Pull the day-of-month directly from the ISO string — going
   // through `new Date(iso).getDate()` drifts a day in US timezones
   // because date-only strings parse as UTC midnight.
@@ -415,6 +457,13 @@ function PaymentTermsCard({ terms }: { terms: PaymentTerms }) {
       setDownloading(false);
     }
   }
+
+  const effectiveDefault = (() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + 1);
+    d.setDate(dueDay);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
 
   return (
     <Card className="border-primary/20">
@@ -450,8 +499,8 @@ function PaymentTermsCard({ terms }: { terms: PaymentTerms }) {
             </p>
           </div>
         </div>
-        {terms.pdf_storage_path && (
-          <div>
+        <div className="flex flex-wrap gap-2">
+          {terms.pdf_storage_path && (
             <Button
               type="button"
               variant="outline"
@@ -463,11 +512,55 @@ function PaymentTermsCard({ terms }: { terms: PaymentTerms }) {
               <FileText className="h-3.5 w-3.5" />
               View Signed Commitment
             </Button>
+          )}
+          {isAdmin && residentUserId && !pendingAmendment && (
+            <EditTermsDialog
+              userId={residentUserId}
+              residentName={residentName}
+              currentRent={terms.rent_amount}
+              currentAdminFee={terms.admin_fee}
+              effectiveDateDefault={effectiveDefault}
+            />
+          )}
+        </div>
+        {pendingAmendment && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 space-y-1">
+            <p className="text-xs font-semibold text-amber-900">
+              Amendment awaiting resident signature
+            </p>
+            <p className="text-xs text-amber-900">
+              New rent {formatMoney(pendingAmendment.rent_amount)}
+              {pendingAmendment.effective_date
+                ? ` effective ${formatDate(pendingAmendment.effective_date)}`
+                : ""}
+              .{" "}
+              {pendingAmendment.amendment_reason
+                ? `Reason: ${pendingAmendment.amendment_reason}`
+                : ""}
+            </p>
+            {isAdmin && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs text-amber-900 hover:bg-amber-100"
+                disabled={cancelPending}
+                onClick={() =>
+                  startCancel(async () => {
+                    await cancelPendingAmendment(pendingAmendment.id);
+                    router.refresh();
+                  })
+                }
+              >
+                {cancelPending ? "Cancelling…" : "Cancel amendment"}
+              </Button>
+            )}
           </div>
         )}
         <p className="text-[11px] text-muted-foreground">
-          To change these terms, a new commitment amendment needs to be
-          drafted and signed by the resident.
+          To change these terms, a new commitment amendment is drafted and
+          sent to the resident for signature. Current terms stay active
+          until the amendment is signed.
         </p>
       </CardContent>
     </Card>
