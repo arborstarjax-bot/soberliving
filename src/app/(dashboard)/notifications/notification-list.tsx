@@ -28,6 +28,7 @@ import {
   NOTIFICATION_TYPE_TO_CATEGORY,
 } from "./categories";
 import { CoverRequestActions } from "./cover-request-actions";
+import { ChoreSignoffActions } from "./chore-signoff-actions";
 
 interface Notification {
   id: string;
@@ -85,12 +86,21 @@ interface LeaveStatus {
   rejection_step: string | null;
 }
 
+interface SignoffStatus {
+  status: string;
+  reviewer_name: string | null;
+  reviewed_at: string | null;
+  rejection_note: string | null;
+}
+
 interface NotificationListProps {
   notifications: Notification[];
   activeTab: string;
   meta: PaginationMeta;
   searchParams: Record<string, string | string[] | undefined>;
   leaveStatusMap?: Record<string, LeaveStatus>;
+  signoffStatusMap?: Record<string, SignoffStatus>;
+  viewerRole?: "admin" | "manager" | "resident";
 }
 
 export function NotificationList({
@@ -99,6 +109,8 @@ export function NotificationList({
   meta,
   searchParams,
   leaveStatusMap = {},
+  signoffStatusMap = {},
+  viewerRole,
 }: NotificationListProps) {
   const [isPending, startTransition] = useTransition();
   const unreadOnPage = notifications.filter((n) => !n.is_read).length;
@@ -196,6 +208,27 @@ export function NotificationList({
                         they don't have to leave the Notifications page.
                         Server-side RBAC in the action still enforces
                         who may act at each stage. */}
+                    {viewerRole !== "resident" &&
+                      n.type === "chore_submitted" &&
+                      n.entity_type === "chore_signoff" &&
+                      n.entity_id && (
+                        <ChoreSignoffActions
+                          signoffId={n.entity_id}
+                          notificationId={n.id}
+                          currentStatus={
+                            signoffStatusMap[n.entity_id]?.status
+                          }
+                          reviewerName={
+                            signoffStatusMap[n.entity_id]?.reviewer_name
+                          }
+                          reviewedAt={
+                            signoffStatusMap[n.entity_id]?.reviewed_at
+                          }
+                          rejectionNote={
+                            signoffStatusMap[n.entity_id]?.rejection_note
+                          }
+                        />
+                      )}
                     {n.entity_type === "leave_request" && n.entity_id && (
                       <>
                         {n.type === "cover_request" && (

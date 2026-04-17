@@ -110,6 +110,51 @@ export default async function NotificationsPage({ searchParams }: PageProps) {
     }
   }
 
+  // Same pattern for chore signoffs: batch-load the current status of
+  // every chore_submitted notification on this page so the inline
+  // Approve/Reject controls flip to the lifecycle line as soon as a
+  // decision has been made (here, the calendar, or another reviewer).
+  const signoffIds = Array.from(
+    new Set(
+      (notifications ?? [])
+        .filter(
+          (n) =>
+            n.type === "chore_submitted" &&
+            n.entity_type === "chore_signoff" &&
+            n.entity_id
+        )
+        .map((n) => n.entity_id as string)
+    )
+  );
+  const signoffStatusMap: Record<
+    string,
+    {
+      status: string;
+      reviewer_name: string | null;
+      reviewed_at: string | null;
+      rejection_note: string | null;
+    }
+  > = {};
+  if (signoffIds.length > 0) {
+    const { data: signoffs } = await supabase
+      .from("chore_signoffs")
+      .select(
+        "id, status, reviewed_at, rejection_note, reviewer:users!reviewed_by(full_name)"
+      )
+      .in("id", signoffIds);
+    for (const s of signoffs ?? []) {
+      const reviewer = (
+        s as unknown as { reviewer: { full_name: string } | null }
+      ).reviewer;
+      signoffStatusMap[s.id as string] = {
+        status: s.status as string,
+        reviewer_name: reviewer?.full_name ?? null,
+        reviewed_at: (s.reviewed_at as string | null) ?? null,
+        rejection_note: (s.rejection_note as string | null) ?? null,
+      };
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -124,6 +169,8 @@ export default async function NotificationsPage({ searchParams }: PageProps) {
         meta={meta}
         searchParams={params}
         leaveStatusMap={leaveStatusMap}
+        signoffStatusMap={signoffStatusMap}
+        viewerRole={user.role}
       />
     </div>
   );
