@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DollarSign, AlertCircle, Calendar } from "lucide-react";
 import { CreatePaymentDialog } from "./create-payment-dialog";
 import { VoidPaymentDialog } from "./void-payment-dialog";
@@ -328,66 +329,104 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
         </div>
       )}
 
-      {/* Open balances list — staff only. Shows every open rent/fee
-          charge, past-due rows highlighted. Tapping the Record button
-          pre-fills the dialog with that charge selected. */}
-      {isStaff && openChargeRows.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Open Balances</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="divide-y">
-              {openChargeRows.map((c) => {
-                const resident =
-                  (c.resident as unknown as { full_name: string } | null)
-                    ?.full_name ?? "Unknown";
-                const houseName =
-                  (c.house as unknown as { name: string } | null)?.name ?? "";
-                const balance = Number(c.amount) - Number(c.paid_amount);
-                const pastDue = c.due_date < todayIso;
-                return (
-                  <div
-                    key={c.id}
-                    className="flex items-center justify-between gap-3 px-4 py-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          variant={pastDue ? "destructive" : "outline"}
-                          className="capitalize text-[10px]"
-                        >
-                          {c.charge_type.replace(/_/g, " ")}
-                        </Badge>
-                        <span className="font-medium truncate">{resident}</span>
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Due {formatDueDate(c.due_date)} · {houseName}
-                        {Number(c.paid_amount) > 0 && (
-                          <>
-                            {" · "}
-                            {formatCurrency(Number(c.paid_amount))} of{" "}
-                            {formatCurrency(Number(c.amount))} paid
-                          </>
-                        )}
-                      </p>
-                    </div>
-                    <span
-                      className={`font-semibold ${
-                        pastDue ? "text-destructive" : ""
-                      }`}
-                    >
-                      {formatCurrency(balance)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Staff view splits Open Balances and the Payment Log into
+          tabs so the page stops looking like a single scrolling wall.
+          Residents keep the simple "Next Due card + history" flow —
+          no tabs, they only ever have one view. */}
+      {isStaff ? (
+        <Tabs defaultValue="outstanding">
+          <TabsList>
+            <TabsTrigger value="outstanding">
+              Outstanding
+              {openChargeRows.length > 0 && (
+                <Badge
+                  variant={pastDueCount > 0 ? "destructive" : "secondary"}
+                  className="ml-1.5 h-5 px-1.5 text-xs"
+                >
+                  {openChargeRows.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="paid">Paid</TabsTrigger>
+          </TabsList>
 
-      {(payments ?? []).length === 0 ? (
+          <TabsContent value="outstanding" className="mt-4">
+            {openChargeRows.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <DollarSign className="mx-auto h-12 w-12 text-muted-foreground/50" />
+                  <p className="mt-4 text-muted-foreground">
+                    No open balances — everyone&apos;s caught up.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardContent className="p-0">
+                  <div className="divide-y">
+                    {openChargeRows.map((c) => {
+                      const resident =
+                        (c.resident as unknown as { full_name: string } | null)
+                          ?.full_name ?? "Unknown";
+                      const houseName =
+                        (c.house as unknown as { name: string } | null)?.name ?? "";
+                      const balance =
+                        Number(c.amount) - Number(c.paid_amount);
+                      const pastDue = c.due_date < todayIso;
+                      return (
+                        <div
+                          key={c.id}
+                          className="flex items-center justify-between gap-3 px-4 py-3"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant={pastDue ? "destructive" : "outline"}
+                                className="capitalize text-[10px]"
+                              >
+                                {c.charge_type.replace(/_/g, " ")}
+                              </Badge>
+                              <span className="font-medium truncate">
+                                {resident}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              Due {formatDueDate(c.due_date)} · {houseName}
+                              {Number(c.paid_amount) > 0 && (
+                                <>
+                                  {" · "}
+                                  {formatCurrency(Number(c.paid_amount))} of{" "}
+                                  {formatCurrency(Number(c.amount))} paid
+                                </>
+                              )}
+                            </p>
+                          </div>
+                          <span
+                            className={`font-semibold ${
+                              pastDue ? "text-destructive" : ""
+                            }`}
+                          >
+                            {formatCurrency(balance)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          <TabsContent value="paid" className="mt-4">
+            <PaymentLedgerList
+              payments={payments ?? []}
+              userRole={user.role}
+              meta={meta}
+              params={params}
+            />
+          </TabsContent>
+        </Tabs>
+      ) : (payments ?? []).length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <DollarSign className="mx-auto h-12 w-12 text-muted-foreground/50" />
@@ -395,9 +434,47 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
           </CardContent>
         </Card>
       ) : (
-        <>
-          <div className="space-y-2">
-            {(payments ?? []).map((payment) => {
+        <PaymentLedgerList
+          payments={payments ?? []}
+          userRole={user.role}
+          meta={meta}
+          params={params}
+        />
+      )}
+    </div>
+  );
+}
+
+// Shared paginated list of recorded payments used by both the staff
+// "Paid" tab and the resident payment-history view. Residents never
+// see the void button (admin-only gate inside the row).
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function PaymentLedgerList({
+  payments,
+  userRole,
+  meta,
+  params,
+}: {
+  payments: any[];
+  userRole: string;
+  meta: ReturnType<typeof buildPaginationMeta>;
+  params: Record<string, string | string[] | undefined>;
+}) {
+/* eslint-enable @typescript-eslint/no-explicit-any */
+  if (payments.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center">
+          <DollarSign className="mx-auto h-12 w-12 text-muted-foreground/50" />
+          <p className="mt-4 text-muted-foreground">No payments recorded</p>
+        </CardContent>
+      </Card>
+    );
+  }
+  return (
+    <>
+      <div className="space-y-2">
+        {payments.map((payment) => {
               const residentName =
                 (payment.resident as unknown as { full_name: string } | null)
                   ?.full_name ?? "Unknown";
@@ -440,7 +517,7 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
                             receiptNumber={payment.receipt_number ?? null}
                           />
                         )}
-                        {user.role === "admin" &&
+                        {userRole === "admin" &&
                           payment.status !== "void" &&
                           payment.status !== "refunded" && (
                             <VoidPaymentDialog
@@ -485,16 +562,14 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
                   </CardContent>
                 </Card>
               );
-            })}
-          </div>
-          <Pagination
-            meta={meta}
-            basePath="/payments"
-            searchParams={params}
-            itemLabel="payments"
-          />
-        </>
-      )}
-    </div>
+        })}
+      </div>
+      <Pagination
+        meta={meta}
+        basePath="/payments"
+        searchParams={params}
+        itemLabel="payments"
+      />
+    </>
   );
 }

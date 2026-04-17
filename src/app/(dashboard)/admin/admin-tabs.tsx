@@ -46,10 +46,18 @@ import { addChoreTask, removeChoreTask, archiveChore } from "@/app/(dashboard)/c
 import { approveAdminRequest, denyAdminRequest, markLeaveReturned } from "@/app/(dashboard)/leave-requests/actions";
 import { createIncident } from "@/app/(dashboard)/incidents/actions";
 import { changeUserRole, deactivateUser, assignManagerToHouses } from "@/app/(dashboard)/users/actions";
-import { createPayment } from "@/app/(dashboard)/payments/actions";
+
+import Link from "next/link";
 
 // Admin-specific actions
-import { issueDemerit, resolveDemerit, markPaymentReceived } from "./actions";
+import { issueDemerit, resolveDemerit } from "./actions";
+
+// Share the polished Record Payment dialog + receipt download controls
+// with /payments so the admin tab and the standalone page behave the
+// same way — same charge selection, same receipt generation, same void
+// flow. We don't want two parallel UIs drifting apart.
+import { CreatePaymentDialog } from "@/app/(dashboard)/payments/create-payment-dialog";
+import { DownloadReceiptButton } from "@/app/(dashboard)/payments/download-receipt-button";
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -102,7 +110,7 @@ interface AdminTabsProps {
   activeDemeritsCount: number;
   incidents: any[];
   users: any[];
-  pendingPayments: any[];
+  openCharges: any[];
   recentPayments: any[];
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -121,9 +129,11 @@ export function AdminTabs({
   activeDemeritsCount,
   incidents,
   users,
-  pendingPayments,
+  openCharges,
   recentPayments,
 }: AdminTabsProps) {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const pastDueCount = openCharges.filter((c) => c.due_date < todayIso).length;
   return (
     <div className="space-y-6">
       <div>
@@ -144,7 +154,7 @@ export function AdminTabs({
         <StatCard label="Pending Leave" value={pendingLeave.length} icon={CalendarClock} />
         <StatCard label="Chore Reviews" value={pendingSignoffs.length} icon={ClipboardCheck} />
         <StatCard label="Active Demerits" value={activeDemeritsCount} icon={ShieldAlert} />
-        <StatCard label="Pending Payments" value={pendingPayments.length} icon={DollarSign} />
+        <StatCard label="Past Due" value={pastDueCount} icon={DollarSign} />
       </div>
 
       <Tabs defaultValue="houses">
@@ -176,9 +186,9 @@ export function AdminTabs({
           )}
           <TabsTrigger value="payments">
             <DollarSign className="h-3.5 w-3.5 mr-1" /> Payments
-            {pendingPayments.length > 0 && (
+            {pastDueCount > 0 && (
               <Badge variant="destructive" className="ml-1 h-5 px-1.5 text-xs">
-                {pendingPayments.length}
+                {pastDueCount}
               </Badge>
             )}
           </TabsTrigger>
@@ -226,7 +236,7 @@ export function AdminTabs({
           <PaymentsTab
             houses={houses}
             residents={residents}
-            pendingPayments={pendingPayments}
+            openCharges={openCharges}
             recentPayments={recentPayments}
           />
         </TabsContent>
@@ -1366,145 +1376,209 @@ function UserActionMenu({
 
 // ─── Payments Tab ────────────────────────────────────────────
 
+// ─── Payments helpers ───────────────────────────────────────
+//
+// Charge rows come straight from Supabase as `any[]` because Supabase
+// nested selects don't play nicely with TS narrowing in this file
+// (everything else in this module is typed the same way). The admin
+// tab only needs a small subset of the full charge record — we cast
+// to this local shape at the top of each render path so the downstream
+// JSX has typed access.
+interface OpenChargeRow {
+  id: string;
+  resident_id: string;
+  house_id: string;
+  charge_type: string;
+  amount: number;
+  paid_amount: number | null;
+  due_date: string; // YYYY-MM-DD
+  period_start: string | null;
+  period_end: string | null;
+  status: string;
+  resident: { full_name: string } | null;
+  house: { name: string } | null;
+}
+
+interface RecentPaymentRow {
+  id: string;
+  amount: number;
+  payment_type: string;
+  payment_method: string | null;
+  paid_at: string;
+  status: string;
+  receipt_number: string | null;
+  receipt_storage_path: string | null;
+  resident: { full_name: string } | null;
+  house: { name: string } | null;
+}
+
+function chargeTypeLabel(t: string) {
+  switch (t) {
+    case "rent":
+      return "Rent";
+    case "admin_fee":
+      return "Admin Fee";
+    case "deposit":
+      return "Deposit";
+    case "fee":
+      return "Fee";
+    case "late_fee":
+      return "Late Fee";
+    default:
+      return t.replace(/_/g, " ");
+  }
+}
+
+function formatChargeDate(iso: string) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
+  return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 function PaymentsTab({
   houses,
   residents,
-  pendingPayments,
+  openCharges,
   recentPayments,
 }: {
   houses: HouseItem[];
   residents: ResidentItem[];
-  /* eslint-disable @typescript-eslint/no-explicit-any */
-  pendingPayments: any[];
-  recentPayments: any[];
-  /* eslint-enable @typescript-eslint/no-explicit-any */
+  openCharges: OpenChargeRow[];
+  recentPayments: RecentPaymentRow[];
 }) {
-  const [openCreate, setOpenCreate] = useState(false);
-  const [createState, createAction, createPending] = useActionState(createPayment, undefined);
-  const [selectedHouse, setSelectedHouse] = useState(houses[0]?.id ?? "");
-  const houseResidents = residents.filter((r) => r.house_id === selectedHouse);
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const weekAhead = new Date();
+  weekAhead.setDate(weekAhead.getDate() + 7);
+  const weekAheadIso = weekAhead.toISOString().slice(0, 10);
+  const monthStartIso =
+    new Date().toISOString().slice(0, 7) + "-01";
+
+  // Bucket open charges by urgency so the summary tiles + the list
+  // groups read off the same filtered arrays (no duplicate logic).
+  const pastDue = openCharges.filter((c) => c.due_date < todayIso);
+  const dueThisWeek = openCharges.filter(
+    (c) => c.due_date >= todayIso && c.due_date <= weekAheadIso
+  );
+  const upcoming = openCharges.filter((c) => c.due_date > weekAheadIso);
+
+  const outstandingTotal = (charges: OpenChargeRow[]) =>
+    charges.reduce(
+      (sum, c) => sum + (Number(c.amount) - Number(c.paid_amount ?? 0)),
+      0
+    );
+
+  const paidThisMonth = recentPayments.filter(
+    (p) =>
+      p.paid_at >= monthStartIso &&
+      p.status !== "void" &&
+      p.status !== "refunded"
+  );
+  const paidThisMonthTotal = paidThisMonth.reduce(
+    (sum, p) => sum + Number(p.amount ?? 0),
+    0
+  );
+
+  // Pull just the open charges needed by CreatePaymentDialog. The
+  // dialog does its own filtering by resident but only needs id + the
+  // identifying fields, so we pass the whole list as-is.
+  const dialogCharges = openCharges.map((c) => ({
+    id: c.id,
+    resident_id: c.resident_id,
+    house_id: c.house_id,
+    amount: Number(c.amount),
+    paid_amount: Number(c.paid_amount ?? 0),
+    due_date: c.due_date,
+    period_start: c.period_start,
+    period_end: c.period_end,
+    charge_type: c.charge_type,
+  }));
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <Dialog open={openCreate} onOpenChange={setOpenCreate}>
-          <DialogTrigger render={<Button size="sm" />}>
-            <Plus className="mr-1 h-3.5 w-3.5" /> Record Payment
-          </DialogTrigger>
-          <DialogContent className="max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Record Payment</DialogTitle>
-            </DialogHeader>
-            <form action={createAction} className="space-y-4">
-              <div className="space-y-2">
-                <Label>House *</Label>
-                <select
-                  name="house_id"
-                  required
-                  value={selectedHouse}
-                  onChange={(e) => setSelectedHouse(e.target.value)}
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-                >
-                  {houses.map((h) => (
-                    <option key={h.id} value={h.id}>{h.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label>Resident *</Label>
-                <select name="resident_id" required className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">
-                  <option value="">Select resident</option>
-                  {houseResidents.map((r) => (
-                    <option key={r.id} value={r.id}>{r.full_name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label>Amount *</Label>
-                  <Input name="amount" type="number" step="0.01" min="0" required />
-                </div>
-                <div className="space-y-2">
-                  <Label>Type *</Label>
-                  <select name="payment_type" required className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">
-                    <option value="rent">Rent</option>
-                    <option value="deposit">Deposit</option>
-                    <option value="fee">Fee</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <Label>Method</Label>
-                  <select name="payment_method" className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">
-                    <option value="">Select…</option>
-                    <option value="cash">Cash</option>
-                    <option value="check">Check</option>
-                    <option value="money_order">Money Order</option>
-                    <option value="venmo">Venmo</option>
-                    <option value="zelle">Zelle</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Status</Label>
-                  <select name="status" className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm">
-                    <option value="completed">Completed</option>
-                    <option value="pending">Pending</option>
-                  </select>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label>Note</Label>
-                <Input name="note" placeholder="Optional note" />
-              </div>
-              {createState?.error && <p className="text-sm text-destructive">{createState.error}</p>}
-              <Button type="submit" className="w-full" disabled={createPending}>
-                {createPending ? "Recording…" : "Record Payment"}
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+      {/* Summary strip — same three tiles staff need to answer
+          "who's behind / who's due soon / how much came in this month"
+          without leaving the admin panel. */}
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
+        <PaymentSummaryTile
+          label="Past Due"
+          count={pastDue.length}
+          total={outstandingTotal(pastDue)}
+          tone="destructive"
+        />
+        <PaymentSummaryTile
+          label="Due This Week"
+          count={dueThisWeek.length}
+          total={outstandingTotal(dueThisWeek)}
+          tone="warning"
+        />
+        <PaymentSummaryTile
+          label="Paid This Month"
+          count={paidThisMonth.length}
+          total={paidThisMonthTotal}
+          tone="success"
+        />
       </div>
 
-      {/* Pending Payments */}
-      <div>
-        <h3 className="font-semibold text-sm mb-3">
-          Pending Payments ({pendingPayments.length})
-        </h3>
-        {pendingPayments.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-4">No pending payments.</p>
-        ) : (
-          <div className="space-y-2">
-            {pendingPayments.map((p) => (
-              <PendingPaymentCard key={p.id} payment={p} />
-            ))}
-          </div>
-        )}
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="font-semibold text-base">Open Balances</h3>
+        <div className="flex items-center gap-2">
+          <CreatePaymentDialog
+            houses={houses.map((h) => ({ id: h.id, name: h.name }))}
+            residents={residents.map((r) => ({
+              id: r.id,
+              full_name: r.full_name,
+              house_id: r.house_id,
+            }))}
+            openCharges={dialogCharges}
+          />
+          <Link
+            href="/payments"
+            className="inline-flex items-center h-9 rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground"
+          >
+            Full ledger →
+          </Link>
+        </div>
       </div>
 
-      {/* Recent Completed Payments */}
+      <ChargeGroup title="Past Due" tone="destructive" charges={pastDue} />
+      <ChargeGroup title="Due This Week" tone="warning" charges={dueThisWeek} />
+      <ChargeGroup
+        title="Upcoming"
+        tone="muted"
+        charges={upcoming}
+        emptyHint="No upcoming charges on file."
+      />
+
+      {/* Recently Paid — five most recent actually-paid rows with an
+          inline Download Receipt so staff can resend a receipt on the
+          spot without bouncing through /payments. */}
       <div>
-        <h3 className="font-semibold text-sm mb-3">Recent Completed Payments</h3>
+        <h3 className="font-semibold text-sm mb-3">Recently Paid</h3>
         {recentPayments.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-4">No recent payments.</p>
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No payments recorded yet.
+          </p>
         ) : (
           <div className="space-y-2">
-            {recentPayments.map((p) => (
+            {recentPayments.slice(0, 5).map((p) => (
               <Card key={p.id}>
-                <CardContent className="flex items-center justify-between py-3">
-                  <div>
-                    <p className="font-medium text-sm">
-                      ${Number(p.amount).toFixed(2)} — {(p.resident as { full_name: string } | null)?.full_name}
+                <CardContent className="flex items-center justify-between gap-3 py-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm truncate">
+                      ${Number(p.amount).toFixed(2)} — {p.resident?.full_name ?? "—"}
                     </p>
-                    <p className="text-xs text-muted-foreground">
-                      {(p.house as { name: string } | null)?.name} &middot;{" "}
-                      {p.payment_type} &middot;{" "}
+                    <p className="text-xs text-muted-foreground truncate">
+                      {p.house?.name} · {chargeTypeLabel(p.payment_type)} ·{" "}
                       {new Date(p.paid_at).toLocaleDateString()}
+                      {p.receipt_number ? ` · ${p.receipt_number}` : ""}
                     </p>
                   </div>
-                  <Badge variant="default" className="text-xs capitalize">Completed</Badge>
+                  <div className="flex items-center gap-1 flex-none">
+                    <DownloadReceiptButton
+                      storagePath={p.receipt_storage_path}
+                      receiptNumber={p.receipt_number}
+                    />
+                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -1515,34 +1589,117 @@ function PaymentsTab({
   );
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-function PendingPaymentCard({ payment: p }: { payment: any }) {
-/* eslint-enable @typescript-eslint/no-explicit-any */
-  const [isPending, startTransition] = useTransition();
-
+function PaymentSummaryTile({
+  label,
+  count,
+  total,
+  tone,
+}: {
+  label: string;
+  count: number;
+  total: number;
+  tone: "destructive" | "warning" | "success";
+}) {
+  const border =
+    tone === "destructive"
+      ? "border-destructive/40 bg-destructive/5"
+      : tone === "warning"
+      ? "border-amber-300 bg-amber-50"
+      : "border-emerald-300 bg-emerald-50";
+  const labelTone =
+    tone === "destructive"
+      ? "text-destructive"
+      : tone === "warning"
+      ? "text-amber-800"
+      : "text-emerald-800";
   return (
-    <Card>
-      <CardContent className="flex items-center justify-between py-3">
-        <div>
-          <p className="font-medium text-sm">
-            ${Number(p.amount).toFixed(2)} — {(p.resident as { full_name: string } | null)?.full_name}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {(p.house as { name: string } | null)?.name} &middot;{" "}
-            {p.payment_type}
-            {p.note && ` · ${p.note}`}
-          </p>
-        </div>
-        <Button
-          size="sm"
-          variant="default"
-          disabled={isPending}
-          onClick={() => startTransition(() => { markPaymentReceived(p.id); })}
-        >
-          <Check className="mr-1 h-3 w-3" />
-          {isPending ? "Saving…" : "Mark Received"}
-        </Button>
+    <Card className={border}>
+      <CardContent className="py-3">
+        <p className={`text-xs font-medium ${labelTone}`}>{label}</p>
+        <p className="text-2xl font-bold mt-0.5">
+          ${total.toFixed(2)}
+        </p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {count} {count === 1 ? "charge" : "charges"}
+        </p>
       </CardContent>
     </Card>
+  );
+}
+
+function ChargeGroup({
+  title,
+  tone,
+  charges,
+  emptyHint,
+}: {
+  title: string;
+  tone: "destructive" | "warning" | "muted";
+  charges: OpenChargeRow[];
+  emptyHint?: string;
+}) {
+  if (charges.length === 0 && !emptyHint) return null;
+  const badgeTone =
+    tone === "destructive"
+      ? "destructive"
+      : tone === "warning"
+      ? "secondary"
+      : "outline";
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <h4 className="font-semibold text-sm">{title}</h4>
+        <Badge variant={badgeTone} className="h-5 px-1.5 text-xs">
+          {charges.length}
+        </Badge>
+      </div>
+      {charges.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-2">
+          {emptyHint ?? "None."}
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {charges.slice(0, 8).map((c) => {
+            const remaining =
+              Number(c.amount) - Number(c.paid_amount ?? 0);
+            return (
+              <Card key={c.id}>
+                <CardContent className="flex items-center justify-between gap-3 py-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm truncate">
+                      {c.resident?.full_name ?? "—"} · ${remaining.toFixed(2)}
+                      {c.status === "partial" && (
+                        <span className="text-xs text-muted-foreground font-normal">
+                          {" "}· partial
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {c.house?.name} · {chargeTypeLabel(c.charge_type)} · due{" "}
+                      {formatChargeDate(c.due_date)}
+                    </p>
+                  </div>
+                  <Badge
+                    variant={badgeTone}
+                    className="text-xs capitalize flex-none"
+                  >
+                    {c.status}
+                  </Badge>
+                </CardContent>
+              </Card>
+            );
+          })}
+          {charges.length > 8 && (
+            <p className="text-xs text-muted-foreground pt-1">
+              +{charges.length - 8} more — see{" "}
+              <Link href="/payments" className="underline">
+                full ledger
+              </Link>
+              .
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

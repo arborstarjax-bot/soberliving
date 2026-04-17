@@ -121,19 +121,28 @@ export default async function AdminPage() {
         .order("full_name")
     : null;
 
-  // --- Pending payments ---
-  let pendingPaymentsQuery = supabase
-    .from("payments")
-    .select("*, resident:residents(full_name), house:houses(name)")
-    .eq("status", "pending")
-    .order("created_at", { ascending: false });
-  if (houseFilter) pendingPaymentsQuery = pendingPaymentsQuery.in("house_id", houseFilter);
+  // --- Open payment charges (past-due + current + upcoming) ---
+  // Since the charges revamp every open balance lives on
+  // payment_charges; the admin tab buckets this into Past Due / This
+  // Week / Upcoming client-side.
+  let openChargesQuery = supabase
+    .from("payment_charges")
+    .select(
+      "id, resident_id, house_id, charge_type, amount, paid_amount, due_date, period_start, period_end, status, resident:residents(full_name), house:houses(name)"
+    )
+    .in("status", ["open", "partial"])
+    .order("due_date", { ascending: true });
+  if (houseFilter) openChargesQuery = openChargesQuery.in("house_id", houseFilter);
 
-  // --- Recent completed payments ---
+  // --- Recent recorded payments (last 10) ---
+  // Include receipt_storage_path + receipt_number so the Recently
+  // Paid row can render a Download Receipt button inline.
   let recentPaymentsQuery = supabase
     .from("payments")
-    .select("*, resident:residents(full_name), house:houses(name)")
-    .eq("status", "completed")
+    .select(
+      "id, amount, payment_type, payment_method, paid_at, status, receipt_number, receipt_storage_path, resident:residents(full_name), house:houses(name)"
+    )
+    .not("status", "in", "(void,refunded)")
     .order("paid_at", { ascending: false })
     .limit(10);
   if (houseFilter) recentPaymentsQuery = recentPaymentsQuery.in("house_id", houseFilter);
@@ -150,7 +159,7 @@ export default async function AdminPage() {
     { data: demerits },
     { data: incidents },
     usersRes,
-    { data: pendingPayments },
+    { data: openCharges },
     { data: recentPayments },
   ] = await Promise.all([
     housesQuery,
@@ -164,7 +173,7 @@ export default async function AdminPage() {
     demeritsQuery,
     incidentsQuery,
     usersQuery ? usersQuery : Promise.resolve({ data: null as AdminUser[] | null }),
-    pendingPaymentsQuery,
+    openChargesQuery,
     recentPaymentsQuery,
   ]);
 
@@ -313,7 +322,7 @@ export default async function AdminPage() {
       activeDemeritsCount={activeDemerits.length}
       incidents={incidents ?? []}
       users={users}
-      pendingPayments={pendingPayments ?? []}
+      openCharges={openCharges ?? []}
       recentPayments={recentPayments ?? []}
       />
     </>
