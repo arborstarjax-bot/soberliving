@@ -23,17 +23,29 @@ export async function sendInviteEmail({
   fullName,
   role,
   inviteLink,
+  appUrl,
 }: {
   to: string;
   fullName: string;
   role: string;
   inviteLink: string;
+  /**
+   * Canonical app origin (e.g. https://soberliving.vercel.app). Passed
+   * in rather than derived here so server actions can resolve it from
+   * the incoming request headers — avoids hard-coded localhost
+   * fallbacks in production emails.
+   */
+  appUrl?: string;
 }) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const resolvedAppUrl =
+    appUrl ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    "http://localhost:3000";
   const safeName = escapeHtml(fullName);
   const safeRole = escapeHtml(role);
   const safeLink = escapeHtml(inviteLink);
-  const safeAppUrl = escapeHtml(appUrl);
+  const safeAppUrl = escapeHtml(resolvedAppUrl);
 
   const { data, error } = await resend.emails.send({
     from: fromEmail,

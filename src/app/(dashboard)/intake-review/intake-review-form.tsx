@@ -43,6 +43,8 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
   const [roomId, setRoomId] = useState("");
   const [bedId, setBedId] = useState("");
   const [loadingRooms, setLoadingRooms] = useState(false);
+  const [roomsError, setRoomsError] = useState<string | null>(null);
+  const [roomsLoaded, setRoomsLoaded] = useState(false);
 
   const [paymentFrequency, setPaymentFrequency] = useState<"weekly" | "monthly">("monthly");
   const [rentAmount, setRentAmount] = useState("800");
@@ -112,6 +114,8 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
     setRoomId("");
     setBedId("");
     setRooms([]);
+    setRoomsError(null);
+    setRoomsLoaded(false);
 
     if (!newHouseId) return;
 
@@ -119,6 +123,15 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
     try {
       const result = await getRoomsForHouse(newHouseId);
       setRooms(result as Room[]);
+      setRoomsLoaded(true);
+    } catch (err) {
+      // Server action threw — surface the real message instead of
+      // silently showing an empty dropdown.
+      setRoomsError(
+        err instanceof Error
+          ? err.message
+          : "Couldn't load rooms. Try re-selecting the house."
+      );
     } finally {
       setLoadingRooms(false);
     }
@@ -259,6 +272,15 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
               </option>
             ))}
           </select>
+          {roomsError && (
+            <p className="text-xs text-destructive">{roomsError}</p>
+          )}
+          {!loadingRooms && roomsLoaded && rooms.length === 0 && !roomsError && (
+            <p className="text-xs text-muted-foreground">
+              No available beds in this house. Add rooms/beds in the Houses
+              tab, or end an existing bed assignment.
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">
