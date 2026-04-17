@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ShieldAlert, AlertTriangle } from "lucide-react";
 import { LiftRestrictionButton, DeleteRestrictionButton } from "./lift-restriction-button";
+import { EditRestrictionDialog } from "./edit-restriction-dialog";
 
 const RESTRICTION_TYPE_LABELS: Record<string, string> = {
   no_leave: "No Leave",
@@ -171,8 +172,22 @@ export function DisciplineTabs({
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            {isStaff && <LiftRestrictionButton restrictionId={r.id} />}
+                          <div className="flex items-center gap-1">
+                            {isStaff && (
+                              <>
+                                <EditRestrictionDialog
+                                  restriction={{
+                                    id: r.id,
+                                    restriction_type: r.restriction_type,
+                                    description: r.description,
+                                    notes: r.notes,
+                                    start_date: r.start_date,
+                                    end_date: r.end_date,
+                                  }}
+                                />
+                                <LiftRestrictionButton restrictionId={r.id} />
+                              </>
+                            )}
                           </div>
                         </div>
                       </CardContent>

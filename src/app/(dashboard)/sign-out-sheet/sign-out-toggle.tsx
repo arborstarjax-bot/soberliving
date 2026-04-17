@@ -5,7 +5,6 @@ import { signOutResident, signInResident } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -64,17 +63,17 @@ export function SignOutToggle({ residentId, residentName, openSignOut }: Props) 
 
   if (openSignOut) {
     return (
-      <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-4">
+      <div className="rounded-2xl border-2 border-red-500 bg-red-600 p-5 text-white shadow-lg shadow-red-500/20">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-red-500">
+            <p className="text-xs font-bold uppercase tracking-widest text-white/80">
               Currently Signed Out
             </p>
-            <p className="mt-1 flex items-center gap-1.5 text-base font-semibold truncate">
+            <p className="mt-1 flex items-center gap-1.5 text-lg font-bold truncate">
               <MapPin className="h-4 w-4 shrink-0" />
               {openSignOut.destination}
             </p>
-            <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-white/80">
               <Clock className="h-3 w-3 shrink-0" />
               Since {new Date(openSignOut.time_out).toLocaleString(undefined, {
                 weekday: "short",
@@ -88,15 +87,17 @@ export function SignOutToggle({ residentId, residentName, openSignOut }: Props) 
             <Button
               type="submit"
               disabled={signInPending}
-              className="h-11 min-w-[6.5rem] bg-green-600 hover:bg-green-700 text-white"
+              className="h-14 min-w-[7rem] text-base font-bold bg-white text-red-700 hover:bg-white/90"
             >
-              <LogIn className="mr-1.5 h-4 w-4" />
+              <LogIn className="mr-1.5 h-5 w-5" />
               {signInPending ? "Signing in…" : "Sign In"}
             </Button>
           </form>
         </div>
         {signInState?.error && (
-          <p className="mt-2 text-xs text-red-500">{signInState.error}</p>
+          <p className="mt-2 text-xs font-semibold text-white bg-red-900/40 rounded px-2 py-1">
+            {signInState.error}
+          </p>
         )}
       </div>
     );
@@ -107,12 +108,12 @@ export function SignOutToggle({ residentId, residentName, openSignOut }: Props) 
       <DialogTrigger
         render={
           <Button
-            className="h-14 w-full bg-green-600 text-base font-semibold text-white hover:bg-green-700"
+            className="h-20 w-full rounded-2xl bg-green-600 text-xl font-bold text-white hover:bg-green-700 shadow-lg shadow-green-500/20 active:scale-[0.99]"
           />
         }
       >
-        <LogOut className="mr-2 h-5 w-5" />
-        Sign Out
+        <LogOut className="mr-3 h-7 w-7" />
+        Sign Out of House
       </DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>
@@ -135,27 +136,25 @@ export function SignOutToggle({ residentId, residentName, openSignOut }: Props) 
               autoFocus
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="notes">Notes (optional)</Label>
-            <Textarea id="notes" name="notes" rows={2} maxLength={1000} />
-          </div>
           {signOutError && (
             <p className="text-sm text-red-500">{signOutError}</p>
           )}
-          <div className="flex justify-end gap-2 pt-2">
+          <div className="flex flex-col gap-2 pt-2">
+            <Button
+              type="submit"
+              disabled={signOutPending}
+              className="h-14 w-full bg-green-600 text-base font-bold text-white hover:bg-green-700 shadow-lg shadow-green-500/20"
+            >
+              <LogOut className="mr-2 h-5 w-5" />
+              {signOutPending ? "Signing out…" : "Sign Out of House"}
+            </Button>
             <Button
               type="button"
               variant="outline"
               onClick={() => setOpen(false)}
+              disabled={signOutPending}
             >
               Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={signOutPending}
-              className="bg-green-600 hover:bg-green-700 text-white"
-            >
-              {signOutPending ? "Signing out…" : "Sign Out"}
             </Button>
           </div>
         </form>

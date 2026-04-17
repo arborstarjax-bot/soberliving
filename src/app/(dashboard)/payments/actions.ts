@@ -303,12 +303,18 @@ export async function voidPayment(
       );
       const newStatus =
         newPaid === 0 ? "open" : newPaid >= Number(charge.amount) ? "paid" : "partial";
+      // Null out payment_id regardless of post-void status. If the
+      // charge remains "paid" because of other non-voided payments,
+      // we don't want to leave a dangling reference to the voided
+      // payment — the app treats payment_id as "the settling payment"
+      // and a voided row isn't valid. Callers that need the full
+      // application history can look at the payments table directly.
       await admin
         .from("payment_charges")
         .update({
           paid_amount: newPaid,
           status: newStatus,
-          payment_id: newStatus === "paid" ? payment.id : null,
+          payment_id: null,
           updated_at: new Date().toISOString(),
         })
         .eq("id", payment.charge_id);
@@ -357,21 +363,30 @@ export async function upsertRentConfig(
 
   const supabase = await createClient();
 
-  // Deactivate existing configs for this house
+  // Insert first, then deactivate the previous rows. This keeps the
+  // house from being left with zero active configs if the insert fails
+  // (e.g. unique constraint, network blip) — the old config stays in
+  // place and the user sees a real error instead of a silently broken
+  // rent schedule.
+  const { data: inserted, error: insertError } = await supabase
+    .from("rent_configs")
+    .insert({
+      house_id: parsed.data.house_id,
+      monthly_amount: parsed.data.monthly_amount,
+      due_day_of_month: parsed.data.due_day_of_month,
+      is_active: true,
+    })
+    .select("id")
+    .single();
+
+  if (insertError) return { error: insertError.message };
+
   await supabase
     .from("rent_configs")
     .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq("house_id", parsed.data.house_id)
-    .eq("is_active", true);
-
-  const { error } = await supabase.from("rent_configs").insert({
-    house_id: parsed.data.house_id,
-    monthly_amount: parsed.data.monthly_amount,
-    due_day_of_month: parsed.data.due_day_of_month,
-    is_active: true,
-  });
-
-  if (error) return { error: error.message };
+    .eq("is_active", true)
+    .neq("id", inserted.id);
 
   revalidatePath("/payments");
   return {};

@@ -29,10 +29,13 @@ async function loadResidentWithActiveRestrictions(residentId: string) {
     .eq("resident_id", residentId)
     .eq("is_active", true);
 
-  const hasNoLeave = (restrictions ?? []).some((r) =>
-    ["no_leave", "house_commitment"].includes(
-      (r as { restriction_type: string }).restriction_type
-    )
+  // Spec: only an active No Leave restriction blocks sign-out. House
+  // Commitment is an intake-period restriction on overnight leaves,
+  // not on stepping out of the house; No Overnight is a curfew rule.
+  // Neither prevents a resident from signing out during the day.
+  const hasNoLeave = (restrictions ?? []).some(
+    (r) =>
+      (r as { restriction_type: string }).restriction_type === "no_leave"
   );
 
   return { resident, hasNoLeave };
@@ -95,7 +98,6 @@ export async function signOutResident(
       resident_id: resident.id,
       house_id: resident.house_id,
       destination: parsed.data.destination,
-      notes: parsed.data.notes ? parsed.data.notes : null,
       signed_out_by: user.id,
     })
     .select("id")

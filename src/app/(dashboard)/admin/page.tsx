@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { UserPlus } from "lucide-react";
 import { AdminTabs } from "./admin-tabs";
+import { SignOutToggle } from "../sign-out-sheet/sign-out-toggle";
 
 export default async function AdminPage() {
   const user = await requireAuth();
@@ -230,8 +231,53 @@ export default async function AdminPage() {
     ).length;
   }
 
+  // Staff who are also residents get the same Sign Out toggle at the
+  // very top of the admin dashboard — no special treatment.
+  const { data: myResidentRec } = await supabase
+    .from("residents")
+    .select("id, full_name, status")
+    .eq("user_id", user.id)
+    .eq("status", "active")
+    .maybeSingle();
+
+  let myOpenSignOut: {
+    id: string;
+    destination: string;
+    time_out: string;
+  } | null = null;
+  let myHasNoLeave = false;
+  if (myResidentRec) {
+    const [{ data: openRow }, { data: myRestrictions }] = await Promise.all([
+      supabase
+        .from("sign_out_sheet")
+        .select("id, destination, time_out")
+        .eq("resident_id", myResidentRec.id)
+        .is("time_in", null)
+        .maybeSingle(),
+      supabase
+        .from("restrictions")
+        .select("restriction_type")
+        .eq("resident_id", myResidentRec.id)
+        .eq("is_active", true),
+    ]);
+    myOpenSignOut = openRow ?? null;
+    myHasNoLeave = (myRestrictions ?? []).some(
+      (r) =>
+        (r as { restriction_type: string }).restriction_type === "no_leave"
+    );
+  }
+
   return (
     <>
+      {myResidentRec && !myHasNoLeave && (
+        <div className="mb-4">
+          <SignOutToggle
+            residentId={myResidentRec.id}
+            residentName={myResidentRec.full_name}
+            openSignOut={myOpenSignOut}
+          />
+        </div>
+      )}
       {isAdmin && pendingIntakeCount > 0 && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900">
           <div className="flex items-center gap-2">

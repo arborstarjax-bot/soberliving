@@ -474,6 +474,7 @@ export async function createRestriction(
 
   revalidatePath("/discipline");
   revalidatePath(`/residents/${residentId}`);
+  revalidatePath("/dashboard");
   return {};
 }
 
@@ -531,6 +532,7 @@ export async function liftRestriction(restrictionId: string) {
 
   revalidatePath("/discipline");
   revalidatePath(`/residents/${restriction.resident_id}`);
+  revalidatePath("/dashboard");
   return {};
 }
 
@@ -570,6 +572,75 @@ export async function deleteRestriction(restrictionId: string) {
 
   revalidatePath("/discipline");
   revalidatePath(`/residents/${restriction.resident_id}`);
+  revalidatePath("/dashboard");
+  return {};
+}
+
+// Edit an existing restriction's type / description / dates / notes.
+// Admin / manager only. Logs an "restriction_updated" activity entry
+// so the audit trail captures every field change.
+export async function updateRestriction(
+  _prevState: { error?: string } | undefined,
+  formData: FormData
+) {
+  const user = await requireAuth();
+  if (user.role === "resident") return { error: "Not authorized" };
+
+  const restrictionId = formData.get("restriction_id") as string;
+  const restrictionType = formData.get("restriction_type") as string;
+  const description = formData.get("description") as string;
+  const notes = formData.get("notes") as string | null;
+  const startDate = formData.get("start_date") as string;
+  const endDate = formData.get("end_date") as string | null;
+
+  if (!restrictionId || !description || !restrictionType) {
+    return { error: "Restriction id, type, and description are required" };
+  }
+
+  const supabase = await createClient();
+
+  const { data: existing } = await supabase
+    .from("restrictions")
+    .select("house_id, resident_id, description, restriction_type")
+    .eq("id", restrictionId)
+    .single();
+
+  if (!existing) return { error: "Restriction not found" };
+  if (user.role !== "admin" && !canAccessHouse(user, existing.house_id)) {
+    return { error: "Not authorized" };
+  }
+
+  const { error } = await supabase
+    .from("restrictions")
+    .update({
+      restriction_type: restrictionType,
+      description,
+      notes: notes || null,
+      start_date: startDate || new Date().toISOString().split("T")[0],
+      end_date: endDate || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", restrictionId);
+
+  if (error) return { error: error.message };
+
+  await logActivity({
+    houseId: existing.house_id,
+    residentId: existing.resident_id,
+    actorId: user.id,
+    eventType: "restriction_updated",
+    entityType: "restriction",
+    entityId: restrictionId,
+    description: `Restriction updated by ${user.full_name}: ${description}`,
+    metadata: {
+      previous_type: existing.restriction_type,
+      new_type: restrictionType,
+    },
+  });
+
+  revalidatePath("/discipline");
+  revalidatePath(`/residents/${existing.resident_id}`);
+  revalidatePath("/dashboard");
   return {};
 }
 
@@ -588,6 +659,7 @@ export async function expireRestrictions() {
     .select("id, resident_id, house_id, description");
 
   revalidatePath("/discipline");
+  revalidatePath("/dashboard");
   return { count: expired?.length ?? 0 };
 }
 

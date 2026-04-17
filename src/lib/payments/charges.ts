@@ -119,16 +119,22 @@ export async function openRentChargesForCommitment(
     period_end: string;
   }> = [];
 
+  // Strategy: open every past-due / current-month charge, PLUS exactly
+  // one upcoming charge so residents always see a "Next Rent Due" tile
+  // on their dashboard. We track `openedFuture` separately so the break
+  // condition doesn't depend on whether prior charges existed (the old
+  // `openedCount > 0 || existingDates.length > 0` check skipped the
+  // future charge on every subsequent call).
   let openedCount = 0;
+  let openedFuture = false;
   let safety = 0;
   while (safety++ < 60) {
-    const due = nextDueDate(start, [...existingDates, ...rows.map((r) => parseIsoDate(r.due_date))]);
-    if (due.getTime() > today.getTime()) {
-      // We still open the *upcoming* charge (next due_date > today)
-      // once, so residents can see "Next due" on their dashboard and
-      // staff can record payments ahead of time. Then stop.
-      if (openedCount > 0 || existingDates.length > 0) break;
-    }
+    const due = nextDueDate(start, [
+      ...existingDates,
+      ...rows.map((r) => parseIsoDate(r.due_date)),
+    ]);
+    const isFuture = due.getTime() > today.getTime();
+    if (isFuture && openedFuture) break;
     const periodStart = toIsoDate(due);
     const periodEnd = toIsoDate(addMonthsClamped(due, 1));
     rows.push({
@@ -142,7 +148,7 @@ export async function openRentChargesForCommitment(
       period_end: periodEnd,
     });
     openedCount += 1;
-    if (due.getTime() > today.getTime()) break;
+    if (isFuture) openedFuture = true;
   }
 
   if (rows.length > 0) {

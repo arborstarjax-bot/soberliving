@@ -3,7 +3,6 @@ import { createClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { SignOutToggle } from "./sign-out-toggle";
 import { SignInOnBehalfDialog } from "./sign-in-on-behalf-dialog";
 import { MapPin, Clock } from "lucide-react";
 import { redirect } from "next/navigation";
@@ -45,34 +44,6 @@ export default async function SignOutSheetPage() {
   }
   const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
-  const isStaff = user.role === "admin" || user.role === "manager";
-
-  let residentId: string | null = null;
-  let hasNoLeave = false;
-  let residentName = user.full_name;
-  if (user.role === "resident") {
-    const { data: myResident } = await supabase
-      .from("residents")
-      .select("id, full_name")
-      .eq("user_id", user.id)
-      .eq("status", "active")
-      .maybeSingle();
-    residentId = myResident?.id ?? null;
-    residentName = myResident?.full_name ?? user.full_name;
-
-    if (residentId) {
-      const { data: restrictions } = await supabase
-        .from("restrictions")
-        .select("restriction_type")
-        .eq("resident_id", residentId)
-        .eq("is_active", true);
-      hasNoLeave = (restrictions ?? []).some((r) =>
-        ["no_leave", "house_commitment"].includes(
-          (r as { restriction_type: string }).restriction_type
-        )
-      );
-    }
-  }
 
   const selectCols =
     "id, resident_id, house_id, destination, notes, time_out, time_in, " +
@@ -87,10 +58,7 @@ export default async function SignOutSheetPage() {
     .order("time_out", { ascending: false })
     .limit(200);
 
-  if (user.role === "resident") {
-    if (residentId) query = query.eq("resident_id", residentId);
-    else query = query.eq("resident_id", "00000000-0000-0000-0000-000000000000");
-  } else if (houseFilter) {
+  if (houseFilter) {
     query = query.in("house_id", houseFilter);
   }
 
@@ -98,44 +66,15 @@ export default async function SignOutSheetPage() {
   const allRows = (rows ?? []) as unknown as SignOutRow[];
   const openRows = allRows.filter((r) => !r.time_in);
   const closedRows = allRows.filter((r) => !!r.time_in);
-  const myOpen =
-    user.role === "resident" && residentId
-      ? openRows.find((r) => r.resident_id === residentId) ?? null
-      : null;
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Sign Out Sheet</h1>
         <p className="text-sm text-muted-foreground">
-          {isStaff
-            ? "Who's currently out and recent sign-out history."
-            : "Your recent sign-out history."}
+          Who&apos;s currently out and recent sign-out history.
         </p>
       </div>
-
-      {user.role === "resident" && residentId && !hasNoLeave && (
-        <SignOutToggle
-          residentId={residentId}
-          residentName={residentName}
-          openSignOut={
-            myOpen
-              ? {
-                  id: myOpen.id,
-                  destination: myOpen.destination,
-                  time_out: myOpen.time_out,
-                }
-              : null
-          }
-        />
-      )}
-      {user.role === "resident" && hasNoLeave && (
-        <Card className="border-red-500/30">
-          <CardContent className="py-4 text-sm text-red-500">
-            You have an active No Leave restriction. Talk to your house manager.
-          </CardContent>
-        </Card>
-      )}
 
       <Card>
         <CardHeader>
@@ -159,7 +98,7 @@ export default async function SignOutSheetPage() {
                   <div className="min-w-0 flex-1">
                     <p className="font-medium truncate">
                       {r.resident?.full_name ?? "Unknown"}
-                      {isStaff && r.house?.name && (
+                      {r.house?.name && (
                         <span className="ml-2 text-xs font-normal text-muted-foreground">
                           · {r.house.name}
                         </span>
@@ -181,7 +120,7 @@ export default async function SignOutSheetPage() {
                       {formatDuration(r.time_out, new Date().toISOString())}
                     </p>
                   </div>
-                  {isStaff && (
+                  {(
                     <SignInOnBehalfDialog
                       signOutId={r.id}
                       residentName={r.resident?.full_name ?? "this resident"}
@@ -209,7 +148,7 @@ export default async function SignOutSheetPage() {
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <p className="font-medium">
                       {r.resident?.full_name ?? "Unknown"}
-                      {isStaff && r.house?.name && (
+                      {r.house?.name && (
                         <span className="ml-2 text-xs font-normal text-muted-foreground">
                           · {r.house.name}
                         </span>
@@ -242,7 +181,7 @@ export default async function SignOutSheetPage() {
                         })}
                       </>
                     )}
-                    {r.signed_in_by_user?.full_name && isStaff && (
+                    {r.signed_in_by_user?.full_name && (
                       <span className="ml-1">
                         · signed in by {r.signed_in_by_user.full_name}
                       </span>
