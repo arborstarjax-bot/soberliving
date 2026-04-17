@@ -6,7 +6,17 @@ import { requireAuth, requireRole } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 import { openAllChargesForCommitment } from "@/lib/payments/charges";
+import { generateReceiptPdf } from "@/lib/payments/receipt-pdf";
 import { z } from "zod";
+
+const FACILITY_NAME = "Sober Living";
+
+const moveInPaymentSchema = z.object({
+  amount: z.number().positive(),
+  method: z.enum(["cash", "check", "money_order", "venmo", "zelle", "other"]),
+  paidAt: z.string().min(1),
+  note: z.string().optional(),
+});
 
 const checkInRestrictionSchema = z.object({
   restriction_type: z.string().min(1),
@@ -28,6 +38,8 @@ const completeIntakeReviewSchema = z.object({
   notes: z.string().optional(),
   staffSignature: z.string().min(1, "Staff signature is required"),
   checkInRestrictions: z.array(checkInRestrictionSchema).optional(),
+  // Move-in payment — null when "no payment collected" is checked.
+  moveInPayment: moveInPaymentSchema.nullable().optional(),
 });
 
 export async function completeIntakeReview(formData: z.infer<typeof completeIntakeReviewSchema>) {
@@ -140,7 +152,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
   }
 
   // Create house commitment record
-  const { error: commitError } = await adminClient
+  const { data: commitmentRow, error: commitError } = await adminClient
     .from("house_commitments")
     .insert({
       user_id: data.userId,
@@ -160,11 +172,15 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
       staff_signed_at: new Date().toISOString(),
       staff_signer_id: currentUser.id,
       status: "pending_resident_signature",
-    });
+    })
+    .select("id")
+    .single();
 
-  if (commitError) {
-    return { error: `Commitment creation failed: ${commitError.message}` };
+  if (commitError || !commitmentRow) {
+    return { error: `Commitment creation failed: ${commitError?.message ?? "unknown"}` };
   }
+
+  const commitmentId = commitmentRow.id as string;
 
   // Create check-in restrictions if provided
   if (data.checkInRestrictions && data.checkInRestrictions.length > 0) {
@@ -184,12 +200,201 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     }
   }
 
+  // ── Move-in payment ─────────────────────────────────────────────
+  // When the admin collects a payment at move-in we:
+  //   1. Open the admin_fee + first-cycle rent charges early (before
+  //      the resident signs) so there's a real charge row to apply to.
+  //   2. Allocate admin-fee-first, remainder to rent.
+  //   3. Record ONE payments row, generate receipt PDF, link it.
+  // `openAllChargesForCommitment` is idempotent via upsert, so when
+  // the resident signs later and `markIntakeComplete` re-opens
+  // charges, duplicates are harmlessly ignored.
+  if (data.moveInPayment) {
+    const mi = data.moveInPayment;
+
+    // Open charges early — the helpers gate on status=active, so we
+    // inline the insert directly. Idempotent via unique index.
+    const chargeRows: Array<{
+      resident_id: string;
+      house_id: string;
+      commitment_id: string;
+      charge_type: string;
+      amount: number;
+      due_date: string;
+    }> = [];
+
+    if (data.adminFee > 0) {
+      chargeRows.push({
+        resident_id: residentId,
+        house_id: data.houseId,
+        commitment_id: commitmentId,
+        charge_type: "admin_fee",
+        amount: data.adminFee,
+        due_date: data.commitmentStartDate,
+      });
+    }
+    chargeRows.push({
+      resident_id: residentId,
+      house_id: data.houseId,
+      commitment_id: commitmentId,
+      charge_type: "rent",
+      amount: data.rentAmount,
+      due_date: data.commitmentStartDate,
+    });
+
+    if (chargeRows.length > 0) {
+      await adminClient.from("payment_charges").upsert(chargeRows, {
+        onConflict: "resident_id,due_date,charge_type",
+        ignoreDuplicates: true,
+      });
+    }
+
+    // Re-read the freshly opened charges to get their IDs.
+    const { data: openCharges } = await adminClient
+      .from("payment_charges")
+      .select("id, charge_type, amount")
+      .eq("resident_id", residentId)
+      .eq("commitment_id", commitmentId)
+      .eq("due_date", data.commitmentStartDate)
+      .in("charge_type", ["admin_fee", "rent"]);
+
+    const adminFeeCharge = (openCharges ?? []).find(
+      (c) => (c.charge_type as string) === "admin_fee"
+    );
+    const rentCharge = (openCharges ?? []).find(
+      (c) => (c.charge_type as string) === "rent"
+    );
+
+    // Allocate: admin fee first, then rent.
+    let remaining = mi.amount;
+    const allocations: Array<{ chargeId: string; applied: number; chargeType: string }> = [];
+
+    if (adminFeeCharge && remaining > 0) {
+      const apply = Math.min(remaining, Number(adminFeeCharge.amount));
+      allocations.push({ chargeId: adminFeeCharge.id as string, applied: apply, chargeType: "admin_fee" });
+      remaining -= apply;
+    }
+    if (rentCharge && remaining > 0) {
+      const apply = Math.min(remaining, Number(rentCharge.amount));
+      allocations.push({ chargeId: rentCharge.id as string, applied: apply, chargeType: "rent" });
+      remaining -= apply;
+    }
+
+    // Build the note with allocation breakdown for the receipt.
+    const breakdownParts = allocations.map(
+      (a) => `${a.chargeType === "admin_fee" ? "Admin Fee" : "Rent"}: $${a.applied.toFixed(2)}`
+    );
+    const autoNote = `Move-in payment (${breakdownParts.join(" / ")})`;
+    const fullNote = mi.note ? `${autoNote}\n${mi.note}` : autoNote;
+
+    // Allocate a receipt number.
+    let receiptNumber: string | null = null;
+    try {
+      const { data: rn, error: rnErr } = await adminClient.rpc("next_receipt_number", {
+        p_year: new Date().getFullYear(),
+      });
+      if (!rnErr && rn) receiptNumber = rn as unknown as string;
+    } catch (e) {
+      console.error("Receipt number allocation failed", e);
+    }
+
+    // Record one payments row covering the full collected amount.
+    // Link to the first charge so the ledger shows the association.
+    const primaryChargeId = allocations[0]?.chargeId ?? null;
+    const { data: paymentRow, error: payErr } = await adminClient
+      .from("payments")
+      .insert({
+        resident_id: residentId,
+        house_id: data.houseId,
+        amount: mi.amount,
+        payment_type: "deposit",
+        payment_method: mi.method,
+        note: fullNote,
+        status: "completed",
+        due_date: data.commitmentStartDate,
+        paid_at: mi.paidAt,
+        recorded_by: currentUser.id,
+        charge_id: primaryChargeId,
+        receipt_number: receiptNumber,
+      })
+      .select("id")
+      .single();
+
+    if (payErr) {
+      console.error("Move-in payment insert failed:", payErr.message);
+    }
+
+    // Apply to each charge atomically.
+    const paymentId = paymentRow?.id as string | undefined;
+    for (const alloc of allocations) {
+      if (paymentId) {
+        await adminClient.rpc("apply_payment_to_charge", {
+          p_charge_id: alloc.chargeId,
+          p_amount: alloc.applied,
+          p_payment_id: paymentId,
+        });
+      }
+    }
+
+    // Generate + upload receipt PDF.
+    if (receiptNumber && paymentId && targetUser) {
+      try {
+        const pdfBytes = await generateReceiptPdf({
+          receiptNumber,
+          paidAt: mi.paidAt,
+          facilityName: FACILITY_NAME,
+          houseName: house?.name ?? "",
+          houseAddress: house?.address ?? null,
+          residentName: targetUser.full_name,
+          amount: mi.amount,
+          paymentType: "Move-In Deposit",
+          paymentMethod: mi.method,
+          dueDate: data.commitmentStartDate,
+          note: fullNote,
+          recordedByName: currentUser.full_name,
+        });
+
+        const fileName = `${data.userId}/receipts/${receiptNumber}.pdf`;
+        const { error: uploadError } = await adminClient.storage
+          .from("documents")
+          .upload(fileName, pdfBytes, {
+            contentType: "application/pdf",
+            upsert: true,
+          });
+
+        if (!uploadError) {
+          const { data: docRow } = await adminClient
+            .from("documents")
+            .insert({
+              user_id: data.userId,
+              name: `Move-In Receipt ${receiptNumber}`,
+              document_type: "payment_receipt",
+              storage_path: fileName,
+              file_size: pdfBytes.byteLength,
+            })
+            .select("id")
+            .single();
+
+          await adminClient
+            .from("payments")
+            .update({
+              receipt_storage_path: fileName,
+              receipt_document_id: docRow?.id ?? null,
+            })
+            .eq("id", paymentId);
+        }
+      } catch (e) {
+        console.error("Move-in receipt PDF generation failed", e);
+      }
+    }
+  }
+
   await logActivity({
     actorId: currentUser.id,
     eventType: "intake_review_completed",
     entityType: "user",
     entityId: data.userId,
-    description: `${currentUser.full_name} completed intake review for ${targetUser.full_name} — assigned to ${house?.name || "house"}`,
+    description: `${currentUser.full_name} completed intake review for ${targetUser.full_name} — assigned to ${house?.name || "house"}${data.moveInPayment ? ` (move-in payment: $${data.moveInPayment.amount.toFixed(2)})` : ""}`,
   });
 
   // Notify the applicant that their application was approved and there's
