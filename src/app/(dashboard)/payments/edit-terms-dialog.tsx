@@ -8,7 +8,7 @@
 // request, and returns. The resident signs through the normal
 // /sign-commitment flow; activation happens on signature.
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,17 +45,24 @@ export function EditTermsDialog({
   const [state, formAction, isPending] = useActionState(proposeAmendment, {
     error: undefined,
   } as { error?: string });
+  // Track whether a submit has been dispatched; without this, the
+  // initial state `{ error: undefined }` matches "success" on the very
+  // first render and closes the dialog immediately after opening.
+  const submittedRef = useRef(false);
 
-  // Close + refresh when a successful submit comes back. Watching the
-  // state object rather than wiring a transition because useActionState
-  // already gives us isPending; we just need to react to the shape on
-  // the next render.
-  if (state && !state.error && !isPending && open) {
-    queueMicrotask(() => {
+  function handleSubmit(formData: FormData) {
+    submittedRef.current = true;
+    formAction(formData);
+  }
+
+  useEffect(() => {
+    if (!open || isPending || !submittedRef.current) return;
+    if (state && !state.error) {
+      submittedRef.current = false;
       setOpen(false);
       router.refresh();
-    });
-  }
+    }
+  }, [state, isPending, open, router]);
 
   return (
     <>
@@ -79,7 +86,7 @@ export function EditTermsDialog({
               until then.
             </DialogDescription>
           </DialogHeader>
-          <form action={formAction} className="space-y-3">
+          <form action={handleSubmit} className="space-y-3">
             <input type="hidden" name="user_id" value={userId} />
 
             <div className="grid grid-cols-2 gap-3">
