@@ -9,6 +9,8 @@ import {
   createChoreSchema,
   updateChoreSchema,
   createChoreTaskSchema,
+  updateChoreTaskSchema,
+  setChoreRoomExclusionsSchema,
   createRotationSchema,
   assignRotationChoreSchema,
 } from "@/lib/validations";
@@ -69,10 +71,18 @@ export async function createChore(
   return {};
 }
 
-export async function updateChore(choreId: string, formData: FormData) {
+export async function updateChore(
+  _prevState: { error?: string } | undefined,
+  formData: FormData
+) {
   const user = await requireAuth();
+  const choreId = formData.get("chore_id") as string | null;
+  if (!choreId) return { error: "Missing chore id" };
+
   const parsed = updateChoreSchema.safeParse({
     name: formData.get("name"),
+    days_of_week: formData.getAll("days_of_week"),
+    cycle_weeks: formData.get("cycle_weeks"),
   });
 
   if (!parsed.success) return { error: parsed.error.issues[0].message };
@@ -81,7 +91,7 @@ export async function updateChore(choreId: string, formData: FormData) {
 
   const { data: chore } = await supabase
     .from("chores")
-    .select("house_id")
+    .select("house_id, name")
     .eq("id", choreId)
     .single();
 
@@ -96,6 +106,15 @@ export async function updateChore(choreId: string, formData: FormData) {
     .eq("id", choreId);
 
   if (error) return { error: error.message };
+
+  await logActivity({
+    houseId: chore.house_id,
+    actorId: user.id,
+    eventType: "chore_updated",
+    entityType: "chore",
+    entityId: choreId,
+    description: `Chore "${parsed.data.name}" updated by ${user.full_name}`,
+  });
 
   revalidatePath("/chores");
   return {};
@@ -183,6 +202,131 @@ export async function addChoreTask(
   return {};
 }
 
+export async function updateChoreTask(taskId: string, description: string) {
+  const user = await requireAuth();
+
+  const parsed = updateChoreTaskSchema.safeParse({ description });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const supabase = await createClient();
+
+  const { data: task } = await supabase
+    .from("chore_tasks")
+    .select("chore_id, chore:chores(house_id)")
+    .eq("id", taskId)
+    .single();
+
+  if (!task) return { error: "Task not found" };
+  const houseId =
+    (task.chore as unknown as { house_id: string } | null)?.house_id ?? "";
+  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+    return { error: "Not authorized" };
+  }
+
+  const { error } = await supabase
+    .from("chore_tasks")
+    .update({ description: parsed.data.description })
+    .eq("id", taskId);
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/chores");
+  return {};
+}
+
+// Replace the full set of room exclusions for a chore. We take a
+// declarative roomIds[] because the UI is a checkbox list ("check =
+// excluded"), so the simplest thing is to send the whole current set
+// each save — we compute add/remove diffs here rather than expose
+// individual add/remove actions.
+export async function setChoreRoomExclusions(
+  choreId: string,
+  roomIds: string[]
+) {
+  const user = await requireAuth();
+
+  const parsed = setChoreRoomExclusionsSchema.safeParse({
+    chore_id: choreId,
+    room_ids: roomIds,
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const supabase = await createClient();
+
+  const { data: chore } = await supabase
+    .from("chores")
+    .select("house_id, name")
+    .eq("id", choreId)
+    .single();
+
+  if (!chore) return { error: "Chore not found" };
+  if (user.role !== "admin" && !canAccessHouse(user, chore.house_id)) {
+    return { error: "Not authorized" };
+  }
+
+  // Validate all supplied rooms belong to the chore's house — keeps
+  // RLS honest and prevents accidental cross-house exclusions.
+  if (parsed.data.room_ids.length > 0) {
+    const { data: validRooms } = await supabase
+      .from("rooms")
+      .select("id")
+      .eq("house_id", chore.house_id)
+      .in("id", parsed.data.room_ids);
+    if ((validRooms?.length ?? 0) !== parsed.data.room_ids.length) {
+      return { error: "One or more rooms don't belong to this chore's house" };
+    }
+  }
+
+  const { data: existing } = await supabase
+    .from("chore_room_exclusions")
+    .select("id, room_id")
+    .eq("chore_id", choreId);
+
+  const existingByRoom = new Map(
+    (existing ?? []).map((r) => [r.room_id as string, r.id as string])
+  );
+  const desired = new Set(parsed.data.room_ids);
+
+  const toInsert = parsed.data.room_ids.filter((rid) => !existingByRoom.has(rid));
+  const toDeleteIds: string[] = [];
+  for (const [rid, id] of existingByRoom.entries()) {
+    if (!desired.has(rid)) toDeleteIds.push(id);
+  }
+
+  if (toInsert.length > 0) {
+    const { error: insErr } = await supabase
+      .from("chore_room_exclusions")
+      .insert(
+        toInsert.map((rid) => ({
+          chore_id: choreId,
+          room_id: rid,
+          created_by: user.id,
+        }))
+      );
+    if (insErr) return { error: insErr.message };
+  }
+
+  if (toDeleteIds.length > 0) {
+    const { error: delErr } = await supabase
+      .from("chore_room_exclusions")
+      .delete()
+      .in("id", toDeleteIds);
+    if (delErr) return { error: delErr.message };
+  }
+
+  await logActivity({
+    houseId: chore.house_id,
+    actorId: user.id,
+    eventType: "chore_room_exclusions_updated",
+    entityType: "chore",
+    entityId: choreId,
+    description: `${user.full_name} updated room exclusions for "${chore.name}" (${parsed.data.room_ids.length} excluded)`,
+  });
+
+  revalidatePath("/chores");
+  return {};
+}
+
 export async function removeChoreTask(taskId: string) {
   const user = await requireAuth();
   const supabase = await createClient();
@@ -209,6 +353,24 @@ export async function removeChoreTask(taskId: string) {
 
   revalidatePath("/chores");
   return {};
+}
+
+// Return the room id this resident is currently bedded in (active
+// bed assignment — end_date IS NULL). Null if the resident has no
+// active bed. Used to skip residents whose room is excluded from a
+// particular chore's rotation/assignment.
+async function getResidentCurrentRoomId(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  residentId: string
+): Promise<string | null> {
+  const { data } = await supabase
+    .from("bed_assignments")
+    .select("bed:beds(room_id)")
+    .eq("resident_id", residentId)
+    .is("end_date", null)
+    .maybeSingle();
+  const bed = data?.bed as unknown as { room_id: string } | null;
+  return bed?.room_id ?? null;
 }
 
 // --- Rotations ---
@@ -307,6 +469,26 @@ export async function assignRotationChore(
   if (!rotation) return { error: "Rotation not found" };
   if (user.role !== "admin" && !canAccessHouse(user, rotation.house_id)) {
     return { error: "Not authorized" };
+  }
+
+  // Guard: refuse to assign a chore to a resident whose current room
+  // is excluded from that chore. User-facing error so managers see
+  // why the assign dropdown "won't stick".
+  const { data: roomExclusions } = await supabase
+    .from("chore_room_exclusions")
+    .select("room_id")
+    .eq("chore_id", parsed.data.chore_id);
+  const excludedRoomIds = new Set(
+    (roomExclusions ?? []).map((r) => r.room_id as string)
+  );
+  if (excludedRoomIds.size > 0) {
+    const roomId = await getResidentCurrentRoomId(supabase, parsed.data.resident_id);
+    if (roomId && excludedRoomIds.has(roomId)) {
+      return {
+        error:
+          "This resident's room is excluded from this chore. Uncheck the room in the chore's Edit dialog to allow assignment.",
+      };
+    }
   }
 
   // Look up the house's timezone so we only create signoffs for days that
@@ -589,7 +771,7 @@ export async function rotateSchedule(rotationId: string) {
     return { error: "Need at least 2 assigned chores to rotate" };
   }
 
-  // Get exclusions for this house's chores
+  // Get resident-level exclusions for this house's chores
   const choreIds = assignments.map((a) => a.chore_id);
   const { data: exclusions } = await supabase
     .from("chore_exclusions")
@@ -600,8 +782,40 @@ export async function rotateSchedule(rotationId: string) {
     (exclusions ?? []).map((e) => `${e.chore_id}:${e.resident_id}`)
   );
 
-  // Collect the list of resident IDs from current assignments
+  // Also collect room-level exclusions. Any resident currently bedded
+  // in an excluded room is treated the same as a resident-level
+  // exclusion for that chore.
+  const { data: roomExclusions } = await supabase
+    .from("chore_room_exclusions")
+    .select("chore_id, room_id")
+    .in("chore_id", choreIds);
+
+  // Map resident_id -> current room_id for every resident in this rotation.
   const residentIds = assignments.map((a) => a.resident_id);
+  const residentRoomMap = new Map<string, string>();
+  if (residentIds.length > 0) {
+    const { data: beds } = await supabase
+      .from("bed_assignments")
+      .select("resident_id, bed:beds(room_id)")
+      .in("resident_id", residentIds)
+      .is("end_date", null);
+    for (const row of beds ?? []) {
+      const bed = row.bed as unknown as { room_id: string } | null;
+      if (bed?.room_id) {
+        residentRoomMap.set(row.resident_id as string, bed.room_id);
+      }
+    }
+  }
+
+  // Derive per-chore excluded resident set (from room exclusions) and
+  // merge with the resident-level exclusionSet.
+  for (const rx of roomExclusions ?? []) {
+    for (const [residentId, roomId] of residentRoomMap.entries()) {
+      if (roomId === rx.room_id) {
+        exclusionSet.add(`${rx.chore_id}:${residentId}`);
+      }
+    }
+  }
 
   // Rotate residents: shift by one position (round-robin)
   const rotatedResidents = [...residentIds.slice(1), residentIds[0]];
