@@ -305,3 +305,125 @@ create policy "sign_out_sheet_mutate"
       where ur.user_id = auth.uid() and ur.role in ('admin','manager')
     )
   );
+
+-- ---- Payments revamp: charges + receipt numbers ----
+-- Existing model: payments is a flat log. Staff re-type period/due-date
+-- for every payment. There's no concept of "Carlos owes $500 for Dec".
+--
+-- New model: payment_charges holds one row per monthly rent period per
+-- resident (opened automatically when their commitment is signed and
+-- when each period rolls over). A payment can be linked to a charge
+-- via payments.charge_id; the charge flips to 'paid' when it's fully
+-- satisfied. Receipt numbers are allocated atomically as SL-YYYY-NNNN.
+
+-- New columns on payments. All nullable so existing rows stay valid.
+alter table public.payments
+  add column if not exists charge_id uuid,
+  add column if not exists receipt_number text,
+  add column if not exists receipt_document_id uuid references public.documents(id) on delete set null,
+  add column if not exists receipt_storage_path text;
+
+-- Unique receipt numbers per facility (across all houses).
+create unique index if not exists uq_payments_receipt_number
+  on public.payments (receipt_number) where receipt_number is not null;
+
+create table if not exists public.payment_charges (
+  id uuid primary key default uuid_generate_v4(),
+  resident_id uuid not null references public.residents(id) on delete cascade,
+  house_id uuid not null references public.houses(id) on delete cascade,
+  commitment_id uuid references public.house_commitments(id) on delete set null,
+  charge_type text not null default 'rent'
+    check (charge_type in ('rent','admin_fee','deposit','misc')),
+  amount numeric(10,2) not null check (amount >= 0),
+  due_date date not null,
+  period_start date,
+  period_end date,
+  status text not null default 'open'
+    check (status in ('open','paid','partial','void')),
+  payment_id uuid references public.payments(id) on delete set null,
+  paid_amount numeric(10,2) not null default 0 check (paid_amount >= 0),
+  note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- One rent charge per resident per due_date — prevents double-opening
+-- when the opener runs more than once for the same period.
+create unique index if not exists uq_payment_charges_resident_due_type
+  on public.payment_charges (resident_id, due_date, charge_type);
+
+create index if not exists idx_payment_charges_house_status_due
+  on public.payment_charges (house_id, status, due_date);
+create index if not exists idx_payment_charges_resident_due_desc
+  on public.payment_charges (resident_id, due_date desc);
+
+-- Back-link payments.charge_id to payment_charges.id now that the
+-- table exists. Done as a separate statement so the alter above stays
+-- rerunnable on fresh databases.
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'payments_charge_id_fkey'
+  ) then
+    alter table public.payments
+      add constraint payments_charge_id_fkey
+      foreign key (charge_id) references public.payment_charges(id)
+      on delete set null;
+  end if;
+end$$;
+
+alter table public.payment_charges enable row level security;
+
+drop policy if exists "payment_charges_select" on public.payment_charges;
+create policy "payment_charges_select"
+  on public.payment_charges for select to authenticated using (true);
+
+-- Only staff (admin / manager) can open / modify charges. Residents
+-- read-only so their dashboard can show "Next due."
+drop policy if exists "payment_charges_mutate" on public.payment_charges;
+create policy "payment_charges_mutate"
+  on public.payment_charges for all to authenticated
+  using (
+    exists (
+      select 1 from public.user_roles ur
+      where ur.user_id = auth.uid() and ur.role in ('admin','manager')
+    )
+  )
+  with check (
+    exists (
+      select 1 from public.user_roles ur
+      where ur.user_id = auth.uid() and ur.role in ('admin','manager')
+    )
+  );
+
+-- ---- Receipt number allocator ----
+-- Per-year sequential counter. SL-YYYY-NNNN, NNNN zero-padded to 4
+-- digits. Locked via row-level update so concurrent payments never
+-- collide on a number.
+create table if not exists public.payment_receipt_counters (
+  year int primary key,
+  next_seq int not null default 1,
+  updated_at timestamptz not null default now()
+);
+
+create or replace function public.next_receipt_number(p_year int)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_seq int;
+begin
+  insert into public.payment_receipt_counters (year, next_seq)
+    values (p_year, 1)
+    on conflict (year) do nothing;
+  update public.payment_receipt_counters
+    set next_seq = next_seq + 1,
+        updated_at = now()
+    where year = p_year
+    returning next_seq - 1 into v_seq;
+  return 'SL-' || p_year::text || '-' || lpad(v_seq::text, 4, '0');
+end$$;
+
+grant execute on function public.next_receipt_number(int) to authenticated;

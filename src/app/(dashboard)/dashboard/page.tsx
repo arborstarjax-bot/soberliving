@@ -207,7 +207,7 @@ async function ResidentDashboard({ userId }: { userId: string }) {
   // so we can render the Sign Out / Sign In toggle at the top of the
   // resident dashboard. Residents under a No Leave or House Commitment
   // restriction don't see the button at all.
-  const [openSignOutRes, restrictionsRes] = resident?.id
+  const [openSignOutRes, restrictionsRes, nextDueRes] = resident?.id
     ? await Promise.all([
         supabase
           .from("sign_out_sheet")
@@ -220,14 +220,37 @@ async function ResidentDashboard({ userId }: { userId: string }) {
           .select("restriction_type")
           .eq("resident_id", resident.id)
           .eq("is_active", true),
+        // Soonest open rent charge — shown as the "Next Rent Due"
+        // card so residents always know what's owed without having
+        // to tap through to /payments.
+        supabase
+          .from("payment_charges")
+          .select("id, amount, paid_amount, due_date, charge_type")
+          .eq("resident_id", resident.id)
+          .in("status", ["open", "partial"])
+          .order("due_date", { ascending: true })
+          .limit(1)
+          .maybeSingle(),
       ])
-    : [{ data: null }, { data: [] as { restriction_type: string }[] }];
+    : [
+        { data: null },
+        { data: [] as { restriction_type: string }[] },
+        { data: null },
+      ];
   const openSignOut = openSignOutRes.data ?? null;
   const residentHasNoLeave = (restrictionsRes.data ?? []).some((r) =>
     ["no_leave", "house_commitment"].includes(
       (r as { restriction_type: string }).restriction_type
     )
   );
+  const nextDueCharge =
+    (nextDueRes?.data as unknown as {
+      id: string;
+      amount: number;
+      paid_amount: number;
+      due_date: string;
+      charge_type: string;
+    } | null) ?? null;
 
   if (!resident) {
     return (
@@ -260,6 +283,59 @@ async function ResidentDashboard({ userId }: { userId: string }) {
           openSignOut={openSignOut}
         />
       )}
+
+      {nextDueCharge && (() => {
+        const balance =
+          Number(nextDueCharge.amount) - Number(nextDueCharge.paid_amount);
+        const todayIso = new Date().toISOString().slice(0, 10);
+        const pastDue = nextDueCharge.due_date < todayIso;
+        const [y, m, d] = nextDueCharge.due_date.split("-").map(Number);
+        const dueLabel = new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString(
+          "en-US",
+          { month: "short", day: "numeric", year: "numeric" }
+        );
+        return (
+          <Link href="/payments" className="block">
+            <Card
+              className={
+                pastDue
+                  ? "border-red-500/40 bg-red-500/5"
+                  : "border-amber-500/30 bg-amber-500/5"
+              }
+            >
+              <CardContent className="flex items-center justify-between gap-4 p-4">
+                <div>
+                  <p
+                    className={`text-xs font-semibold uppercase tracking-wide ${
+                      pastDue ? "text-red-600" : "text-amber-600"
+                    }`}
+                  >
+                    {pastDue
+                      ? "Past Due"
+                      : nextDueCharge.charge_type === "rent"
+                        ? "Next Rent Due"
+                        : "Next Payment Due"}
+                  </p>
+                  <p className="mt-1 text-2xl font-bold">
+                    {new Intl.NumberFormat("en-US", {
+                      style: "currency",
+                      currency: "USD",
+                    }).format(balance)}
+                  </p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    Due {dueLabel}
+                  </p>
+                </div>
+                <DollarSign
+                  className={`h-8 w-8 shrink-0 ${
+                    pastDue ? "text-red-500/60" : "text-amber-500/60"
+                  }`}
+                />
+              </CardContent>
+            </Card>
+          </Link>
+        );
+      })()}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card>

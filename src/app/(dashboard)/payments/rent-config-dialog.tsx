@@ -14,12 +14,16 @@ import {
 } from "@/components/ui/dialog";
 import { Settings } from "lucide-react";
 
+// Rent config is now a house-level default used to prefill the
+// commitment form — the signed commitment is still the source of
+// truth for each resident's actual rent schedule. Monthly-only,
+// same-day-each-month cadence; we dropped late fees + grace period
+// per owner decision.
+
 interface RentConfigData {
   house_id: string;
   monthly_amount: number;
   due_day_of_month: number;
-  late_fee: number;
-  grace_period_days: number;
 }
 
 interface Props {
@@ -44,6 +48,10 @@ export function RentConfigDialog({ houses, existingConfigs }: Props) {
         <DialogHeader>
           <DialogTitle>Rent Configuration</DialogTitle>
         </DialogHeader>
+        <p className="text-xs text-muted-foreground">
+          House-level default used to prefill the commitment form. A resident&apos;s actual rent
+          schedule comes from their signed commitment.
+        </p>
         <form action={action} className="space-y-4">
           <div className="space-y-2">
             <Label>House *</Label>
@@ -77,7 +85,7 @@ export function RentConfigDialog({ houses, existingConfigs }: Props) {
               />
             </div>
             <div className="space-y-2">
-              <Label>Due Day of Month *</Label>
+              <Label>Default Due Day *</Label>
               <Input
                 name="due_day_of_month"
                 type="number"
@@ -86,29 +94,6 @@ export function RentConfigDialog({ houses, existingConfigs }: Props) {
                 required
                 defaultValue={currentConfig?.due_day_of_month ?? 1}
                 key={selectedHouse + "-day"}
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Late Fee</Label>
-              <Input
-                name="late_fee"
-                type="number"
-                step="0.01"
-                min="0"
-                defaultValue={currentConfig?.late_fee ?? 0}
-                key={selectedHouse + "-fee"}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Grace Period (days)</Label>
-              <Input
-                name="grace_period_days"
-                type="number"
-                min="0"
-                defaultValue={currentConfig?.grace_period_days ?? 0}
-                key={selectedHouse + "-grace"}
               />
             </div>
           </div>

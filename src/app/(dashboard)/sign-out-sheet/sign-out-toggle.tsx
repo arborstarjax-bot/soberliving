@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, useTransition } from "react";
 import { signOutResident, signInResident } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,14 +38,29 @@ interface Props {
  */
 export function SignOutToggle({ residentId, residentName, openSignOut }: Props) {
   const [open, setOpen] = useState(false);
-  const [signOutState, signOutAction, signOutPending] = useActionState(
-    signOutResident,
-    undefined
-  );
+  const [signOutError, setSignOutError] = useState<string | undefined>(undefined);
+  const [signOutPending, startSignOut] = useTransition();
   const [signInState, signInAction, signInPending] = useActionState(
     signInResident,
     undefined
   );
+
+  // Sign-out uses useTransition + manual state instead of
+  // useActionState so the dialog can close exactly when the server
+  // action resolves successfully — without triggering the
+  // "setState in effect" lint rule. On error, the dialog stays open
+  // with the error surfaced inline.
+  function handleSignOut(formData: FormData) {
+    startSignOut(async () => {
+      const result = await signOutResident(undefined, formData);
+      if (result?.error) {
+        setSignOutError(result.error);
+      } else {
+        setSignOutError(undefined);
+        setOpen(false);
+      }
+    });
+  }
 
   if (openSignOut) {
     return (
@@ -103,17 +118,7 @@ export function SignOutToggle({ residentId, residentName, openSignOut }: Props) 
         <DialogHeader>
           <DialogTitle>Sign Out</DialogTitle>
         </DialogHeader>
-        <form
-          action={(formData) => {
-            signOutAction(formData);
-            // Close on submit — state reset will happen; errors still
-            // render below because the action returns an error state.
-            // If there's an error, the dialog reopens visually if the
-            // user taps the trigger again.
-            setOpen(false);
-          }}
-          className="space-y-4"
-        >
+        <form action={handleSignOut} className="space-y-4">
           <input type="hidden" name="resident_id" value={residentId} />
           <p className="text-sm text-muted-foreground">
             {residentName}, where are you headed? Staff will be notified you&apos;re out.
@@ -134,8 +139,8 @@ export function SignOutToggle({ residentId, residentName, openSignOut }: Props) 
             <Label htmlFor="notes">Notes (optional)</Label>
             <Textarea id="notes" name="notes" rows={2} maxLength={1000} />
           </div>
-          {signOutState?.error && (
-            <p className="text-sm text-red-500">{signOutState.error}</p>
+          {signOutError && (
+            <p className="text-sm text-red-500">{signOutError}</p>
           )}
           <div className="flex justify-end gap-2 pt-2">
             <Button

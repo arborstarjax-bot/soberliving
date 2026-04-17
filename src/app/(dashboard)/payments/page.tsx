@@ -3,18 +3,30 @@ import { createClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { DollarSign } from "lucide-react";
+import { DollarSign, AlertCircle, Calendar } from "lucide-react";
 import { CreatePaymentDialog } from "./create-payment-dialog";
 import { VoidPaymentDialog } from "./void-payment-dialog";
 import { RentConfigDialog } from "./rent-config-dialog";
+import { DownloadReceiptButton } from "./download-receipt-button";
 import { Pagination } from "@/components/pagination";
 import { getPageParams, buildPaginationMeta } from "@/lib/pagination";
+import { sweepOpenChargesForActiveCommitments } from "@/lib/payments/charges";
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
   }).format(amount);
+}
+
+function formatDueDate(iso: string) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
+  return dt.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function getPaymentTypeBadgeVariant(type: string) {
@@ -63,6 +75,18 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
   const params = await searchParams;
   const { page, offset, pageSize } = getPageParams(params);
 
+  // Lazy "cron" — on each staff page load, walk every active
+  // commitment and open any missing monthly charges. Idempotent via
+  // the (resident_id, due_date, charge_type) unique index. Keeps the
+  // schedule current without a scheduled job.
+  if (isStaff) {
+    try {
+      await sweepOpenChargesForActiveCommitments(houseFilter ?? null);
+    } catch (e) {
+      console.error("Charge sweep failed", e);
+    }
+  }
+
   // For residents, look up their resident record to filter payments.
   // This has to happen before the payments query runs because the filter
   // depends on its id, but every other query runs in parallel after.
@@ -94,21 +118,28 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
     paymentsQuery = paymentsQuery.in("house_id", houseFilter);
   }
 
-  // Staff-only aggregation / dialog data. Build all six queries up
-  // front and fire them in one Promise.all so the page doesn't wait
-  // for them sequentially.
+  // Open charges — powers the staff "Open Balances" column and the
+  // dialog's "Apply to Charge" selector.
+  let openChargesQuery = supabase
+    .from("payment_charges")
+    .select(
+      "id, resident_id, house_id, charge_type, amount, paid_amount, due_date, period_start, period_end, status, resident:residents(full_name), house:houses(name)"
+    )
+    .in("status", ["open", "partial"])
+    .order("due_date", { ascending: true });
+  if (user.role === "resident" && residentRecord) {
+    openChargesQuery = openChargesQuery.eq("resident_id", residentRecord.id);
+  } else if (houseFilter) {
+    openChargesQuery = openChargesQuery.in("house_id", houseFilter);
+  }
+
+  // Staff-only aggregation / dialog data. Build queries up front and
+  // fire them in one Promise.all so the page doesn't wait sequentially.
   let completedStatsQuery = isStaff
     ? supabase.from("payments").select("amount").eq("status", "completed")
     : null;
   if (completedStatsQuery && houseFilter) {
     completedStatsQuery = completedStatsQuery.in("house_id", houseFilter);
-  }
-
-  let pendingStatsQuery = isStaff
-    ? supabase.from("payments").select("amount").eq("status", "pending")
-    : null;
-  if (pendingStatsQuery && houseFilter) {
-    pendingStatsQuery = pendingStatsQuery.in("house_id", houseFilter);
   }
 
   let housesQuery = isStaff
@@ -128,7 +159,7 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
   let rentConfigsQuery = isStaff
     ? supabase
         .from("rent_configs")
-        .select("house_id, monthly_amount, due_day_of_month, late_fee, grace_period_days")
+        .select("house_id, monthly_amount, due_day_of_month")
         .eq("is_active", true)
     : null;
   if (rentConfigsQuery && houseFilter) rentConfigsQuery = rentConfigsQuery.in("house_id", houseFilter);
@@ -137,15 +168,15 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
 
   const [
     { data: payments, count: paymentsCount },
+    { data: openCharges },
     completedRes,
-    pendingRes,
     housesRes,
     residentsRes,
     rentConfigsRes,
   ] = await Promise.all([
     paymentsQuery,
+    openChargesQuery,
     completedStatsQuery ?? nullRes,
-    pendingStatsQuery ?? nullRes,
     housesQuery ?? nullRes,
     residentsQuery ?? nullRes,
     rentConfigsQuery ?? nullRes,
@@ -153,14 +184,21 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
 
   const meta = buildPaginationMeta(paymentsCount ?? 0, page, pageSize);
   const completedData = completedRes.data ?? [];
-  const pendingData = pendingRes.data ?? [];
   const completedCount = completedData.length;
   const totalCollected = completedData.reduce((sum, p) => sum + Number(p.amount), 0);
-  const pendingCount = pendingData.length;
-  const totalPending = pendingData.reduce((sum, p) => sum + Number(p.amount), 0);
   const houses = housesRes.data ?? [];
   const residents = residentsRes.data ?? [];
   const rentConfigs = rentConfigsRes.data ?? [];
+  const openChargeRows = openCharges ?? [];
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const totalOpenBalance = openChargeRows.reduce(
+    (s, c) => s + (Number(c.amount) - Number(c.paid_amount)),
+    0
+  );
+  const pastDueCount = openChargeRows.filter(
+    (c) => c.due_date < todayIso
+  ).length;
 
   const configMap: Record<
     string,
@@ -168,13 +206,15 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
       house_id: string;
       monthly_amount: number;
       due_day_of_month: number;
-      late_fee: number;
-      grace_period_days: number;
     }
   > = {};
   for (const rc of rentConfigs) {
     configMap[rc.house_id] = rc;
   }
+
+  const residentNextDue = openChargeRows
+    .filter((c) => c.charge_type === "rent")
+    .sort((a, b) => a.due_date.localeCompare(b.due_date))[0];
 
   return (
     <div className="space-y-6">
@@ -187,25 +227,53 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
         </div>
         {isStaff && (
           <div className="flex gap-2">
-            <RentConfigDialog
-              houses={houses}
-              existingConfigs={configMap}
-            />
+            <RentConfigDialog houses={houses} existingConfigs={configMap} />
             <CreatePaymentDialog
               houses={houses}
               residents={residents}
+              openCharges={openChargeRows.map((c) => ({
+                id: c.id,
+                resident_id: c.resident_id,
+                amount: Number(c.amount),
+                paid_amount: Number(c.paid_amount),
+                due_date: c.due_date,
+                period_start: c.period_start,
+                period_end: c.period_end,
+                charge_type: c.charge_type,
+              }))}
             />
           </div>
         )}
       </div>
 
+      {/* Resident "Next Due" card — replaces the deprecated pending-stats tile */}
+      {user.role === "resident" && residentNextDue && (
+        <Card className="border-amber-500/30 bg-amber-500/5">
+          <CardContent className="flex items-start justify-between gap-4 p-4">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">
+                Next Rent Due
+              </p>
+              <p className="mt-1 text-2xl font-bold">
+                {formatCurrency(
+                  Number(residentNextDue.amount) -
+                    Number(residentNextDue.paid_amount)
+                )}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Due {formatDueDate(residentNextDue.due_date)}
+              </p>
+            </div>
+            <Calendar className="h-8 w-8 text-amber-600/60 shrink-0" />
+          </CardContent>
+        </Card>
+      )}
+
       {isStaff && (
         <div className="grid gap-4 sm:grid-cols-3">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Total Collected
-              </CardTitle>
+              <CardTitle className="text-sm font-medium">Total Collected</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -219,25 +287,21 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Pending
-              </CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Open Balances</CardTitle>
+              <AlertCircle className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {formatCurrency(totalPending)}
+                {formatCurrency(totalOpenBalance)}
               </div>
               <p className="text-xs text-muted-foreground">
-                {pendingCount} payments
+                {openChargeRows.length} open · {pastDueCount} past due
               </p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Rent Config
-              </CardTitle>
+              <CardTitle className="text-sm font-medium">Rent Config</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -264,6 +328,65 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
         </div>
       )}
 
+      {/* Open balances list — staff only. Shows every open rent/fee
+          charge, past-due rows highlighted. Tapping the Record button
+          pre-fills the dialog with that charge selected. */}
+      {isStaff && openChargeRows.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Open Balances</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y">
+              {openChargeRows.map((c) => {
+                const resident =
+                  (c.resident as unknown as { full_name: string } | null)
+                    ?.full_name ?? "Unknown";
+                const houseName =
+                  (c.house as unknown as { name: string } | null)?.name ?? "";
+                const balance = Number(c.amount) - Number(c.paid_amount);
+                const pastDue = c.due_date < todayIso;
+                return (
+                  <div
+                    key={c.id}
+                    className="flex items-center justify-between gap-3 px-4 py-3"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={pastDue ? "destructive" : "outline"}
+                          className="capitalize text-[10px]"
+                        >
+                          {c.charge_type.replace(/_/g, " ")}
+                        </Badge>
+                        <span className="font-medium truncate">{resident}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Due {formatDueDate(c.due_date)} · {houseName}
+                        {Number(c.paid_amount) > 0 && (
+                          <>
+                            {" · "}
+                            {formatCurrency(Number(c.paid_amount))} of{" "}
+                            {formatCurrency(Number(c.amount))} paid
+                          </>
+                        )}
+                      </p>
+                    </div>
+                    <span
+                      className={`font-semibold ${
+                        pastDue ? "text-destructive" : ""
+                      }`}
+                    >
+                      {formatCurrency(balance)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {(payments ?? []).length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
@@ -273,87 +396,103 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
         </Card>
       ) : (
         <>
-        <div className="space-y-2">
-          {(payments ?? []).map((payment) => {
-            const residentName =
-              (payment.resident as unknown as { full_name: string } | null)
-                ?.full_name ?? "Unknown";
-            const houseName =
-              (payment.house as unknown as { name: string } | null)?.name ?? "";
-            const recorderName =
-              (payment.recorder as unknown as { full_name: string } | null)
-                ?.full_name ?? "";
+          <div className="space-y-2">
+            {(payments ?? []).map((payment) => {
+              const residentName =
+                (payment.resident as unknown as { full_name: string } | null)
+                  ?.full_name ?? "Unknown";
+              const houseName =
+                (payment.house as unknown as { name: string } | null)?.name ?? "";
+              const recorderName =
+                (payment.recorder as unknown as { full_name: string } | null)
+                  ?.full_name ?? "";
 
-            return (
-              <Card key={payment.id}>
-                <CardContent className="py-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2">
-                      <Badge variant={getPaymentTypeBadgeVariant(payment.payment_type)} className="capitalize">
-                        {payment.payment_type}
-                      </Badge>
-                      <span className="font-semibold">
-                        {formatCurrency(Number(payment.amount))}
-                      </span>
-                      <span className="font-medium text-sm">
-                        {residentName}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge
-                        variant={getStatusBadgeVariant(payment.status)}
-                        className="capitalize"
-                      >
-                        {payment.status}
-                      </Badge>
-                      {isStaff &&
-                        payment.status !== "void" &&
-                        payment.status !== "refunded" && (
-                          <VoidPaymentDialog
-                            paymentId={payment.id}
-                            amount={Number(payment.amount)}
-                            residentName={residentName}
+              return (
+                <Card key={payment.id}>
+                  <CardContent className="py-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Badge
+                          variant={getPaymentTypeBadgeVariant(
+                            payment.payment_type
+                          )}
+                          className="capitalize"
+                        >
+                          {payment.payment_type}
+                        </Badge>
+                        <span className="font-semibold">
+                          {formatCurrency(Number(payment.amount))}
+                        </span>
+                        <span className="font-medium text-sm truncate">
+                          {residentName}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Badge
+                          variant={getStatusBadgeVariant(payment.status)}
+                          className="capitalize"
+                        >
+                          {payment.status}
+                        </Badge>
+                        {payment.receipt_storage_path && (
+                          <DownloadReceiptButton
+                            storagePath={payment.receipt_storage_path}
+                            receiptNumber={payment.receipt_number ?? null}
                           />
                         )}
+                        {user.role === "admin" &&
+                          payment.status !== "void" &&
+                          payment.status !== "refunded" && (
+                            <VoidPaymentDialog
+                              paymentId={payment.id}
+                              amount={Number(payment.amount)}
+                              residentName={residentName}
+                            />
+                          )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>
-                      {payment.status === "pending" || !payment.paid_at
-                        ? payment.status.charAt(0).toUpperCase() + payment.status.slice(1)
-                        : new Date(payment.paid_at).toLocaleDateString()}
-                    </span>
-                    {payment.payment_method && (
-                      <span className="capitalize">
-                        · {formatPaymentMethod(payment.payment_method)}
-                      </span>
-                    )}
-                    <span>· {houseName}</span>
-                    {recorderName && <span>· Recorded by {recorderName}</span>}
-                    {payment.period_start && payment.period_end && (
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                       <span>
-                        · Period:{" "}
-                        {new Date(payment.period_start).toLocaleDateString()} –{" "}
-                        {new Date(payment.period_end).toLocaleDateString()}
+                        {payment.paid_at
+                          ? new Date(payment.paid_at).toLocaleDateString()
+                          : payment.status}
                       </span>
+                      {payment.payment_method && (
+                        <span className="capitalize">
+                          · {formatPaymentMethod(payment.payment_method)}
+                        </span>
+                      )}
+                      <span>· {houseName}</span>
+                      {payment.receipt_number && (
+                        <span className="font-mono">
+                          · {payment.receipt_number}
+                        </span>
+                      )}
+                      {recorderName && <span>· Recorded by {recorderName}</span>}
+                      {payment.period_start && payment.period_end && (
+                        <span>
+                          · Period:{" "}
+                          {new Date(payment.period_start).toLocaleDateString()} –{" "}
+                          {new Date(payment.period_end).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    {payment.note && (
+                      <p className="text-sm mt-1 text-muted-foreground">
+                        {payment.note}
+                      </p>
                     )}
-                  </div>
-                  {payment.note && (
-                    <p className="text-sm mt-1 text-muted-foreground">
-                      {payment.note}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-        <Pagination
-          meta={meta}
-          basePath="/payments"
-          searchParams={params}
-          itemLabel="payments"
-        />
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+          <Pagination
+            meta={meta}
+            basePath="/payments"
+            searchParams={params}
+            itemLabel="payments"
+          />
         </>
       )}
     </div>

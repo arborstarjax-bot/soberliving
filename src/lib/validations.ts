@@ -191,7 +191,10 @@ export const createPaymentSchema = z.object({
   amount: z.coerce.number().positive("Amount must be greater than 0"),
   payment_type: z.enum(["rent", "deposit", "fee", "other"]),
   payment_method: z.enum(["cash", "check", "money_order", "venmo", "zelle", "other"]).optional(),
-  status: z.enum(["completed", "pending"]).default("completed"),
+  // status is always "completed" on insert now — no more "pending"
+  // state since there's no late-fee / auto-reconciliation workflow.
+  // Admins can void a completed payment from the list row.
+  charge_id: z.string().uuid().optional(),
   period_start: z.string().optional(),
   period_end: z.string().optional(),
   due_date: z.string().optional(),
@@ -209,8 +212,6 @@ export const upsertRentConfigSchema = z.object({
   house_id: z.string().uuid(),
   monthly_amount: z.coerce.number().positive("Monthly amount must be greater than 0"),
   due_day_of_month: z.coerce.number().int().min(1).max(28, "Due day must be between 1 and 28"),
-  late_fee: z.coerce.number().min(0, "Late fee cannot be negative").default(0),
-  grace_period_days: z.coerce.number().int().min(0, "Grace period cannot be negative").default(0),
 });
 
 // --- Demerits ---

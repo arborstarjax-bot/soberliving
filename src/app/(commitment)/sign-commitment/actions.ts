@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
+import { openAllChargesForCommitment } from "@/lib/payments/charges";
 
 export async function getCommitmentForResident() {
   const user = await requireAuth();
@@ -115,7 +116,18 @@ export async function signCommitment(
     description: `${user.full_name} signed the house commitment agreement`,
   });
 
+  // Open the startup (admin fee / deposit) and first rent charges
+  // now that the commitment is active. Errors here don't fail the
+  // sign action — the lazy sweep on the payments page will catch
+  // anything missed.
+  try {
+    await openAllChargesForCommitment(commitmentId);
+  } catch (e) {
+    console.error("Failed to open initial charges for commitment", commitmentId, e);
+  }
+
   revalidatePath("/dashboard");
   revalidatePath("/sign-commitment");
+  revalidatePath("/payments");
   return {};
 }

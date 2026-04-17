@@ -137,19 +137,19 @@ export default async function ResidentsPage() {
 
   // Fetch intake data for staff (full lifecycle: invited, in progress,
   // awaiting review, awaiting signature, denied).
-  let intakeInvited: Array<{
+  const intakeInvited: Array<{
     id: string;
     full_name: string;
     email: string;
     createdAt: string;
   }> = [];
-  let intakeInProgress: Array<{
+  const intakeInProgress: Array<{
     id: string;
     full_name: string;
     email: string;
     lastUpdatedAt: string | null;
   }> = [];
-  let intakePending: Array<{
+  const intakePending: Array<{
     id: string;
     full_name: string;
     email: string;
@@ -158,7 +158,7 @@ export default async function ResidentsPage() {
     intakeFormData: Record<string, unknown>;
     completedAt: string | null;
   }> = [];
-  let intakeAwaiting: Array<{
+  const intakeAwaiting: Array<{
     id: string;
     full_name: string;
     email: string;
