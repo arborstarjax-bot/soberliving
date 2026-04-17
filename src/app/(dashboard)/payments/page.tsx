@@ -16,6 +16,7 @@ import {
   openAllChargesForCommitment,
 } from "@/lib/payments/charges";
 import { ResidentPaymentsView } from "./resident-view";
+import { PaymentsByResident } from "./payments-by-resident";
 
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat("en-US", {
@@ -387,8 +388,9 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
           Residents keep the simple "Next Due card + history" flow —
           no tabs, they only ever have one view. */}
       {isStaff ? (
-        <Tabs defaultValue="outstanding">
+        <Tabs defaultValue="by-resident">
           <TabsList>
+            <TabsTrigger value="by-resident">By Resident</TabsTrigger>
             <TabsTrigger value="outstanding">
               Outstanding
               {openChargeRows.length > 0 && (
@@ -402,6 +404,40 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
             </TabsTrigger>
             <TabsTrigger value="paid">Paid</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="by-resident" className="mt-4">
+            <PaymentsByResident
+              residents={residents.map((r) => ({
+                id: r.id as string,
+                full_name: (r.full_name as string) ?? "",
+                house_id: (r.house_id as string) ?? "",
+                house_name:
+                  houses.find((h) => h.id === r.house_id)?.name ?? "",
+              }))}
+              openCharges={openChargeRows.map((c) => ({
+                id: c.id as string,
+                resident_id: c.resident_id as string,
+                house_id: c.house_id as string,
+                charge_type: c.charge_type as string,
+                amount: Number(c.amount),
+                paid_amount: Number(c.paid_amount),
+                due_date: c.due_date as string,
+                period_start: (c.period_start as string | null) ?? null,
+                period_end: (c.period_end as string | null) ?? null,
+              }))}
+              recentPayments={(payments ?? []).map((p) => ({
+                id: p.id as string,
+                resident_id: p.resident_id as string,
+                amount: Number(p.amount),
+                paid_at: p.paid_at as string,
+                status: p.status as string,
+                receipt_number:
+                  (p.receipt_number as string | null) ?? null,
+                receipt_storage_path:
+                  (p.receipt_storage_path as string | null) ?? null,
+              }))}
+            />
+          </TabsContent>
 
           <TabsContent value="outstanding" className="mt-4">
             {openChargeRows.length === 0 ? (

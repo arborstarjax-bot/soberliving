@@ -96,10 +96,20 @@ export async function openRentChargesForCommitment(
 
   const start = parseIsoDate(commitment.commitment_start_date);
 
+  // Scope to THIS commitment's rent charges only. After an amendment
+  // that changes the monthly due day (e.g. day-15 → day-28), paid
+  // charges from the superseded commitment would otherwise poison
+  // `nextDueDate`: it takes the max existing due and adds a month, so
+  // a Feb-15 (old) paid charge combined with a Jan-28 (new) start would
+  // compute Mar-28 and skip Jan-28 / Feb-28 at the new rate entirely.
+  // The unique index (resident_id, due_date, charge_type) + upsert
+  // ignoreDuplicates below handles any same-day collisions with old
+  // commitment charges.
   const { data: existing } = await supabase
     .from("payment_charges")
     .select("due_date")
     .eq("resident_id", commitment.resident_id)
+    .eq("commitment_id", commitment.id)
     .eq("charge_type", "rent");
   const existingDates: Date[] = (existing ?? []).map((r) =>
     parseIsoDate(r.due_date as unknown as string)

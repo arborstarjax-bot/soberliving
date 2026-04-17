@@ -22,6 +22,7 @@ import {
   MessageSquare,
   Bell,
   FileText,
+  Folder,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -84,6 +85,15 @@ const NAV_ITEMS: NavItem[] = [
     href: "/sign-out-sheet",
     icon: SignOutIcon,
     roles: ["admin", "manager"],
+  },
+  {
+    // Resident-facing doc library — application, signed commitment,
+    // payment receipts. Staff already see these on the resident profile
+    // Documents tab so this nav entry is resident-only.
+    label: "My Documents",
+    href: "/my-documents",
+    icon: Folder,
+    roles: ["resident"],
   },
   {
     label: "Bulletin",

@@ -43,6 +43,7 @@ export const NOTIFICATION_TYPE_TO_CATEGORY: Record<string, string> = {
 
 export const NOTIFICATION_CATEGORIES = [
   "All",
+  "Needs Attention",
   "Leave",
   "Chores",
   "Discipline",
@@ -56,8 +57,26 @@ export const NOTIFICATION_CATEGORIES = [
 
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
 
+// Notification types that represent something the recipient still has
+// to act on. Powers the "Needs Attention" tab: staff see pending
+// chore signoffs / leave approvals / intake reviews, residents see
+// pending signature requests (commitment amendments, etc). We filter
+// further by entity status on the server so resolved rows don't show
+// up in the tab even if the notification itself lingers.
+export const NEEDS_ATTENTION_NOTIFICATION_TYPES = [
+  "chore_submitted",
+  "manager_approval",
+  "admin_approval",
+  "cover_request",
+  "intake_submitted",
+  "commitment_amendment",
+] as const;
+
 export function notificationTypesForCategory(category: string): string[] {
   if (category === "All" || category === "Other") return [];
+  if (category === "Needs Attention") {
+    return [...NEEDS_ATTENTION_NOTIFICATION_TYPES];
+  }
   return Object.entries(NOTIFICATION_TYPE_TO_CATEGORY)
     .filter(([, cat]) => cat === category)
     .map(([type]) => type);

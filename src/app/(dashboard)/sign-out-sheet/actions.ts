@@ -187,6 +187,20 @@ export async function signInResident(
     return { error: "Not authorized" };
   }
 
+  // Validate the discipline form shape BEFORE we mutate the sign-out
+  // row. Otherwise a sign-in with "warning" + blank reason would commit
+  // the time_in update + activity log, then return an error — the UI
+  // shows failure but the resident is silently signed in and the
+  // discipline is lost.
+  const attachingDiscipline =
+    !!parsed.data.discipline &&
+    parsed.data.discipline !== "none" &&
+    user.role !== "resident";
+  const disciplineReason = parsed.data.discipline_reason?.trim() ?? "";
+  if (attachingDiscipline && !disciplineReason) {
+    return { error: "Reason is required when attaching discipline" };
+  }
+
   const now = new Date().toISOString();
   const { error: updateErr } = await supabase
     .from("sign_out_sheet")
@@ -208,15 +222,9 @@ export async function signInResident(
   });
 
   // Optional discipline in the same commit. Only staff reach this.
-  if (
-    parsed.data.discipline &&
-    parsed.data.discipline !== "none" &&
-    user.role !== "resident"
-  ) {
-    const reason = parsed.data.discipline_reason?.trim();
-    if (!reason) {
-      return { error: "Reason is required when attaching discipline" };
-    }
+  // Reason was already validated above; `reason` is guaranteed non-empty.
+  if (attachingDiscipline) {
+    const reason = disciplineReason;
 
     if (parsed.data.discipline === "warning") {
       const { data: warn, error: warnErr } = await supabase

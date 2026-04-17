@@ -526,6 +526,9 @@ export default async function ResidentDetailPage(
             isAdmin={user.role === "admin"}
             residentUserId={resident.user_id ?? null}
             residentName={resident.full_name ?? ""}
+            residentId={resident.id as string}
+            houseId={(resident.house_id as string | null) ?? null}
+            canRecordPayment={canEdit}
             pendingAmendment={
               pendingAmendment
                 ? {

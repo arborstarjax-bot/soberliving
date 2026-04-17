@@ -168,7 +168,18 @@ export async function createPayment(
   // Generate + upload the receipt PDF. Any failure here is logged
   // but does not block the payment — staff can retry by voiding and
   // re-recording, or we can add a "Regenerate Receipt" action later.
-  if (receiptNumber) {
+  //
+  // Two gating concerns:
+  //   1. If the resident has no user_id (admin-created profile that
+  //      hasn't completed signup), we skip the upload entirely — the
+  //      documents table requires user_id, and an upload with no doc
+  //      row would just orphan a blob in storage.
+  //   2. receipt_storage_path on the payment row must be written
+  //      whenever the upload succeeded, independent of whether we were
+  //      able to insert a documents row. Otherwise the Download
+  //      Receipt button never renders even though the PDF is in
+  //      storage.
+  if (receiptNumber && resident.user_id) {
     try {
       const pdfBytes = await generateReceiptPdf({
         receiptNumber,
@@ -187,9 +198,7 @@ export async function createPayment(
         recordedByName: user.full_name,
       });
 
-      const fileName = resident.user_id
-        ? `${resident.user_id}/receipts/${receiptNumber}.pdf`
-        : `receipts/${receiptNumber}.pdf`;
+      const fileName = `${resident.user_id}/receipts/${receiptNumber}.pdf`;
 
       const { error: uploadError } = await admin.storage
         .from("documents")
@@ -198,7 +207,7 @@ export async function createPayment(
           upsert: true,
         });
 
-      if (!uploadError && resident.user_id) {
+      if (!uploadError) {
         const { data: docRow } = await admin
           .from("documents")
           .insert({

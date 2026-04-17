@@ -18,6 +18,7 @@ import { getDocumentUrl } from "@/app/(intake)/actions";
 import { daysUntilLocal, dayOfMonthLocal } from "@/lib/local-date";
 import { EditTermsDialog } from "@/app/(dashboard)/payments/edit-terms-dialog";
 import { cancelPendingAmendment } from "@/app/(dashboard)/payments/actions";
+import { RecordChargePaymentDialog } from "@/app/(dashboard)/payments/record-charge-payment-dialog";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
@@ -74,6 +75,12 @@ interface Props {
   residentUserId: string | null;
   residentName: string;
   pendingAmendment: PendingAmendment | null;
+  // Passed through to the per-charge Record Payment dialog. Staff
+  // (admin/manager with house access) can record a payment against
+  // any open charge right from the row.
+  residentId: string;
+  houseId: string | null;
+  canRecordPayment: boolean;
 }
 
 const PAGE_SIZE = 20;
@@ -133,6 +140,9 @@ export function ResidentPaymentsPanel({
   residentUserId,
   residentName,
   pendingAmendment,
+  residentId,
+  houseId,
+  canRecordPayment,
 }: Props) {
   const [page, setPage] = useState(0);
 
@@ -213,7 +223,14 @@ export function ResidentPaymentsPanel({
           </h3>
           <div className="space-y-2">
             {sortedCharges.map((c) => (
-              <OpenChargeRow key={c.id} charge={c} />
+              <OpenChargeRow
+                key={c.id}
+                charge={c}
+                canRecordPayment={canRecordPayment && !!houseId}
+                residentId={residentId}
+                residentName={residentName}
+                houseId={houseId ?? ""}
+              />
             ))}
           </div>
         </section>
@@ -348,7 +365,19 @@ function NextDueCard({ charge }: { charge: OpenCharge }) {
   );
 }
 
-function OpenChargeRow({ charge }: { charge: OpenCharge }) {
+function OpenChargeRow({
+  charge,
+  canRecordPayment,
+  residentId,
+  residentName,
+  houseId,
+}: {
+  charge: OpenCharge;
+  canRecordPayment: boolean;
+  residentId: string;
+  residentName: string;
+  houseId: string;
+}) {
   const days = daysUntil(charge.due_date);
   const isPastDue = days < 0;
   const remaining = Math.max(0, charge.amount - charge.paid_amount);
@@ -356,32 +385,44 @@ function OpenChargeRow({ charge }: { charge: OpenCharge }) {
 
   return (
     <Card className={isPastDue ? "border-destructive/50" : ""}>
-      <CardContent className="py-3 flex items-center justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-medium truncate">
-              {chargeTypeLabel(charge.charge_type)}
+      <CardContent className="py-3 space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-medium truncate">
+                {chargeTypeLabel(charge.charge_type)}
+              </p>
+              {isPartial && (
+                <Badge variant="outline" className="text-[10px] h-4 px-1.5">
+                  Partial
+                </Badge>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Due {formatDate(charge.due_date)}
+              {isPastDue && ` · ${Math.abs(days)}d late`}
+              {isPartial &&
+                ` · ${formatMoney(charge.paid_amount)} of ${formatMoney(charge.amount)} paid`}
             </p>
-            {isPartial && (
-              <Badge variant="outline" className="text-[10px] h-4 px-1.5">
-                Partial
-              </Badge>
-            )}
           </div>
-          <p className="text-xs text-muted-foreground">
-            Due {formatDate(charge.due_date)}
-            {isPastDue && ` · ${Math.abs(days)}d late`}
-            {isPartial &&
-              ` · ${formatMoney(charge.paid_amount)} of ${formatMoney(charge.amount)} paid`}
-          </p>
+          <div className="text-right shrink-0">
+            <p
+              className={`text-sm font-semibold ${isPastDue ? "text-destructive" : ""}`}
+            >
+              {formatMoney(remaining)}
+            </p>
+          </div>
         </div>
-        <div className="text-right shrink-0">
-          <p
-            className={`text-sm font-semibold ${isPastDue ? "text-destructive" : ""}`}
-          >
-            {formatMoney(remaining)}
-          </p>
-        </div>
+        {canRecordPayment && remaining > 0 && (
+          <div className="flex justify-end">
+            <RecordChargePaymentDialog
+              residentId={residentId}
+              residentName={residentName}
+              houseId={houseId}
+              charge={charge}
+            />
+          </div>
+        )}
       </CardContent>
     </Card>
   );
