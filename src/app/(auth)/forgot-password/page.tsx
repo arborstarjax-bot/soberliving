@@ -54,6 +54,15 @@ export default function ForgotPasswordPage() {
         return;
       }
       setSent(true);
+    } catch (err) {
+      // Catch unexpected throws (missing env vars at runtime,
+      // network errors, etc.) so the user sees something instead
+      // of a silently-reset form.
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again."
+      );
     } finally {
       setPending(false);
     }
