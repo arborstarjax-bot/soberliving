@@ -8,7 +8,7 @@
 // request, and returns. The resident signs through the normal
 // /sign-commitment flow; activation happens on signature.
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -151,6 +151,13 @@ export function EditTermsDialog({
                 {isPending ? "Sending…" : "Send for Resident Signature"}
               </Button>
             </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
