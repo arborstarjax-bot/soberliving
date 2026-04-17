@@ -149,6 +149,9 @@ export function ResidentsTabs({
   checkInBatches = [],
 }: ResidentsTabsProps) {
   const [topTab, setTopTab] = useState<string>("residents");
+  const [intakeSubTab, setIntakeSubTab] = useState<"pending" | "denied">(
+    "pending"
+  );
   // Build a unified list of all people
   // Start with staff users (they sort first)
   const staffResidentIds = new Set(
@@ -293,8 +296,12 @@ export function ResidentsTabs({
     );
   }
 
-  const intakeCount =
-    intakePending.length + intakeAwaiting.length + intakeDenied.length;
+  const pendingIntakeCount =
+    intakeInvited.length +
+    intakeInProgress.length +
+    intakePending.length +
+    intakeAwaiting.length;
+  const intakeCount = pendingIntakeCount + intakeDenied.length;
 
   // Houses with address for intake form
   const housesWithAddress = houses.map((h) => ({
@@ -456,19 +463,36 @@ export function ResidentsTabs({
 
       {/* Intake view */}
       {topTab === "intake" && (
-        <div className="space-y-6">
-          {/* Empty state for the whole intake pipeline */}
-          {intakeCount === 0 && (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <p className="text-muted-foreground">
-                  No users in intake. New residents show up here after you
-                  invite them, and move through each stage until their
-                  commitment is signed.
-                </p>
-              </CardContent>
-            </Card>
-          )}
+        <div className="space-y-4">
+          <Tabs
+            value={intakeSubTab}
+            onValueChange={(v) =>
+              setIntakeSubTab(v as "pending" | "denied")
+            }
+          >
+            <TabsList className="flex h-auto w-full justify-start overflow-x-auto no-scrollbar [&>button]:flex-none [&>button]:whitespace-nowrap">
+              <TabsTrigger value="pending" className="gap-2">
+                Pending
+                <Badge variant="secondary">{pendingIntakeCount}</Badge>
+              </TabsTrigger>
+              <TabsTrigger value="denied" className="gap-2">
+                Denied
+                <Badge variant="secondary">{intakeDenied.length}</Badge>
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="pending" className="space-y-6 mt-4">
+              {pendingIntakeCount === 0 && (
+                <Card>
+                  <CardContent className="py-12 text-center">
+                    <p className="text-muted-foreground">
+                      No users in intake. New residents show up here after
+                      you invite them, and move through each stage until
+                      their commitment is signed.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
 
           {/* 1. Invited — awaiting intake */}
           {intakeInvited.length > 0 && (
@@ -683,6 +707,8 @@ export function ResidentsTabs({
               </CardContent>
             </Card>
           )}
+            </TabsContent>
+          </Tabs>
         </div>
       )}
       {/* Check Ins view */}
