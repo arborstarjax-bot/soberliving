@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { requireAuth, requireRole } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
+import { openAllChargesForCommitment } from "@/lib/payments/charges";
 import { z } from "zod";
 
 const checkInRestrictionSchema = z.object({
@@ -236,15 +237,20 @@ export async function markIntakeComplete(userId: string) {
 
   if (!targetUser) return { error: "User not found" };
 
-  // Mark commitment as active (resident signed)
-  await adminClient
+  // Mark commitment as active (resident signed). We select the row
+  // back so we can seed the initial charges — without this call the
+  // resident lands on their dashboard with no Next Due card and the
+  // payment ledger stays empty until a charge is manually created.
+  const { data: activated } = await adminClient
     .from("house_commitments")
     .update({
       status: "active",
       resident_signed_at: new Date().toISOString(),
     })
     .eq("user_id", userId)
-    .eq("status", "pending_resident_signature");
+    .eq("status", "pending_resident_signature")
+    .select("id")
+    .maybeSingle();
 
   // Mark user as commitment signed
   const { error } = await adminClient
@@ -253,6 +259,22 @@ export async function markIntakeComplete(userId: string) {
     .eq("id", userId);
 
   if (error) return { error: error.message };
+
+  // Seed admin_fee + first rent charge immediately so the Payments
+  // views have something to show as soon as the admin finishes
+  // intake. Idempotent via the unique (resident_id, due_date,
+  // charge_type) index so re-runs are safe.
+  if (activated?.id) {
+    try {
+      await openAllChargesForCommitment(activated.id);
+    } catch (e) {
+      console.error(
+        "Failed to open initial charges after intake activation",
+        activated.id,
+        e
+      );
+    }
+  }
 
   await logActivity({
     actorId: currentUser.id,

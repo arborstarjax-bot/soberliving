@@ -55,6 +55,7 @@ export function CreatePaymentDialog({ houses, residents, openCharges }: Props) {
   const [selectedHouse, setSelectedHouse] = useState("");
   const [selectedResident, setSelectedResident] = useState("");
   const [selectedChargeId, setSelectedChargeId] = useState("");
+  const [amountInput, setAmountInput] = useState("");
   const [state, action, pending] = useActionState(createPayment, undefined);
 
   const filteredResidents = selectedHouse
@@ -76,6 +77,13 @@ export function CreatePaymentDialog({ houses, residents, openCharges }: Props) {
   const balance = selectedCharge
     ? Number(selectedCharge.amount) - Number(selectedCharge.paid_amount)
     : null;
+
+  const amountNum = Number(amountInput);
+  const isPartial =
+    balance !== null &&
+    Number.isFinite(amountNum) &&
+    amountNum > 0 &&
+    amountNum < balance;
 
   return (
     <Dialog
@@ -186,9 +194,16 @@ export function CreatePaymentDialog({ houses, residents, openCharges }: Props) {
                 min="0.01"
                 required
                 placeholder="0.00"
-                defaultValue={balance ?? undefined}
+                value={amountInput}
+                onChange={(e) => setAmountInput(e.target.value)}
                 key={selectedChargeId + "-amt"}
               />
+              {isPartial && balance !== null && (
+                <p className="text-xs text-amber-600 font-medium">
+                  Partial payment — {formatCurrency(balance - amountNum)} will
+                  remain open.
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>Type *</Label>

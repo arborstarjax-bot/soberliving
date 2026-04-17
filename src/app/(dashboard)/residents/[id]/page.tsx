@@ -70,6 +70,37 @@ export default async function ResidentDetailPage(
     .eq("resident_id", id)
     .order("created_at", { ascending: false });
 
+  // Active commitment — source of truth for payment terms (rent,
+  // admin fee, due day). Pulled first so we can backfill any missing
+  // charges BEFORE we read them, otherwise the first page load shows
+  // "No open charges" until a second refresh.
+  const { data: activeCommitment } = await supabase
+    .from("house_commitments")
+    .select(
+      "id, rent_amount, admin_fee, commitment_start_date, status, pdf_storage_path"
+    )
+    .eq("resident_id", id)
+    .eq("status", "active")
+    .order("commitment_start_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  // Backfill-on-view: open any missing admin_fee / rent charges for
+  // this commitment. Residents activated before the intake-review
+  // opener was wired up have commitments but zero charges; this
+  // lazily seeds them the first time an admin opens their profile.
+  // Idempotent — the unique index blocks duplicates.
+  if (activeCommitment?.id) {
+    try {
+      const { openAllChargesForCommitment } = await import(
+        "@/lib/payments/charges"
+      );
+      await openAllChargesForCommitment(activeCommitment.id as string);
+    } catch (e) {
+      console.error("Charge backfill failed on resident detail load", e);
+    }
+  }
+
   // Open charges + recent payments for this resident. Pulled here so
   // the Payments tab and the "Next Due" header tile on this page both
   // render off the same data without a second round trip.
@@ -90,21 +121,6 @@ export default async function ResidentDetailPage(
     .eq("resident_id", id)
     .order("paid_at", { ascending: false })
     .limit(100);
-
-  // Active commitment — source of truth for payment terms (rent,
-  // admin fee, due day). Shown as a "Payment Terms" card on the
-  // Payments tab so admins know what's currently in force without
-  // cross-referencing the signed PDF.
-  const { data: activeCommitment } = await supabase
-    .from("house_commitments")
-    .select(
-      "id, rent_amount, admin_fee, commitment_start_date, status, pdf_storage_path"
-    )
-    .eq("resident_id", id)
-    .eq("status", "active")
-    .order("commitment_start_date", { ascending: false })
-    .limit(1)
-    .maybeSingle();
 
   // Notes (staff only)
   const { data: notes } = await supabase

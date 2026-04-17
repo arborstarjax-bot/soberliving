@@ -11,7 +11,10 @@ import { RentConfigDialog } from "./rent-config-dialog";
 import { DownloadReceiptButton } from "./download-receipt-button";
 import { Pagination } from "@/components/pagination";
 import { getPageParams, buildPaginationMeta } from "@/lib/pagination";
-import { sweepOpenChargesForActiveCommitments } from "@/lib/payments/charges";
+import {
+  sweepOpenChargesForActiveCommitments,
+  openAllChargesForCommitment,
+} from "@/lib/payments/charges";
 import { ResidentPaymentsView } from "./resident-view";
 
 function formatCurrency(amount: number) {
@@ -115,7 +118,7 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
       const { data: commitment } = await supabase
         .from("house_commitments")
         .select(
-          "rent_amount, admin_fee, commitment_start_date, pdf_storage_path"
+          "id, rent_amount, admin_fee, commitment_start_date, pdf_storage_path"
         )
         .eq("resident_id", residentRecord.id)
         .eq("status", "active")
@@ -123,6 +126,17 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
         .limit(1)
         .maybeSingle();
       if (commitment) {
+        // Backfill any missing charges for this resident's commitment
+        // before we read charges below. Residents never hit the staff
+        // sweep, so this is the only path that keeps their Next Due
+        // card current.
+        if (commitment.id) {
+          try {
+            await openAllChargesForCommitment(commitment.id as string);
+          } catch (e) {
+            console.error("Resident charge backfill failed", e);
+          }
+        }
         residentTerms = {
           rent_amount: Number(commitment.rent_amount ?? 0),
           admin_fee:
