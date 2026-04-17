@@ -271,6 +271,18 @@ export default async function ResidentDetailPage(
           .join(", ")
       : null;
 
+  // Outstanding balance = open/partial charges whose due date is today
+  // or earlier. Future-dated charges (e.g. an existing-tenant first
+  // rent scheduled for next month) are "upcoming", not outstanding.
+  const todayIsoStr = new Date().toISOString().split("T")[0];
+  const outstandingTotal = (residentOpenCharges ?? [])
+    .filter((c) => (c.due_date as string) <= todayIsoStr)
+    .reduce((s, c) => s + (Number(c.amount) - Number(c.paid_amount)), 0);
+  const upcomingCharges = (residentOpenCharges ?? []).filter(
+    (c) => (c.due_date as string) > todayIsoStr
+  );
+  const nextUpcoming = upcomingCharges[0] ?? null;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -315,6 +327,49 @@ export default async function ResidentDetailPage(
           )}
         </div>
       </div>
+
+      {/* Outstanding balance — prominent at the top so staff see it
+          before digging into the Payments tab. Shown on every active
+          resident, including $0.00 cases so it's not visually jumpy. */}
+      {resident.status === "active" && (
+        <Card
+          className={
+            outstandingTotal > 0
+              ? "border-amber-200 bg-amber-50"
+              : "border-green-200 bg-green-50"
+          }
+        >
+          <CardContent className="py-4 flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Outstanding Balance
+              </p>
+              <p
+                className={`text-2xl font-bold ${
+                  outstandingTotal > 0 ? "text-amber-900" : "text-green-900"
+                }`}
+              >
+                ${outstandingTotal.toFixed(2)}
+              </p>
+              {nextUpcoming && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Next charge: $
+                  {Number(nextUpcoming.amount).toFixed(2)} due{" "}
+                  {new Date(
+                    nextUpcoming.due_date as string
+                  ).toLocaleDateString()}
+                </p>
+              )}
+            </div>
+            <a
+              href="#payments"
+              className="text-xs underline text-muted-foreground hover:text-foreground"
+            >
+              View all charges →
+            </a>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Quick stats */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

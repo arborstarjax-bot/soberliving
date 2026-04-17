@@ -93,6 +93,20 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
   );
   const [moveInNote, setMoveInNote] = useState("");
 
+  // Existing-tenant activation. For residents already living in the
+  // house who are caught up on rent — we skip the move-in payment
+  // flow entirely and anchor the first rent charge on a future date
+  // the admin selects. Default next-rent date is the first of next
+  // month, which is what we use most often.
+  const [isExistingTenant, setIsExistingTenant] = useState(false);
+  const [skipAdminFee, setSkipAdminFee] = useState(true);
+  const [nextRentDueDate, setNextRentDueDate] = useState(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + 1);
+    d.setDate(1);
+    return d.toISOString().split("T")[0];
+  });
+
   // Derived move-in totals. The form lets the admin change rent /
   // admin fee interactively so the expected total tracks those.
   const parsedRent = parseFloat(rentAmount);
@@ -105,9 +119,14 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
     ? parsedMoveInAmount
     : 0;
   const isPartialPayment =
+    !isExistingTenant &&
     !moveInNoPayment &&
     collectedAmount > 0 &&
     collectedAmount < expectedMoveInTotal;
+  const outstandingAfterMoveIn = Math.max(
+    0,
+    expectedMoveInTotal - collectedAmount
+  );
 
   async function handleHouseChange(newHouseId: string) {
     setHouseId(newHouseId);
@@ -167,7 +186,21 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
       paidAt: string;
       note?: string;
     } | null = null;
-    if (!moveInNoPayment) {
+    if (isExistingTenant) {
+      if (!nextRentDueDate) {
+        return setError("Select the next rent due date for this tenant");
+      }
+      // Sanity check — next rent must be today or later, otherwise the
+      // charge opener will backfill it immediately, which defeats the
+      // purpose of marking the tenant as caught up.
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const [ny, nm, nd] = nextRentDueDate.split("-").map(Number);
+      const nextDt = new Date(ny, (nm ?? 1) - 1, nd ?? 1);
+      if (nextDt.getTime() < today.getTime()) {
+        return setError("Next rent due date cannot be in the past");
+      }
+    } else if (!moveInNoPayment) {
       if (!Number.isFinite(parsedMoveInAmount) || parsedMoveInAmount <= 0) {
         return setError(
           'Enter the amount collected at move-in, or check "No payment collected at move-in"'
@@ -204,7 +237,10 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
         notes: notes || undefined,
         staffSignature,
         checkInRestrictions: checkInRestrictions.length > 0 ? checkInRestrictions : undefined,
-        moveInPayment: moveInPayload,
+        moveInPayment: isExistingTenant ? null : moveInPayload,
+        existingTenant: isExistingTenant,
+        nextRentDueDate: isExistingTenant ? nextRentDueDate : undefined,
+        skipInitialAdminFee: isExistingTenant ? skipAdminFee : undefined,
       });
 
       if (result.error) {
@@ -501,6 +537,56 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
           </p>
         </div>
 
+        {/* Existing-tenant flow: skip the move-in charge entirely and
+            anchor the first rent charge on a future date. Useful when
+            adding an already-living-here resident into the system. */}
+        <div className="rounded-md border border-blue-200 bg-blue-50 p-3 space-y-3">
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4"
+              checked={isExistingTenant}
+              onChange={(e) => setIsExistingTenant(e.target.checked)}
+            />
+            <span>
+              <span className="font-medium">
+                Existing tenant — already caught up on rent
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                Skip the move-in charge. The first rent charge will open
+                on the date you select below.
+              </span>
+            </span>
+          </label>
+
+          {isExistingTenant && (
+            <div className="pl-6 space-y-3">
+              <div className="space-y-2">
+                <Label>Next Rent Due Date *</Label>
+                <Input
+                  type="date"
+                  value={nextRentDueDate}
+                  onChange={(e) => setNextRentDueDate(e.target.value)}
+                  min={new Date().toISOString().split("T")[0]}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Rent cycles continue monthly from this date.
+                </p>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={skipAdminFee}
+                  onChange={(e) => setSkipAdminFee(e.target.checked)}
+                />
+                <span>Admin fee already collected — skip admin fee charge</span>
+              </label>
+            </div>
+          )}
+        </div>
+
+        {!isExistingTenant && (
         <div className="rounded-md bg-muted/40 p-3 text-sm">
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Sober Living Fee</span>
@@ -521,7 +607,9 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
             </span>
           </div>
         </div>
+        )}
 
+        {!isExistingTenant && (
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -531,8 +619,9 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
           />
           <span>No payment collected at move-in</span>
         </label>
+        )}
 
-        {!moveInNoPayment && (
+        {!isExistingTenant && !moveInNoPayment && (
           <div className="space-y-3">
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
@@ -584,8 +673,16 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
             </div>
 
             {isPartialPayment && (
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                This is a partial move-in payment (${collectedAmount.toFixed(2)} of ${expectedMoveInTotal.toFixed(2)}). A note is required.
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 space-y-1">
+                <div>
+                  This is a partial move-in payment (${collectedAmount.toFixed(2)} of ${expectedMoveInTotal.toFixed(2)}). A note is required.
+                </div>
+                <div className="font-medium">
+                  Outstanding after move-in: ${outstandingAfterMoveIn.toFixed(2)}{" "}
+                  <span className="font-normal">
+                    — this will show on the Payments tab.
+                  </span>
+                </div>
               </div>
             )}
 
