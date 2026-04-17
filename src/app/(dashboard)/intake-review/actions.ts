@@ -100,7 +100,21 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     emergency_contact_name: (fd.emergency_contact_1_name as string) || "Not provided",
     emergency_contact_phone: (fd.emergency_contact_1_phone as string) || "Not provided",
     emergency_contact_relationship: (fd.emergency_contact_1_relationship as string) || null,
-    sobriety_date: (fd.sobriety_date as string) || null,
+    // Drop future-dated sobriety_date silently. Intake is already
+    // submitted and we don't want to block activation on a bad value
+    // in a legacy form — admin can set the correct date later from
+    // the resident detail page.
+    sobriety_date: (() => {
+      const v = (fd.sobriety_date as string) || null;
+      if (!v) return null;
+      const entered = new Date(v);
+      const endOfToday = new Date();
+      endOfToday.setHours(23, 59, 59, 999);
+      if (isNaN(entered.getTime()) || entered.getTime() > endOfToday.getTime()) {
+        return null;
+      }
+      return v;
+    })(),
     move_in_date: data.commitmentStartDate,
     status: "active" as const,
     updated_at: new Date().toISOString(),
