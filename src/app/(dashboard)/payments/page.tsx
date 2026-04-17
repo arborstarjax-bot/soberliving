@@ -7,6 +7,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { DollarSign, AlertCircle } from "lucide-react";
 import { CreatePaymentDialog } from "./create-payment-dialog";
 import { VoidPaymentDialog } from "./void-payment-dialog";
+import { DeletePaymentDialog } from "./delete-payment-dialog";
 import { RentConfigDialog } from "./rent-config-dialog";
 import { DownloadReceiptButton } from "./download-receipt-button";
 import { Pagination } from "@/components/pagination";
@@ -436,6 +437,7 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
                 receipt_storage_path:
                   (p.receipt_storage_path as string | null) ?? null,
               }))}
+              isAdmin={user.role === "admin"}
             />
           </TabsContent>
 
@@ -601,6 +603,13 @@ function PaymentLedgerList({
                               residentName={residentName}
                             />
                           )}
+                        {userRole === "admin" && (
+                          <DeletePaymentDialog
+                            paymentId={payment.id}
+                            amount={Number(payment.amount)}
+                            residentName={residentName}
+                          />
+                        )}
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">

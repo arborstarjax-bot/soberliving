@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { AlertCircle, ExternalLink, Search } from "lucide-react";
 import { RecordChargePaymentDialog } from "./record-charge-payment-dialog";
 import { DownloadReceiptButton } from "./download-receipt-button";
+import { DeletePaymentDialog } from "./delete-payment-dialog";
 import { todayLocalIso, daysUntilLocal } from "@/lib/local-date";
 
 interface OpenCharge {
@@ -57,6 +58,7 @@ interface Props {
   residents: ResidentRow[];
   openCharges: OpenCharge[];
   recentPayments: RecentPayment[];
+  isAdmin: boolean;
 }
 
 function formatMoney(n: number): string {
@@ -86,6 +88,7 @@ export function PaymentsByResident({
   residents,
   openCharges,
   recentPayments,
+  isAdmin,
 }: Props) {
   const [query, setQuery] = useState("");
   const [selectedResidentId, setSelectedResidentId] = useState<string | null>(
@@ -383,12 +386,21 @@ export function PaymentsByResident({
                               {r.receipt_number && ` · ${r.receipt_number}`}
                             </p>
                           </div>
-                          {r.receipt_storage_path && (
-                            <DownloadReceiptButton
-                              storagePath={r.receipt_storage_path}
-                              receiptNumber={r.receipt_number}
-                            />
-                          )}
+                          <div className="flex items-center gap-1 shrink-0">
+                            {r.receipt_storage_path && (
+                              <DownloadReceiptButton
+                                storagePath={r.receipt_storage_path}
+                                receiptNumber={r.receipt_number}
+                              />
+                            )}
+                            {isAdmin && selected && (
+                              <DeletePaymentDialog
+                                paymentId={r.id}
+                                amount={r.amount}
+                                residentName={selected.resident.full_name}
+                              />
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>

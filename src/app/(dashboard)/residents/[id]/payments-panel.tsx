@@ -19,6 +19,7 @@ import { daysUntilLocal, dayOfMonthLocal } from "@/lib/local-date";
 import { EditTermsDialog } from "@/app/(dashboard)/payments/edit-terms-dialog";
 import { cancelPendingAmendment } from "@/app/(dashboard)/payments/actions";
 import { RecordChargePaymentDialog } from "@/app/(dashboard)/payments/record-charge-payment-dialog";
+import { DeletePaymentDialog } from "@/app/(dashboard)/payments/delete-payment-dialog";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
@@ -191,6 +192,8 @@ export function ResidentPaymentsPanel({
           residentName={residentName}
           houseId={houseId ?? ""}
         />
+      ) : terms ? (
+        <VirtualNextDueCard terms={terms} />
       ) : (
         <Card>
           <CardContent className="py-6 text-center space-y-1">
@@ -242,7 +245,12 @@ export function ResidentPaymentsPanel({
           <>
             <div className="space-y-2">
               {pageSlice.map((p) => (
-                <ReceiptRow key={p.id} payment={p} />
+                <ReceiptRow
+                  key={p.id}
+                  payment={p}
+                  isAdmin={isAdmin}
+                  residentName={residentName}
+                />
               ))}
             </div>
             {recentPayments.length > PAGE_SIZE && (
@@ -379,7 +387,84 @@ function NextDueCard({
   );
 }
 
-function ReceiptRow({ payment }: { payment: RecentPayment }) {
+// Shown when the resident has no open charges on the books — the next
+// rent cycle hasn't arrived yet, so there's no row to render. We
+// compute the upcoming due date from the payment terms so staff /
+// residents still see when the next bill lands and how much it's for.
+// This is purely informational: no DB row is created, no action is
+// possible on it, and it disappears as soon as the opener creates the
+// real charge (the morning of the due day).
+function VirtualNextDueCard({ terms }: { terms: PaymentTerms }) {
+  const start = new Date(terms.commitment_start_date);
+  const dayOfMonth = start.getDate();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  // Start with this month's due day; if already past, roll forward
+  // one month. Clamp to the last day of the target month so Jan-31 →
+  // Feb-28/29, matching the opener's addMonthsClamped logic.
+  const candidate = new Date(today.getFullYear(), today.getMonth(), 1);
+  const lastDayThis = new Date(
+    candidate.getFullYear(),
+    candidate.getMonth() + 1,
+    0
+  ).getDate();
+  candidate.setDate(Math.min(dayOfMonth, lastDayThis));
+  if (candidate.getTime() <= today.getTime()) {
+    candidate.setDate(1);
+    candidate.setMonth(candidate.getMonth() + 1);
+    const lastDayNext = new Date(
+      candidate.getFullYear(),
+      candidate.getMonth() + 1,
+      0
+    ).getDate();
+    candidate.setDate(Math.min(dayOfMonth, lastDayNext));
+  }
+  const msDay = 24 * 60 * 60 * 1000;
+  const days = Math.round(
+    (candidate.getTime() - today.getTime()) / msDay
+  );
+  return (
+    <Card>
+      <CardContent className="py-4 space-y-2">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-0.5">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Next Rent
+            </p>
+            <p className="text-2xl font-bold flex items-center gap-1.5">
+              <DollarSign className="h-5 w-5 text-muted-foreground" />
+              {formatMoney(terms.rent_amount)}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Opens on due day — no charge yet
+            </p>
+          </div>
+          <Badge variant="outline" className="whitespace-nowrap">
+            {days === 0
+              ? "Due today"
+              : days === 1
+                ? "Due tomorrow"
+                : `Due in ${days}d`}
+          </Badge>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Calendar className="h-3.5 w-3.5" />
+          {candidate.toLocaleDateString()}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReceiptRow({
+  payment,
+  isAdmin,
+  residentName,
+}: {
+  payment: RecentPayment;
+  isAdmin: boolean;
+  residentName: string;
+}) {
   const isVoid =
     payment.status === "void" || payment.status === "refunded";
   return (
@@ -407,11 +492,18 @@ function ReceiptRow({ payment }: { payment: RecentPayment }) {
             {formatDate(payment.paid_at)}
           </p>
         </div>
-        <div className="shrink-0">
+        <div className="shrink-0 flex items-center gap-1">
           <DownloadReceiptButton
             storagePath={payment.receipt_storage_path}
             receiptNumber={payment.receipt_number}
           />
+          {isAdmin && (
+            <DeletePaymentDialog
+              paymentId={payment.id}
+              amount={payment.amount}
+              residentName={residentName}
+            />
+          )}
         </div>
       </CardContent>
     </Card>

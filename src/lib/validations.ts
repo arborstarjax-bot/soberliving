@@ -205,6 +205,11 @@ export const createPaymentSchema = z.object({
 
 export const voidPaymentSchema = z.object({
   payment_id: z.string().uuid(),
+  reason: z.string().trim().min(1, "Reason is required when voiding a payment"),
+});
+
+export const deletePaymentSchema = z.object({
+  payment_id: z.string().uuid(),
 });
 
 // --- Rent Config ---

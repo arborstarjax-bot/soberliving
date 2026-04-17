@@ -67,6 +67,7 @@ interface CommitmentRow {
   admin_fee: number | null;
   commitment_start_date: string;
   status: string;
+  created_at: string;
 }
 
 // Opens rent charges for a resident up through the current calendar
@@ -86,7 +87,7 @@ export async function openRentChargesForCommitment(
   const { data: commitment } = await supabase
     .from("house_commitments")
     .select(
-      "id, resident_id, house_id, rent_amount, admin_fee, commitment_start_date, status"
+      "id, resident_id, house_id, rent_amount, admin_fee, commitment_start_date, status, created_at"
     )
     .eq("id", commitmentId)
     .single<CommitmentRow>();
@@ -95,6 +96,17 @@ export async function openRentChargesForCommitment(
   if (!commitment.resident_id) return 0;
 
   const start = parseIsoDate(commitment.commitment_start_date);
+
+  // System-recorded cutoff. For migration-in residents whose real
+  // move-in date predates this app by months (or years), we don't
+  // want to flood them with back-charges — billing only exists from
+  // the point their commitment was recorded here. `createdAt` is
+  // derived from the commitment row itself, so residents onboarded
+  // inside the app aren't affected (their created_at ≈ start).
+  const createdAtDate = new Date(commitment.created_at);
+  createdAtDate.setHours(0, 0, 0, 0);
+  const cutoff =
+    createdAtDate.getTime() > start.getTime() ? createdAtDate : start;
 
   // Scope to THIS commitment's rent charges only. After an amendment
   // that changes the monthly due day (e.g. day-15 → day-28), paid
@@ -105,6 +117,34 @@ export async function openRentChargesForCommitment(
   // The unique index (resident_id, due_date, charge_type) + upsert
   // ignoreDuplicates below handles any same-day collisions with old
   // commitment charges.
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayIso = toIsoDate(today);
+
+  // Clean up any unpaid rent charges with a due_date strictly in the
+  // future. Previous versions of this opener pre-opened upcoming
+  // charges which accumulated on every page load and produced the
+  // huge ledger David flagged. The rule now is: the only rent rows
+  // on the books should be past-due or current-cycle (due ≤ today).
+  // Paid / partial future rows are never touched.
+  await supabase
+    .from("payment_charges")
+    .delete()
+    .eq("resident_id", commitment.resident_id)
+    .eq("commitment_id", commitment.id)
+    .eq("charge_type", "rent")
+    .eq("status", "open")
+    .gt("due_date", todayIso);
+
+  // Scope to THIS commitment's remaining rent charges. After an
+  // amendment that changes the monthly due day (e.g. day-15 →
+  // day-28), paid charges from the superseded commitment would
+  // otherwise poison `nextDueDate`: it takes the max existing due
+  // and adds a month, so a Feb-15 (old) paid charge combined with a
+  // Jan-28 (new) start would compute Mar-28 and skip Jan-28 / Feb-28
+  // at the new rate entirely. The unique index (resident_id,
+  // due_date, charge_type) + upsert ignoreDuplicates below handles
+  // any same-day collisions with old commitment charges.
   const { data: existing } = await supabase
     .from("payment_charges")
     .select("due_date")
@@ -114,9 +154,6 @@ export async function openRentChargesForCommitment(
   const existingDates: Date[] = (existing ?? []).map((r) =>
     parseIsoDate(r.due_date as unknown as string)
   );
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
 
   const rows: Array<{
     resident_id: string;
@@ -129,25 +166,29 @@ export async function openRentChargesForCommitment(
     period_end: string;
   }> = [];
 
-  // Strategy: open every past-due / current-month charge, PLUS exactly
-  // one upcoming charge so residents always see a "Next Rent Due" tile
-  // on their dashboard. We only open that one future charge if the
-  // commitment doesn't ALREADY have an unpaid future charge on the
-  // books — otherwise each page load would stack on another month,
-  // producing the 4-month-preview we saw on Shane's profile.
-  const hasExistingFuture = existingDates.some(
-    (d) => d.getTime() > today.getTime()
-  );
+  // Strategy: open every rent cycle whose due_date is on or before
+  // today AND on or after the system cutoff (commitment.created_at).
+  // We never pre-open future cycles — the next month's row will be
+  // opened when the calendar actually reaches its due day. The Next
+  // Rent card computes the upcoming due virtually from the commitment
+  // terms, so residents still see when their next payment lands.
   let openedCount = 0;
-  let openedFuture = hasExistingFuture;
   let safety = 0;
-  while (safety++ < 60) {
+  while (safety++ < 240) {
     const due = nextDueDate(start, [
       ...existingDates,
       ...rows.map((r) => parseIsoDate(r.due_date)),
     ]);
-    const isFuture = due.getTime() > today.getTime();
-    if (isFuture && openedFuture) break;
+    // Stop opening once we've caught up to today. No future rows.
+    if (due.getTime() > today.getTime()) break;
+    // Skip anything before the system cutoff — don't backfill charges
+    // from before the resident was on the system. We still push to
+    // the virtual cursor list (via existingDates) so nextDueDate
+    // keeps advancing each iteration.
+    if (due.getTime() < cutoff.getTime()) {
+      existingDates.push(due);
+      continue;
+    }
     const periodStart = toIsoDate(due);
     const periodEnd = toIsoDate(addMonthsClamped(due, 1));
     rows.push({
@@ -161,7 +202,6 @@ export async function openRentChargesForCommitment(
       period_end: periodEnd,
     });
     openedCount += 1;
-    if (isFuture) openedFuture = true;
   }
 
   if (rows.length > 0) {

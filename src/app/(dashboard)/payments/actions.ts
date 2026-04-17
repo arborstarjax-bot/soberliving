@@ -8,6 +8,7 @@ import { logActivity } from "@/lib/activity";
 import {
   createPaymentSchema,
   voidPaymentSchema,
+  deletePaymentSchema,
   upsertRentConfigSchema,
 } from "@/lib/validations";
 import { generateReceiptPdf } from "@/lib/payments/receipt-pdf";
@@ -257,7 +258,7 @@ export async function createPayment(
 }
 
 export async function voidPayment(
-  _prevState: { error?: string } | undefined,
+  _prevState: { error?: string } | null | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
@@ -318,8 +319,98 @@ export async function voidPayment(
     eventType: "payment_voided",
     entityType: "payment",
     entityId: payment.id,
-    description: `$${payment.amount} ${payment.payment_type} payment voided for ${residentName} by ${user.full_name}`,
-    metadata: { amount: payment.amount, payment_type: payment.payment_type },
+    description: `$${payment.amount} ${payment.payment_type} payment voided for ${residentName} by ${user.full_name} — ${parsed.data.reason}`,
+    metadata: {
+      amount: payment.amount,
+      payment_type: payment.payment_type,
+      reason: parsed.data.reason,
+    },
+  });
+
+  revalidatePath("/payments");
+  revalidatePath("/dashboard");
+  revalidatePath(`/residents/${payment.resident_id}`);
+  return {};
+}
+
+export async function deletePayment(
+  _prevState: { error?: string } | null | undefined,
+  formData: FormData
+) {
+  const user = await requireAuth();
+  // Admin-only — delete is more destructive than void because it
+  // removes the audit row. Managers can record and void but not wipe.
+  if (user.role !== "admin") return { error: "Not authorized" };
+
+  const parsed = deletePaymentSchema.safeParse({
+    payment_id: formData.get("payment_id"),
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const supabase = await createClient();
+  const admin = createAdminClient();
+
+  const { data: payment } = await supabase
+    .from("payments")
+    .select(
+      "id, house_id, resident_id, amount, payment_type, status, charge_id, receipt_storage_path, receipt_document_id, receipt_number, resident:residents(full_name)"
+    )
+    .eq("id", parsed.data.payment_id)
+    .single();
+
+  if (!payment) return { error: "Payment not found" };
+
+  // If the payment was applied to a charge, reverse the application
+  // first (same atomic RPC the void path uses) so the charge's
+  // paid_amount / status rolls back before we wipe the payment row.
+  // If the payment is already void, the charge was already reversed
+  // at void time, so skip to avoid double-reversing.
+  if (payment.charge_id && payment.status !== "void") {
+    await admin.rpc("reverse_payment_from_charge", {
+      p_charge_id: payment.charge_id,
+      p_amount: payment.amount,
+    });
+  }
+
+  // Best-effort cleanup of the receipt PDF. We don't fail the delete
+  // if storage is out of sync — the docs row and storage blob can be
+  // orphaned without breaking anything, but letting the admin retry
+  // removes the row on the second click.
+  if (payment.receipt_storage_path) {
+    await admin.storage
+      .from("documents")
+      .remove([payment.receipt_storage_path as string]);
+  }
+  if (payment.receipt_document_id) {
+    await admin
+      .from("documents")
+      .delete()
+      .eq("id", payment.receipt_document_id as string);
+  }
+
+  const { error } = await admin
+    .from("payments")
+    .delete()
+    .eq("id", parsed.data.payment_id);
+  if (error) return { error: error.message };
+
+  const residentName = (
+    payment.resident as unknown as { full_name: string } | null
+  )?.full_name;
+
+  await logActivity({
+    houseId: payment.house_id,
+    residentId: payment.resident_id,
+    actorId: user.id,
+    eventType: "payment_deleted",
+    entityType: "payment",
+    entityId: payment.id,
+    description: `$${payment.amount} ${payment.payment_type} payment deleted for ${residentName} by ${user.full_name}${payment.receipt_number ? ` (receipt ${payment.receipt_number})` : ""}`,
+    metadata: {
+      amount: payment.amount,
+      payment_type: payment.payment_type,
+      receipt_number: payment.receipt_number,
+    },
   });
 
   revalidatePath("/payments");

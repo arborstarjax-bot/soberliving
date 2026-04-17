@@ -85,6 +85,17 @@ export function CreatePaymentDialog({ houses, residents, openCharges }: Props) {
     amountNum > 0 &&
     amountNum < balance;
 
+  // Amount field is kept in sync via the charge-select onChange
+  // handlers below (resident change + apply-to-charge change). This
+  // avoids the react-hooks/set-state-in-effect lint rule by writing
+  // the derived value at the event source instead of in an effect.
+  const amountForCharge = (chargeId: string): string => {
+    const c = residentCharges.find((x) => x.id === chargeId);
+    if (!c) return "";
+    const bal = Number(c.amount) - Number(c.paid_amount);
+    return bal > 0 ? bal.toFixed(2) : "";
+  };
+
   return (
     <Dialog
       open={open}
@@ -94,6 +105,7 @@ export function CreatePaymentDialog({ houses, residents, openCharges }: Props) {
           setSelectedHouse("");
           setSelectedResident("");
           setSelectedChargeId("");
+          setAmountInput("");
         }
       }}
     >
@@ -159,7 +171,10 @@ export function CreatePaymentDialog({ houses, residents, openCharges }: Props) {
               <select
                 name="charge_id"
                 value={selectedChargeId}
-                onChange={(e) => setSelectedChargeId(e.target.value)}
+                onChange={(e) => {
+                  setSelectedChargeId(e.target.value);
+                  setAmountInput(amountForCharge(e.target.value));
+                }}
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
               >
                 <option value="">Unapplied (miscellaneous)</option>
