@@ -620,22 +620,56 @@ export async function reopenIntakeApplication(userId: string) {
   return {};
 }
 
-export async function getRoomsForHouse(houseId: string) {
+export type RoomWithAvailability = {
+  id: string;
+  name: string;
+  beds: { id: string; label: string; is_active: boolean }[];
+};
+
+export type GetRoomsForHouseResult =
+  | { ok: true; rooms: RoomWithAvailability[] }
+  | { ok: false; error: string };
+
+// Returns a structured result instead of throwing. Next.js scrubs
+// thrown Error messages in production (“The specific message is
+// omitted…”), which hid real failures like permission errors on
+// the rooms table. Returning the error as data lets the client
+// surface it verbatim.
+export async function getRoomsForHouse(
+  houseId: string
+): Promise<GetRoomsForHouseResult> {
   await requireRole("admin");
   const adminClient = createAdminClient();
 
-  const { data: rooms } = await adminClient
+  const { data: rooms, error: roomsError } = await adminClient
     .from("rooms")
     .select("id, name, beds(id, label, is_active)")
     .eq("house_id", houseId)
     .eq("is_active", true)
     .order("name");
 
+  if (roomsError) {
+    console.error("[getRoomsForHouse] rooms query failed:", roomsError);
+    return { ok: false, error: `Could not load rooms: ${roomsError.message}` };
+  }
+
   // Get all active bed assignments for this house to determine occupied beds
-  const { data: activeBedAssignments } = await adminClient
-    .from("bed_assignments")
-    .select("bed_id")
-    .is("end_date", null);
+  const { data: activeBedAssignments, error: assignmentsError } =
+    await adminClient
+      .from("bed_assignments")
+      .select("bed_id")
+      .is("end_date", null);
+
+  if (assignmentsError) {
+    console.error(
+      "[getRoomsForHouse] bed_assignments query failed:",
+      assignmentsError
+    );
+    return {
+      ok: false,
+      error: `Could not load bed assignments: ${assignmentsError.message}`,
+    };
+  }
 
   const occupiedBedIds = new Set(
     (activeBedAssignments ?? []).map((a) => a.bed_id)
@@ -653,5 +687,5 @@ export async function getRoomsForHouse(houseId: string) {
     }))
     .filter((room) => room.beds.length > 0);
 
-  return roomsWithAvailability;
+  return { ok: true, rooms: roomsWithAvailability };
 }

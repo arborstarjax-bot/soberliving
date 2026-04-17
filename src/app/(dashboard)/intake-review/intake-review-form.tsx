@@ -122,11 +122,15 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
     setLoadingRooms(true);
     try {
       const result = await getRoomsForHouse(newHouseId);
-      setRooms(result as Room[]);
-      setRoomsLoaded(true);
+      if (result.ok) {
+        setRooms(result.rooms as Room[]);
+        setRoomsLoaded(true);
+      } else {
+        // Server-side query errored — surface the real message.
+        setRoomsError(result.error);
+      }
     } catch (err) {
-      // Server action threw — surface the real message instead of
-      // silently showing an empty dropdown.
+      // Fall-through for unexpected transport-level failures.
       setRoomsError(
         err instanceof Error
           ? err.message

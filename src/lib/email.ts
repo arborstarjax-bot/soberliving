@@ -37,10 +37,13 @@ export async function sendInviteEmail({
    */
   appUrl?: string;
 }) {
+  // Match getAppOrigin()'s priority (SITE_URL first) so the email
+  // footer URL stays consistent with invite/redirect URLs generated
+  // by the canonical helper.
   const resolvedAppUrl =
     appUrl ||
-    process.env.NEXT_PUBLIC_APP_URL ||
     process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
     "http://localhost:3000";
   const safeName = escapeHtml(fullName);
   const safeRole = escapeHtml(role);
