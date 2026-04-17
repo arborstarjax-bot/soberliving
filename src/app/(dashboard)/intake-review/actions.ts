@@ -638,54 +638,69 @@ export type GetRoomsForHouseResult =
 export async function getRoomsForHouse(
   houseId: string
 ): Promise<GetRoomsForHouseResult> {
-  await requireRole("admin");
-  const adminClient = createAdminClient();
+  // Wrap the entire function in try/catch so absolutely nothing
+  // (auth failure, missing SUPABASE_SERVICE_ROLE_KEY, unexpected
+  // runtime errors) can escape as a thrown error. Next.js scrubs
+  // thrown messages in production; structured returns preserve the
+  // real diagnostic.
+  try {
+    await requireRole("admin");
+    const adminClient = createAdminClient();
 
-  const { data: rooms, error: roomsError } = await adminClient
-    .from("rooms")
-    .select("id, name, beds(id, label, is_active)")
-    .eq("house_id", houseId)
-    .eq("is_active", true)
-    .order("name");
+    const { data: rooms, error: roomsError } = await adminClient
+      .from("rooms")
+      .select("id, name, beds(id, label, is_active)")
+      .eq("house_id", houseId)
+      .eq("is_active", true)
+      .order("name");
 
-  if (roomsError) {
-    console.error("[getRoomsForHouse] rooms query failed:", roomsError);
-    return { ok: false, error: `Could not load rooms: ${roomsError.message}` };
-  }
+    if (roomsError) {
+      console.error("[getRoomsForHouse] rooms query failed:", roomsError);
+      return {
+        ok: false,
+        error: `Could not load rooms: ${roomsError.message}`,
+      };
+    }
 
-  // Get all active bed assignments for this house to determine occupied beds
-  const { data: activeBedAssignments, error: assignmentsError } =
-    await adminClient
-      .from("bed_assignments")
-      .select("bed_id")
-      .is("end_date", null);
+    // Get all active bed assignments for this house to determine occupied beds
+    const { data: activeBedAssignments, error: assignmentsError } =
+      await adminClient
+        .from("bed_assignments")
+        .select("bed_id")
+        .is("end_date", null);
 
-  if (assignmentsError) {
-    console.error(
-      "[getRoomsForHouse] bed_assignments query failed:",
-      assignmentsError
+    if (assignmentsError) {
+      console.error(
+        "[getRoomsForHouse] bed_assignments query failed:",
+        assignmentsError
+      );
+      return {
+        ok: false,
+        error: `Could not load bed assignments: ${assignmentsError.message}`,
+      };
+    }
+
+    const occupiedBedIds = new Set(
+      (activeBedAssignments ?? []).map((a) => a.bed_id)
     );
-    return {
-      ok: false,
-      error: `Could not load bed assignments: ${assignmentsError.message}`,
-    };
+
+    // Filter beds: only include active beds that are NOT occupied
+    // Filter rooms: only include rooms that have at least one available bed
+    const roomsWithAvailability = (rooms ?? [])
+      .map((room) => ({
+        ...room,
+        beds: (room.beds ?? []).filter(
+          (bed: { id: string; label: string; is_active: boolean }) =>
+            bed.is_active && !occupiedBedIds.has(bed.id)
+        ),
+      }))
+      .filter((room) => room.beds.length > 0);
+
+    return { ok: true, rooms: roomsWithAvailability };
+  } catch (err) {
+    console.error("[getRoomsForHouse] unexpected throw:", err);
+    const message =
+      err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+    return { ok: false, error: `Unexpected error: ${message}` };
   }
-
-  const occupiedBedIds = new Set(
-    (activeBedAssignments ?? []).map((a) => a.bed_id)
-  );
-
-  // Filter beds: only include active beds that are NOT occupied
-  // Filter rooms: only include rooms that have at least one available bed
-  const roomsWithAvailability = (rooms ?? [])
-    .map((room) => ({
-      ...room,
-      beds: (room.beds ?? []).filter(
-        (bed: { id: string; label: string; is_active: boolean }) =>
-          bed.is_active && !occupiedBedIds.has(bed.id)
-      ),
-    }))
-    .filter((room) => room.beds.length > 0);
-
-  return { ok: true, rooms: roomsWithAvailability };
 }
