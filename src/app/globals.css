@@ -163,4 +163,17 @@
     min-width: 44px;
     min-height: 44px;
   }
+
+  /* Hide the scrollbar track for horizontally-scrollable tab strips
+     and pill rows on mobile, while keeping scroll behavior intact.
+     Used by TabsList and similar overflow-x-auto rows so the strip
+     reads as a clean chip rail rather than a scrollbar-decorated
+     box on desktops that expose scrollbars. */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }

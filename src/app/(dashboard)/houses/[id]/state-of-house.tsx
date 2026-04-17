@@ -95,7 +95,7 @@ export function StateOfHouseView({
       <Card>
         <CardContent className="space-y-3 py-4">
           <Tabs value={range}>
-            <TabsList className="flex-wrap h-auto">
+            <TabsList className="w-full overflow-x-auto justify-start no-scrollbar">
               {RANGE_OPTIONS.map((opt) => (
                 <TabsTrigger
                   key={opt.value}

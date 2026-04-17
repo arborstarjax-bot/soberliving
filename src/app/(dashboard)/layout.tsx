@@ -80,9 +80,15 @@ export default async function DashboardLayout({
     // tracks mobile browser chrome (address bar collapse, keyboard
     // open). 100vh on iOS Safari is locked to the tallest possible
     // height which makes the bottom of the app hide behind the URL bar.
-    <div className="flex h-dvh overflow-hidden">
+    //
+    // flex-col on mobile so the Sidebar's mobile top bar (first child)
+    // spans the full width above <main>. lg:flex-row puts the desktop
+    // sidebar on the left of <main> at lg+. Without flex-col on
+    // mobile the top bar would be treated as a narrow left-column
+    // flex item instead of a full-width sticky header.
+    <div className="flex flex-col lg:flex-row h-dvh overflow-hidden">
       <Sidebar role={user.role} userName={user.full_name} hasNoLeaveRestriction={hasNoLeaveRestriction} unreadNotificationCount={unreadNotificationCount} />
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto min-w-0">
         {/* Safe-area insets so the main scroll region respects the
             iPhone notch, Dynamic Island, and home-indicator rail. No
             visual change on desktop — the env() values resolve to 0. */}
