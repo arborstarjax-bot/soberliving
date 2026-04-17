@@ -51,7 +51,9 @@ export default async function DashboardLayout({
     unreadNotificationCount = count ?? 0;
   }
 
-  // Check if resident has an active "no_leave" restriction to hide Leave Requests nav
+  // Hide the Overnight Request nav link from residents with an
+  // active no_leave or no_overnight restriction — they can't leave
+  // the house overnight so the whole flow is off-limits.
   let hasNoLeaveRestriction = false;
   if (user.role === "resident") {
     const supabase = await createClient();
@@ -68,7 +70,7 @@ export default async function DashboardLayout({
         .select("id")
         .eq("resident_id", myResident.id)
         .eq("is_active", true)
-        .in("restriction_type", ["no_leave", "house_commitment"])
+        .in("restriction_type", ["no_leave", "no_overnight", "house_commitment"])
         .limit(1)
         .maybeSingle();
       hasNoLeaveRestriction = !!noLeave;

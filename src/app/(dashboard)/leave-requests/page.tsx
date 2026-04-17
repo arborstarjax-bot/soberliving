@@ -91,7 +91,7 @@ export default async function LeaveRequestsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Leave Requests</h1>
+          <h1 className="text-2xl font-bold">Overnight Requests</h1>
           <p className="text-muted-foreground">
             {pendingAll.length} pending · Multi-step approval
           </p>

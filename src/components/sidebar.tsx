@@ -71,7 +71,7 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["admin", "manager", "resident"],
   },
   {
-    label: "Leave Requests",
+    label: "Overnight Request",
     href: "/leave-requests",
     icon: CalendarClock,
     roles: ["admin", "manager", "resident"],
