@@ -1,9 +1,13 @@
 "use client";
 
-// Void a payment — admin only. Required reason is stored on the
+// Cancel a payment — admin only. Required reason is stored on the
 // payment row + the activity log entry so we have an audit trail of
-// why any given void happened (wrong amount, duplicate, applied to
-// wrong resident, etc).
+// why any given cancellation happened (wrong amount, duplicate,
+// applied to wrong resident, etc).
+//
+// The DB status stays `void` under the hood for data continuity; the
+// UI just surfaces it as "Cancel" so staff vocabulary matches the
+// workflow (residents don't think in terms of void).
 
 import { useActionState, useState } from "react";
 import { voidPayment } from "./actions";
@@ -26,9 +30,13 @@ interface Props {
   paymentId: string;
   amount: number;
   residentName: string;
+  // Trigger customization: by default renders a ghost icon button
+  // (used on the dashboard ledger). Callers that want the action
+  // inside a kebab menu or as labeled text pass a custom trigger.
+  trigger?: React.ReactNode;
 }
 
-export function VoidPaymentDialog({ paymentId, amount, residentName }: Props) {
+export function VoidPaymentDialog({ paymentId, amount, residentName, trigger }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState<
@@ -49,17 +57,25 @@ export function VoidPaymentDialog({ paymentId, amount, residentName }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="ghost" size="icon" />}>
-        <Ban className="h-4 w-4" />
-      </DialogTrigger>
+      {trigger ? (
+        <DialogTrigger render={trigger as React.ReactElement} />
+      ) : (
+        <DialogTrigger
+          render={
+            <Button variant="ghost" size="icon" aria-label="Cancel payment" />
+          }
+        >
+          <Ban className="h-4 w-4" />
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Void Payment</DialogTitle>
+          <DialogTitle>Cancel Payment</DialogTitle>
           <DialogDescription>
-            Voiding the ${amount.toFixed(2)} payment for{" "}
+            Cancelling the ${amount.toFixed(2)} payment for{" "}
             <strong>{residentName}</strong>. The charge balance is
-            rolled back and the payment row stays on the ledger with a
-            void stamp. Provide a reason for the audit trail.
+            rolled back and the payment row stays on the ledger marked
+            as cancelled. Provide a reason for the audit trail.
           </DialogDescription>
         </DialogHeader>
         <form action={action} className="space-y-3">
@@ -73,7 +89,7 @@ export function VoidPaymentDialog({ paymentId, amount, residentName }: Props) {
               name="reason"
               required
               rows={3}
-              placeholder="Why is this payment being voided?"
+              placeholder="Why is this payment being cancelled?"
             />
           </div>
           {state?.error && (
@@ -89,7 +105,7 @@ export function VoidPaymentDialog({ paymentId, amount, residentName }: Props) {
               Cancel
             </Button>
             <Button type="submit" variant="destructive" disabled={pending}>
-              {pending ? "Voiding…" : "Void Payment"}
+              {pending ? "Cancelling…" : "Cancel Payment"}
             </Button>
           </DialogFooter>
         </form>

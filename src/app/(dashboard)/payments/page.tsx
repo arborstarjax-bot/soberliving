@@ -8,6 +8,7 @@ import { DollarSign, AlertCircle } from "lucide-react";
 import { CreatePaymentDialog } from "./create-payment-dialog";
 import { VoidPaymentDialog } from "./void-payment-dialog";
 import { DeletePaymentDialog } from "./delete-payment-dialog";
+import { RecordChargePaymentDialog } from "./record-charge-payment-dialog";
 import { RentConfigDialog } from "./rent-config-dialog";
 import { DownloadReceiptButton } from "./download-receipt-button";
 import { Pagination } from "@/components/pagination";
@@ -245,12 +246,21 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
   const openChargeRows = openCharges ?? [];
 
   const todayIso = new Date().toISOString().slice(0, 10);
-  const totalOpenBalance = openChargeRows.reduce(
+
+  // "Outstanding" means currently owed — due today or past due. Future
+  // charges (partial or not) are upcoming balances, not outstanding
+  // yet. We still keep the full list (openChargeRows) for the
+  // "By Resident" tab and dialog selectors since those want the
+  // complete schedule.
+  const dueChargeRows = openChargeRows.filter(
+    (c) => (c.due_date as string) <= todayIso
+  );
+  const totalOpenBalance = dueChargeRows.reduce(
     (s, c) => s + (Number(c.amount) - Number(c.paid_amount)),
     0
   );
-  const pastDueCount = openChargeRows.filter(
-    (c) => c.due_date < todayIso
+  const pastDueCount = dueChargeRows.filter(
+    (c) => (c.due_date as string) < todayIso
   ).length;
 
   const configMap: Record<
@@ -351,7 +361,7 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
                 {formatCurrency(totalOpenBalance)}
               </div>
               <p className="text-xs text-muted-foreground">
-                {openChargeRows.length} open · {pastDueCount} past due
+                {dueChargeRows.length} due · {pastDueCount} past due
               </p>
             </CardContent>
           </Card>
@@ -394,12 +404,12 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
             <TabsTrigger value="by-resident">By Resident</TabsTrigger>
             <TabsTrigger value="outstanding">
               Outstanding
-              {openChargeRows.length > 0 && (
+              {dueChargeRows.length > 0 && (
                 <Badge
                   variant={pastDueCount > 0 ? "destructive" : "secondary"}
                   className="ml-1.5 h-5 px-1.5 text-xs"
                 >
-                  {openChargeRows.length}
+                  {dueChargeRows.length}
                 </Badge>
               )}
             </TabsTrigger>
@@ -442,12 +452,12 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
           </TabsContent>
 
           <TabsContent value="outstanding" className="mt-4">
-            {openChargeRows.length === 0 ? (
+            {dueChargeRows.length === 0 ? (
               <Card>
                 <CardContent className="py-12 text-center">
                   <DollarSign className="mx-auto h-12 w-12 text-muted-foreground/50" />
                   <p className="mt-4 text-muted-foreground">
-                    No open balances — everyone&apos;s caught up.
+                    Nothing outstanding — everyone&apos;s caught up.
                   </p>
                 </CardContent>
               </Card>
@@ -455,7 +465,7 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
               <Card>
                 <CardContent className="p-0">
                   <div className="divide-y">
-                    {openChargeRows.map((c) => {
+                    {dueChargeRows.map((c) => {
                       const resident =
                         (c.resident as unknown as { full_name: string } | null)
                           ?.full_name ?? "Unknown";
@@ -492,13 +502,34 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
                               )}
                             </p>
                           </div>
-                          <span
-                            className={`font-semibold ${
-                              pastDue ? "text-destructive" : ""
-                            }`}
-                          >
-                            {formatCurrency(balance)}
-                          </span>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span
+                              className={`font-semibold ${
+                                pastDue ? "text-destructive" : ""
+                              }`}
+                            >
+                              {formatCurrency(balance)}
+                            </span>
+                            <RecordChargePaymentDialog
+                              residentId={c.resident_id as string}
+                              residentName={resident}
+                              houseId={c.house_id as string}
+                              charge={{
+                                id: c.id as string,
+                                charge_type: c.charge_type as string,
+                                amount: Number(c.amount),
+                                paid_amount: Number(c.paid_amount),
+                                due_date: c.due_date as string,
+                                period_start:
+                                  (c.period_start as string | null) ?? null,
+                                period_end:
+                                  (c.period_end as string | null) ?? null,
+                              }}
+                              variant={pastDue ? "default" : "outline"}
+                              size="sm"
+                              label="Record Payment"
+                            />
+                          </div>
                         </div>
                       );
                     })}

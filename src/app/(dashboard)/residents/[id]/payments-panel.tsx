@@ -21,6 +21,7 @@ import { cancelPendingAmendment } from "@/app/(dashboard)/payments/actions";
 import { RecordChargePaymentDialog } from "@/app/(dashboard)/payments/record-charge-payment-dialog";
 import { RecordUpcomingRentDialog } from "@/app/(dashboard)/payments/record-upcoming-rent-dialog";
 import { DeletePaymentDialog } from "@/app/(dashboard)/payments/delete-payment-dialog";
+import { VoidPaymentDialog } from "@/app/(dashboard)/payments/void-payment-dialog";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
@@ -142,6 +143,7 @@ export function ResidentPaymentsPanel({
   recentPayments,
   terms,
   isAdmin,
+  canVoid,
   residentUserId,
   residentName,
   pendingAmendment,
@@ -259,6 +261,7 @@ export function ResidentPaymentsPanel({
                   key={p.id}
                   payment={p}
                   isAdmin={isAdmin}
+                  canVoid={canVoid}
                   residentName={residentName}
                 />
               ))}
@@ -505,10 +508,12 @@ function toIsoLocal(d: Date): string {
 function ReceiptRow({
   payment,
   isAdmin,
+  canVoid,
   residentName,
 }: {
   payment: RecentPayment;
   isAdmin: boolean;
+  canVoid: boolean;
   residentName: string;
 }) {
   const isVoid =
@@ -543,6 +548,13 @@ function ReceiptRow({
             storagePath={payment.receipt_storage_path}
             receiptNumber={payment.receipt_number}
           />
+          {canVoid && !isVoid && (
+            <VoidPaymentDialog
+              paymentId={payment.id}
+              amount={payment.amount}
+              residentName={residentName}
+            />
+          )}
           {isAdmin && (
             <DeletePaymentDialog
               paymentId={payment.id}

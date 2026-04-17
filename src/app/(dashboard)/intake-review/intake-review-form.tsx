@@ -47,14 +47,65 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
   const [paymentFrequency, setPaymentFrequency] = useState<"weekly" | "monthly">("monthly");
   const [rentAmount, setRentAmount] = useState("800");
   const [adminFee, setAdminFee] = useState("200");
-  const [rentDueDate, setRentDueDate] = useState("1st of each month");
   const [commitmentStartDate, setCommitmentStartDate] = useState(
     new Date().toISOString().split("T")[0]
   );
+
+  // Rent Due Date is derived from frequency + start date so admins
+  // can't accidentally enter something inconsistent with the schedule.
+  // Monthly → "<ordinal> of each month" based on the start day-of-month.
+  // Weekly  → "Every <Weekday>" based on the start weekday.
+  // Uses a local-date parser so date-only strings don't drift a day in
+  // US Pacific.
+  const rentDueDate = (() => {
+    if (!commitmentStartDate) return "";
+    const [y, m, d] = commitmentStartDate.split("-").map(Number);
+    if (!y || !m || !d) return "";
+    const dt = new Date(y, m - 1, d);
+    if (paymentFrequency === "weekly") {
+      const weekday = dt.toLocaleDateString("en-US", { weekday: "long" });
+      return `Every ${weekday}`;
+    }
+    const ordinal = (n: number) => {
+      const s = ["th", "st", "nd", "rd"];
+      const v = n % 100;
+      return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
+    };
+    return `${ordinal(d)} of each month`;
+  })();
   const [commitmentTerm, setCommitmentTerm] = useState("181 days");
   const [notes, setNotes] = useState("");
   const [checkInRestrictions, setCheckInRestrictions] = useState<CheckInRestriction[]>([]);
   const [staffSignature, setStaffSignature] = useState<string | null>(null);
+
+  // Move-in payment state. Default to "not collected" so admins have
+  // to make an affirmative choice rather than silently submitting with
+  // zero payment.
+  const [moveInNoPayment, setMoveInNoPayment] = useState(false);
+  const [moveInAmount, setMoveInAmount] = useState("");
+  const [moveInMethod, setMoveInMethod] = useState<
+    "cash" | "check" | "money_order" | "venmo" | "zelle" | "other"
+  >("cash");
+  const [moveInPaidAt, setMoveInPaidAt] = useState(
+    new Date().toISOString().split("T")[0]
+  );
+  const [moveInNote, setMoveInNote] = useState("");
+
+  // Derived move-in totals. The form lets the admin change rent /
+  // admin fee interactively so the expected total tracks those.
+  const parsedRent = parseFloat(rentAmount);
+  const parsedAdminFee = parseFloat(adminFee);
+  const expectedMoveInTotal =
+    (Number.isFinite(parsedRent) ? parsedRent : 0) +
+    (Number.isFinite(parsedAdminFee) ? parsedAdminFee : 0);
+  const parsedMoveInAmount = parseFloat(moveInAmount);
+  const collectedAmount = Number.isFinite(parsedMoveInAmount)
+    ? parsedMoveInAmount
+    : 0;
+  const isPartialPayment =
+    !moveInNoPayment &&
+    collectedAmount > 0 &&
+    collectedAmount < expectedMoveInTotal;
 
   async function handleHouseChange(newHouseId: string) {
     setHouseId(newHouseId);
@@ -89,6 +140,38 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
     if (isNaN(rent) || rent <= 0) return setError("Invalid rent amount");
     if (isNaN(fee) || fee < 0) return setError("Invalid admin fee");
 
+    // Move-in payment validation. Either the admin has ticked
+    // "no payment collected", or they've entered a real amount
+    // (> 0) with a method. If the payment is partial (less than
+    // the expected total) they must leave a note.
+    let moveInPayload: {
+      amount: number;
+      method: typeof moveInMethod;
+      paidAt: string;
+      note?: string;
+    } | null = null;
+    if (!moveInNoPayment) {
+      if (!Number.isFinite(parsedMoveInAmount) || parsedMoveInAmount <= 0) {
+        return setError(
+          'Enter the amount collected at move-in, or check "No payment collected at move-in"'
+        );
+      }
+      if (!moveInPaidAt) {
+        return setError("Select a payment date");
+      }
+      if (parsedMoveInAmount < expectedMoveInTotal && !moveInNote.trim()) {
+        return setError(
+          "Partial move-in payments require a note explaining the arrangement"
+        );
+      }
+      moveInPayload = {
+        amount: parsedMoveInAmount,
+        method: moveInMethod,
+        paidAt: moveInPaidAt,
+        note: moveInNote.trim() || undefined,
+      };
+    }
+
     startTransition(async () => {
       const result = await completeIntakeReview({
         userId,
@@ -104,6 +187,7 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
         notes: notes || undefined,
         staffSignature,
         checkInRestrictions: checkInRestrictions.length > 0 ? checkInRestrictions : undefined,
+        moveInPayment: moveInPayload,
       });
 
       if (result.error) {
@@ -243,9 +327,13 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
           <Label>Rent Due Date *</Label>
           <Input
             value={rentDueDate}
-            onChange={(e) => setRentDueDate(e.target.value)}
-            placeholder="e.g. 1st of each month"
+            readOnly
+            disabled
+            className="bg-muted/50"
           />
+          <p className="text-xs text-muted-foreground">
+            Auto-calculated from Payment Frequency + Commitment Start Date.
+          </p>
         </div>
 
         <div className="space-y-2">
@@ -374,6 +462,128 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
           <p className="text-sm text-muted-foreground italic">
             No check-in restrictions added. Click &quot;Add Restriction&quot; to add one.
           </p>
+        )}
+      </div>
+
+      {/* Move-In Payment */}
+      <div className="border-t pt-4 space-y-3">
+        <div>
+          <h3 className="font-semibold text-lg">Move-In Payment</h3>
+          <p className="text-sm text-muted-foreground">
+            Record the payment collected at move-in. Applied to the admin
+            fee first, then the first rent cycle.
+          </p>
+        </div>
+
+        <div className="rounded-md bg-muted/40 p-3 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Sober Living Fee</span>
+            <span className="font-medium">
+              ${Number.isFinite(parsedRent) ? parsedRent.toFixed(2) : "0.00"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Administrative Fee</span>
+            <span className="font-medium">
+              ${Number.isFinite(parsedAdminFee) ? parsedAdminFee.toFixed(2) : "0.00"}
+            </span>
+          </div>
+          <div className="mt-1 flex items-center justify-between border-t pt-1">
+            <span className="font-semibold">Expected at move-in</span>
+            <span className="font-semibold">
+              ${expectedMoveInTotal.toFixed(2)}
+            </span>
+          </div>
+        </div>
+
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="h-4 w-4"
+            checked={moveInNoPayment}
+            onChange={(e) => setMoveInNoPayment(e.target.checked)}
+          />
+          <span>No payment collected at move-in</span>
+        </label>
+
+        {!moveInNoPayment && (
+          <div className="space-y-3">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-2">
+                <Label>Amount Collected *</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                    $
+                  </span>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="pl-7"
+                    value={moveInAmount}
+                    onChange={(e) => setMoveInAmount(e.target.value)}
+                    placeholder={expectedMoveInTotal.toFixed(2)}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Payment Method *</Label>
+                <select
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                  value={moveInMethod}
+                  onChange={(e) =>
+                    setMoveInMethod(
+                      e.target.value as typeof moveInMethod
+                    )
+                  }
+                >
+                  <option value="cash">Cash</option>
+                  <option value="check">Check</option>
+                  <option value="money_order">Money Order</option>
+                  <option value="venmo">Venmo</option>
+                  <option value="zelle">Zelle</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Payment Date *</Label>
+                <Input
+                  type="date"
+                  value={moveInPaidAt}
+                  onChange={(e) => setMoveInPaidAt(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {isPartialPayment && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                This is a partial move-in payment (${collectedAmount.toFixed(2)} of ${expectedMoveInTotal.toFixed(2)}). A note is required.
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>
+                Note{" "}
+                {isPartialPayment ? (
+                  <span className="text-destructive">*</span>
+                ) : (
+                  <span className="text-muted-foreground">(optional)</span>
+                )}
+              </Label>
+              <Textarea
+                value={moveInNote}
+                onChange={(e) => setMoveInNote(e.target.value)}
+                placeholder={
+                  isPartialPayment
+                    ? "Explain the partial payment arrangement (remaining balance, due date, etc.)"
+                    : "Add context for this payment if helpful"
+                }
+                rows={3}
+              />
+            </div>
+          </div>
         )}
       </div>
 
