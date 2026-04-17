@@ -15,8 +15,14 @@ import { headers } from "next/headers";
 export async function getAppOrigin(): Promise<string> {
   try {
     const h = await headers();
-    const forwardedHost = h.get("x-forwarded-host");
-    const forwardedProto = h.get("x-forwarded-proto");
+    // x-forwarded-* headers can be comma-separated when the request
+    // traverses multiple proxies (e.g. AWS ALB → Cloudflare → Vercel).
+    // Take the left-most value, which represents the original client-
+    // facing hop.
+    const firstValue = (raw: string | null) =>
+      raw?.split(",")[0]?.trim() || null;
+    const forwardedHost = firstValue(h.get("x-forwarded-host"));
+    const forwardedProto = firstValue(h.get("x-forwarded-proto"));
     const host = forwardedHost ?? h.get("host");
     if (host) {
       const proto =
