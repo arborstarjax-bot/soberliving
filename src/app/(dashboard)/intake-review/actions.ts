@@ -638,15 +638,18 @@ export type GetRoomsForHouseResult =
 export async function getRoomsForHouse(
   houseId: string
 ): Promise<GetRoomsForHouseResult> {
-  // Wrap the entire function in try/catch so absolutely nothing
-  // (auth failure, missing SUPABASE_SERVICE_ROLE_KEY, unexpected
-  // runtime errors) can escape as a thrown error. Next.js scrubs
-  // thrown messages in production; structured returns preserve the
-  // real diagnostic.
-  try {
-    await requireRole("admin");
-    const adminClient = createAdminClient();
+  // requireRole() uses next/navigation's redirect(), which throws
+  // a special NEXT_REDIRECT error that the framework intercepts.
+  // It MUST propagate — a generic try/catch around it would
+  // silently swallow the redirect. So it stays outside the try.
+  await requireRole("admin");
+  const adminClient = createAdminClient();
 
+  // Wrap the DB work in try/catch so any runtime error (missing
+  // SUPABASE_SERVICE_ROLE_KEY, network failure, unexpected throw)
+  // comes back as structured data instead of a thrown error whose
+  // message Next.js would scrub in production.
+  try {
     const { data: rooms, error: roomsError } = await adminClient
       .from("rooms")
       .select("id, name, beds(id, label, is_active)")
