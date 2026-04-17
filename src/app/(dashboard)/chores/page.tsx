@@ -56,18 +56,33 @@ export default async function ChoresPage() {
     .from("chore_exclusions")
     .select("id, chore_id, resident_id, reason, resident:residents(full_name)");
 
+  let roomsQuery = supabase
+    .from("rooms")
+    .select("id, house_id, name")
+    .eq("is_active", true)
+    .order("name");
+  if (houseFilter) roomsQuery = roomsQuery.in("house_id", houseFilter);
+
+  const roomExclusionsQuery = supabase
+    .from("chore_room_exclusions")
+    .select("id, chore_id, room_id");
+
   const [
     { data: houses },
     { data: chores },
     { data: rotations },
     { data: residents },
     { data: exclusions },
+    { data: rooms },
+    { data: roomExclusions },
   ] = await Promise.all([
     housesQuery,
     choresQuery,
     rotationsQuery,
     residentsQuery,
     exclusionsQuery,
+    roomsQuery,
+    roomExclusionsQuery,
   ]);
 
   // Normalize exclusions: Supabase returns joined resident as array, flatten to object
@@ -274,6 +289,10 @@ export default async function ChoresPage() {
               }))}
               residents={residents ?? []}
               exclusions={normalizedExclusions}
+              rooms={rooms ?? []}
+              roomExclusions={(roomExclusions ?? []).filter((re) =>
+                accessibleChoreIds.has(re.chore_id)
+              )}
             />
           </TabsContent>
 

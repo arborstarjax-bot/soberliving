@@ -119,11 +119,22 @@ export const createChoreSchema = z.object({
 
 export const updateChoreSchema = z.object({
   name: z.string().min(1, "Chore name is required").max(200),
+  days_of_week: z.array(dayOfWeekEnum).min(1, "Select at least one day"),
+  cycle_weeks: z.coerce.number().int().min(1).max(4),
 });
 
 export const createChoreTaskSchema = z.object({
   chore_id: z.string().uuid(),
   description: z.string().min(1, "Task description is required").max(500),
+});
+
+export const updateChoreTaskSchema = z.object({
+  description: z.string().min(1, "Task description is required").max(500),
+});
+
+export const setChoreRoomExclusionsSchema = z.object({
+  chore_id: z.string().uuid(),
+  room_ids: z.array(z.string().uuid()),
 });
 
 export const createRotationSchema = z.object({
