@@ -361,7 +361,7 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
                 {formatCurrency(totalOpenBalance)}
               </div>
               <p className="text-xs text-muted-foreground">
-                {openChargeRows.length} open · {pastDueCount} past due
+                {dueChargeRows.length} due · {pastDueCount} past due
               </p>
             </CardContent>
           </Card>
