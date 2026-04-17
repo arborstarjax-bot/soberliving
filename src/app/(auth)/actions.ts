@@ -78,16 +78,19 @@ export async function signup(
   _prevState: AuthState | undefined,
   formData: FormData
 ): Promise<AuthState | undefined> {
-  const fullName = (formData.get("full_name") as string | null)?.trim() ?? "";
   const email = (formData.get("email") as string | null)?.trim() ?? "";
   const password = (formData.get("password") as string | null) ?? "";
 
-  if (fullName.length < 2) {
-    return { error: "Full name must be at least 2 characters" };
-  }
   if (!email) {
     return { error: "Email is required" };
   }
+
+  // We no longer collect a name at signup — the authoritative
+  // full_name comes from the intake packet's first/middle/last fields
+  // and gets written back in src/app/(intake)/actions.ts. Seed the
+  // profile with the email local-part so admin lists show something
+  // readable until the user completes intake.
+  const fullName = email.split("@")[0] || email;
   if (password.length < 8) {
     return { error: "Password must be at least 8 characters" };
   }

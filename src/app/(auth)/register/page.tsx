@@ -36,17 +36,6 @@ export default function RegisterPage() {
           ) : (
             <form action={action} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="full_name">Full name</Label>
-                <Input
-                  id="full_name"
-                  name="full_name"
-                  type="text"
-                  autoComplete="name"
-                  placeholder="Jane Smith"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
