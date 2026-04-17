@@ -5,7 +5,12 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { requireAuth, requireRole } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
-import { openAllChargesForCommitment } from "@/lib/payments/charges";
+import {
+  openAllChargesForCommitment,
+  addMonthsClamped,
+  parseIsoDate,
+  toIsoDate,
+} from "@/lib/payments/charges";
 import { generateReceiptPdf } from "@/lib/payments/receipt-pdf";
 import { z } from "zod";
 
@@ -213,7 +218,19 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     const mi = data.moveInPayment;
 
     // Open charges early — the helpers gate on status=active, so we
-    // inline the insert directly. Idempotent via unique index.
+    // inline the insert directly. Idempotent via unique index, but
+    // because `ignoreDuplicates: true` means "first insert wins", we
+    // MUST write the same shape `openRentChargesForCommitment` would,
+    // including period_start / period_end. Otherwise when
+    // markIntakeComplete later calls openAllChargesForCommitment it
+    // sees the row already exists and skips it, and the rent charge
+    // is permanently stuck with NULL period fields (breaking the
+    // payments UI's "Period" line and the receipt PDF).
+    const rentPeriodStart = data.commitmentStartDate;
+    const rentPeriodEnd = toIsoDate(
+      addMonthsClamped(parseIsoDate(data.commitmentStartDate), 1)
+    );
+
     const chargeRows: Array<{
       resident_id: string;
       house_id: string;
@@ -221,6 +238,8 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
       charge_type: string;
       amount: number;
       due_date: string;
+      period_start?: string;
+      period_end?: string;
     }> = [];
 
     if (data.adminFee > 0) {
@@ -240,6 +259,8 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
       charge_type: "rent",
       amount: data.rentAmount,
       due_date: data.commitmentStartDate,
+      period_start: rentPeriodStart,
+      period_end: rentPeriodEnd,
     });
 
     if (chargeRows.length > 0) {
