@@ -7,6 +7,7 @@ import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { createUserSchema, assignManagerSchema, updateUserProfileSchema } from "@/lib/validations";
 import { sendInviteEmail } from "@/lib/email";
+import { getAppOrigin } from "@/lib/app-url";
 
 export async function createUser(
   _prevState: { error?: string; inviteLink?: string } | undefined,
@@ -32,13 +33,14 @@ export async function createUser(
 
   const supabase = await createClient();
   const adminClient = createAdminClient();
+  const baseUrl = await getAppOrigin();
 
   // Generate an invite link via Supabase admin API (requires service role key)
   const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
     type: "invite",
     email: parsed.data.email,
     options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/reset-password`,
+      redirectTo: `${baseUrl}/reset-password`,
     },
   });
 
@@ -93,7 +95,6 @@ export async function createUser(
   // Use the action_link from Supabase (contains tokens in the URL).
   // Rewrite the redirect so it lands on our /reset-password page where
   // the user can set their password.
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
   let inviteLink = linkData.properties?.action_link ?? "";
 
   if (inviteLink) {
@@ -117,6 +118,7 @@ export async function createUser(
       fullName: parsed.data.full_name || parsed.data.email.split("@")[0],
       role: "resident",
       inviteLink,
+      appUrl: baseUrl,
     });
   } catch {
     // Email send failed — admin can still share the link manually
@@ -151,20 +153,17 @@ export async function resendInviteLink(
     return { error: "User not found" };
   }
 
+  const baseUrl = await getAppOrigin();
   const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
     type: "invite",
     email: target.email,
     options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/reset-password`,
+      redirectTo: `${baseUrl}/reset-password`,
     },
   });
 
   if (linkError) return { error: linkError.message };
 
-  const baseUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    process.env.NEXT_PUBLIC_APP_URL ??
-    "http://localhost:3000";
   let inviteLink = linkData.properties?.action_link ?? "";
   if (inviteLink) {
     try {
@@ -184,6 +183,7 @@ export async function resendInviteLink(
       fullName: target.full_name || target.email.split("@")[0],
       role: "resident",
       inviteLink,
+      appUrl: baseUrl,
     });
   } catch {
     // Email send failed — staff can still share the link manually
