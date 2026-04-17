@@ -5,7 +5,11 @@ import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { calculateMilestones, getDaysSober } from "@/lib/milestones";
+import {
+  calculateMilestones,
+  getDaysSober,
+  isSobrietyDateFuture,
+} from "@/lib/milestones";
 import { ResidentTimeline } from "./timeline";
 import { ResidentNotes } from "./notes";
 import { ForcePhotoToggle } from "./force-photo-toggle";
@@ -364,8 +368,9 @@ export default async function ResidentDetailPage(
                   {getDaysSober(resident.sobriety_date)} days
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Since{" "}
-                  {new Date(resident.sobriety_date).toLocaleDateString()}
+                  {isSobrietyDateFuture(resident.sobriety_date)
+                    ? `Starts ${new Date(resident.sobriety_date).toLocaleDateString()}`
+                    : `Since ${new Date(resident.sobriety_date).toLocaleDateString()}`}
                 </p>
               </div>
             ) : (
