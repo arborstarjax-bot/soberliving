@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sweepOpenChargesForActiveCommitments } from "@/lib/payments/charges";
 
-// Daily cron that opens any missing rent / admin-fee charges for
-// every active commitment. Replaces the former "lazy cron" that
-// ran on every staff /payments page load — see vercel.json for the
-// schedule. `sweepOpenChargesForActiveCommitments` is idempotent
-// via the (resident, due_date, charge_type) unique index, so
-// re-running the cron (or running it alongside a page-load backfill
-// during the transition) cannot duplicate charges.
+// Daily cron that opens any missing rent charges for every active
+// commitment. Replaces the former "lazy cron" that ran on every
+// staff /payments page load — see vercel.json for the schedule.
+//
+// Scope: rent only. Admin-fee / deposit charges are opened once at
+// commitment activation (intake-review/actions.ts +
+// sign-commitment/actions.ts), not by this sweep — removing those
+// opener calls from the activation paths would mean admin fees stop
+// being created for new residents.
+//
+// `sweepOpenChargesForActiveCommitments` is idempotent via the
+// (resident, due_date, charge_type) unique index, so re-running the
+// cron (or running it alongside a page-load backfill during a
+// transition) cannot duplicate charges.
 //
 // Auth: Vercel Cron sends `Authorization: Bearer ${CRON_SECRET}`.
 // Anything else is rejected with 401. If CRON_SECRET is unset, the
