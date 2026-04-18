@@ -22,6 +22,7 @@ import type {
 import { daysUntil, formatMoney } from "./_payments/helpers";
 import { NextDueCard } from "./_payments/next-due-card";
 import { VirtualNextDueCard } from "./_payments/virtual-next-due-card";
+import { OpenChargeRow } from "./_payments/open-charge-row";
 import { ReceiptRow } from "./_payments/receipt-row";
 import { PaymentTermsCard } from "./_payments/payment-terms-card";
 import { PendingCommitmentCard } from "./_payments/pending-commitment-card";
@@ -161,9 +162,29 @@ export function ResidentPaymentsPanel({
         </div>
       )}
 
-      {/* Open charges list removed — Next Due hero above + summary
-          tiles cover everything actionable. Record Payment is wired
-          into the hero card itself. */}
+      {/* Other open charges — every additional charge beyond the Next
+          Due hero gets its own row + Record Payment button so staff
+          can pay any open charge directly (e.g. rent while admin fee
+          is still outstanding). */}
+      {sortedCharges.length > 1 && (
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold px-0.5">
+            Other Open Charges
+          </h3>
+          <div className="space-y-2">
+            {sortedCharges.slice(1).map((c) => (
+              <OpenChargeRow
+                key={c.id}
+                charge={c}
+                canRecordPayment={canRecordPayment && !!houseId}
+                residentId={residentId}
+                residentName={residentName}
+                houseId={houseId ?? ""}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Recent receipts */}
       <section className="space-y-2">
