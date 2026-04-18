@@ -132,9 +132,16 @@ interface SidebarProps {
   userName: string;
   hasNoLeaveRestriction?: boolean;
   unreadNotificationCount?: number;
+  unreadBulletinCount?: number;
 }
 
-export function Sidebar({ role, userName, hasNoLeaveRestriction, unreadNotificationCount = 0 }: SidebarProps) {
+export function Sidebar({
+  role,
+  userName,
+  hasNoLeaveRestriction,
+  unreadNotificationCount = 0,
+  unreadBulletinCount = 0,
+}: SidebarProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -183,11 +190,20 @@ export function Sidebar({ role, userName, hasNoLeaveRestriction, unreadNotificat
             >
               <item.icon className="h-4 w-4 shrink-0" />
               {item.label}
-              {item.href === "/notifications" && unreadNotificationCount > 0 && (
-                <span className="ml-auto text-xs font-bold text-yellow-400">
-                  +{unreadNotificationCount > 99 ? "99" : unreadNotificationCount}
-                </span>
-              )}
+              {item.href === "/notifications" &&
+                unreadNotificationCount > 0 &&
+                !isActive && (
+                  <span className="ml-auto text-xs font-bold text-yellow-400">
+                    +{unreadNotificationCount > 99 ? "99" : unreadNotificationCount}
+                  </span>
+                )}
+              {item.href === "/bulletin" &&
+                unreadBulletinCount > 0 &&
+                !isActive && (
+                  <span className="ml-auto text-xs font-bold text-yellow-400">
+                    +{unreadBulletinCount > 99 ? "99" : unreadBulletinCount}
+                  </span>
+                )}
             </Link>
           );
         })}
