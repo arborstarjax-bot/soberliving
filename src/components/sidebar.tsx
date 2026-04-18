@@ -19,9 +19,9 @@ import {
   ShieldAlert,
   MessageSquare,
   Bell,
-  FileText,
   Folder,
   DollarSign,
+  Flag,
 } from "lucide-react";
 import { useState } from "react";
 import { InstallAppButton } from "@/components/pwa/install-app-button";
@@ -110,6 +110,15 @@ const NAV_ITEMS: NavItem[] = [
     href: "/bulletin",
     icon: MessageSquare,
     roles: ["admin", "manager", "resident"],
+  },
+  {
+    // Resident-only entry point to file a grievance or report a
+    // problem. Staff manage the inventory under Bulletin → Reports,
+    // so they don't need the submit form in the nav.
+    label: "Report",
+    href: "/report",
+    icon: Flag,
+    roles: ["resident"],
   },
   {
     label: "Notifications",

@@ -16,6 +16,8 @@ export function BulletinTabs({ userRole }: { userRole: UserRole }) {
   const pathname = usePathname();
   const isPosts = pathname === "/bulletin";
   const isBlockers = pathname.startsWith("/bulletin/blockers");
+  const isGrievances = pathname.startsWith("/bulletin/grievances");
+  const isStaff = userRole === "admin" || userRole === "manager";
 
   return (
     <div className="border-b">
@@ -23,9 +25,14 @@ export function BulletinTabs({ userRole }: { userRole: UserRole }) {
         <TabLink href="/bulletin" active={isPosts}>
           Posts
         </TabLink>
-        {(userRole === "admin" || userRole === "manager") && (
+        {isStaff && (
           <TabLink href="/bulletin/blockers" active={isBlockers}>
             Blockers
+          </TabLink>
+        )}
+        {isStaff && (
+          <TabLink href="/bulletin/grievances" active={isGrievances}>
+            Reports
           </TabLink>
         )}
       </nav>
