@@ -51,6 +51,58 @@ export default async function DashboardLayout({
     unreadNotificationCount = count ?? 0;
   }
 
+  // Unread bulletin count — posts visible to this user created after
+  // their last /bulletin visit. Mirrors the visibility filter in
+  // bulletin/page.tsx (own-house + global for residents, assigned
+  // houses + global for managers, all for admins). NULL last_seen
+  // means "never visited" so everything visible counts.
+  let unreadBulletinCount = 0;
+  {
+    const adminClient = createAdminClient();
+
+    const { data: meRow } = await adminClient
+      .from("users")
+      .select("last_seen_bulletin_at")
+      .eq("id", user.id)
+      .maybeSingle();
+    const lastSeen =
+      (meRow?.last_seen_bulletin_at as string | null) ?? null;
+
+    let visibleHouseIds: string[] | null = null; // null = all houses
+    if (user.role === "resident") {
+      const { data: resident } = await adminClient
+        .from("residents")
+        .select("house_id")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .maybeSingle();
+      visibleHouseIds = resident?.house_id
+        ? [resident.house_id as string]
+        : [];
+    } else if (user.role === "manager") {
+      visibleHouseIds =
+        user.assigned_house_ids.length > 0 ? user.assigned_house_ids : [];
+    }
+
+    let bulletinQuery = adminClient
+      .from("bulletin_posts")
+      .select("id", { count: "exact", head: true });
+
+    if (lastSeen) {
+      bulletinQuery = bulletinQuery.gt("created_at", lastSeen);
+    }
+    if (visibleHouseIds && visibleHouseIds.length > 0) {
+      bulletinQuery = bulletinQuery.or(
+        `house_id.in.(${visibleHouseIds.join(",")}),house_id.is.null`
+      );
+    } else if (visibleHouseIds) {
+      bulletinQuery = bulletinQuery.is("house_id", null);
+    }
+
+    const { count } = await bulletinQuery;
+    unreadBulletinCount = count ?? 0;
+  }
+
   // Hide the Overnight Request nav link from residents with an
   // active no_leave or no_overnight restriction — they can't leave
   // the house overnight so the whole flow is off-limits.
@@ -89,7 +141,7 @@ export default async function DashboardLayout({
     // mobile the top bar would be treated as a narrow left-column
     // flex item instead of a full-width sticky header.
     <div className="flex flex-col lg:flex-row h-dvh overflow-hidden">
-      <Sidebar role={user.role} userName={user.full_name} hasNoLeaveRestriction={hasNoLeaveRestriction} unreadNotificationCount={unreadNotificationCount} />
+      <Sidebar role={user.role} userName={user.full_name} hasNoLeaveRestriction={hasNoLeaveRestriction} unreadNotificationCount={unreadNotificationCount} unreadBulletinCount={unreadBulletinCount} />
       <main className="flex-1 overflow-y-auto min-w-0">
         {/* Safe-area insets so the main scroll region respects the
             iPhone notch, Dynamic Island, and home-indicator rail. No

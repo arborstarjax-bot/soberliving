@@ -32,6 +32,15 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
   const params = await searchParams;
   const { page, offset, pageSize } = getPageParams(params);
 
+  // Bump this user's last_seen_bulletin_at so the sidebar unread
+  // badge clears on the next layout render. Counterpart to the
+  // unreadBulletinCount query in (dashboard)/layout.tsx — "viewing
+  // the bulletin board" is the read event.
+  await supabase
+    .from("users")
+    .update({ last_seen_bulletin_at: new Date().toISOString() })
+    .eq("id", user.id);
+
   // Determine which houses the user can post to
   let postableHouses: { id: string; name: string }[] = [];
 

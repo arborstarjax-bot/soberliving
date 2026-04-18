@@ -31,8 +31,24 @@ export default async function NotificationsPage({ searchParams }: PageProps) {
   const activeTab = normalizeTab(params.tab);
   const { page, offset, pageSize } = getPageParams(params);
 
+  // Auto-clear the sidebar badge as soon as the user opens this
+  // page — "viewing the notifications" is the read event. Running
+  // this before the list query means the rendered rows already
+  // reflect their new is_read state so the per-row styling stays
+  // in sync with the badge. Per-row "Mark as read" and the header
+  // "Mark all read" button become no-ops after this pass but we
+  // leave them in place for explicit undo / clean-up flows.
+  await supabase
+    .from("notifications")
+    .update({ is_read: true })
+    .eq("user_id", user.id)
+    .eq("is_read", false);
+
   // Unread count is always a full-dataset metric — it shouldn't change
-  // as you page through. Keep it cheap with head-only count.
+  // as you page through. Keep it cheap with head-only count. After
+  // the auto-mark above this is effectively always 0 on first render,
+  // but we keep the query so the rest of the page's logic stays
+  // defensive if the update ever fails.
   const unreadRes = await supabase
     .from("notifications")
     .select("id", { count: "exact", head: true })
