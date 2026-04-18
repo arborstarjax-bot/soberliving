@@ -51,6 +51,10 @@ export function CommitmentSigningForm({
   parentTerms,
 }: CommitmentSigningFormProps) {
   const isAmendment = Boolean(parentTerms);
+  const isWeekly = paymentFrequency?.toLowerCase() === "weekly";
+  const frequencyLabel = isWeekly ? "Weekly" : "Monthly";
+  const cycleLower = isWeekly ? "weekly" : "monthly";
+  const perCycle = isWeekly ? "/wk" : "/mo";
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -90,9 +94,9 @@ export function CommitmentSigningForm({
     y -= 20;
 
     const terms = [
-      `1. RENT: The monthly sober living fee is $${rentAmount.toFixed(2)}, due ${rentDueDate}.`,
-      `   Payment frequency: ${paymentFrequency}.`,
-      `2. ADMINISTRATIVE FEE: A non-refundable administrative fee of $${adminFee.toFixed(2)} is due upon move-in.`,
+      `1. RENT: The ${cycleLower} sober living fee is $${rentAmount.toFixed(2)}, due ${rentDueDate}.`,
+      `   Payment frequency: ${frequencyLabel}.`,
+      `2. ADMINISTRATIVE FEE: A one-time non-refundable administrative move-in fee of $${adminFee.toFixed(2)} is due upon move-in. It is charged once at the start of the resident's tenancy and is never re-charged by a payment-terms amendment.`,
       `3. COMMITMENT: Resident commits to a minimum stay of ${commitmentTerm} from the start date.`,
       `4. EARLY MOVE-OUT: Resident must provide at least 48 hours written notice prior to early departure.`,
       "5. HOUSE RULES: Resident agrees to abide by all house rules, including but not limited to:",
@@ -166,7 +170,7 @@ export function CommitmentSigningForm({
       binary += String.fromCharCode(bytes[i]);
     }
     return btoa(binary);
-  }, [residentName, houseName, propertyLocation, rentAmount, adminFee, paymentFrequency, rentDueDate, commitmentStartDate, commitmentTerm, notes, staffSignature, staffSignedAt, residentSignature]);
+  }, [residentName, houseName, propertyLocation, rentAmount, adminFee, paymentFrequency, rentDueDate, commitmentStartDate, commitmentTerm, notes, staffSignature, staffSignedAt, residentSignature, cycleLower, frequencyLabel]);
 
   function handleSubmit() {
     if (!residentSignature) {
@@ -213,22 +217,25 @@ export function CommitmentSigningForm({
               <div className="p-3 rounded-lg bg-white border">
                 <p className="text-xs text-muted-foreground">Previous Terms</p>
                 <p className="font-medium">
-                  Rent ${parentTerms.rent_amount.toFixed(2)}/mo
+                  Rent ${parentTerms.rent_amount.toFixed(2)}
+                  {perCycle}
                 </p>
-                {parentTerms.admin_fee !== null && (
+                {parentTerms.admin_fee !== null && parentTerms.admin_fee > 0 && (
                   <p className="text-xs text-muted-foreground">
-                    Admin fee ${parentTerms.admin_fee.toFixed(2)}
+                    Admin fee ${parentTerms.admin_fee.toFixed(2)} (one-time,
+                    already collected)
                   </p>
                 )}
               </div>
               <div className="p-3 rounded-lg bg-white border border-amber-300">
                 <p className="text-xs text-muted-foreground">New Terms</p>
-                <p className="font-medium">Rent ${rentAmount.toFixed(2)}/mo</p>
-                {adminFee !== null && (
-                  <p className="text-xs text-muted-foreground">
-                    Admin fee ${adminFee.toFixed(2)}
-                  </p>
-                )}
+                <p className="font-medium">
+                  Rent ${rentAmount.toFixed(2)}
+                  {perCycle}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Admin fee not re-charged
+                </p>
                 <p className="text-xs text-muted-foreground">
                   Effective {formatDateOnly(commitmentStartDate)}
                 </p>
@@ -258,14 +265,22 @@ export function CommitmentSigningForm({
               <p className="text-muted-foreground text-xs mt-1">Term: {commitmentTerm}</p>
             </div>
             <div className="p-3 rounded-lg bg-muted">
-              <p className="text-muted-foreground text-xs">Sober Living Fee</p>
+              <p className="text-muted-foreground text-xs">
+                {frequencyLabel} Sober Living Fee
+              </p>
               <p className="font-medium text-lg">${rentAmount.toFixed(2)}</p>
-              <p className="text-muted-foreground text-xs mt-1">Due {rentDueDate} ({paymentFrequency})</p>
+              <p className="text-muted-foreground text-xs mt-1">
+                Due {rentDueDate} ({frequencyLabel})
+              </p>
             </div>
             <div className="p-3 rounded-lg bg-muted">
-              <p className="text-muted-foreground text-xs">Administrative Fee</p>
+              <p className="text-muted-foreground text-xs">
+                Administrative Move-In Fee
+              </p>
               <p className="font-medium text-lg">${adminFee.toFixed(2)}</p>
-              <p className="text-muted-foreground text-xs mt-1">Non-refundable, due at move-in</p>
+              <p className="text-muted-foreground text-xs mt-1">
+                One-time, non-refundable, due at move-in
+              </p>
             </div>
           </div>
 
@@ -286,12 +301,16 @@ export function CommitmentSigningForm({
         <CardContent className="prose prose-sm max-w-none">
           <ol className="space-y-2 text-sm">
             <li>
-              <strong>RENT:</strong> The monthly sober living fee is ${rentAmount.toFixed(2)},
-              due {rentDueDate}. Payment frequency: {paymentFrequency}.
+              <strong>RENT:</strong> The {cycleLower} sober living fee is
+              ${rentAmount.toFixed(2)}, due {rentDueDate}. Payment frequency:
+              {" "}
+              {frequencyLabel}.
             </li>
             <li>
-              <strong>ADMINISTRATIVE FEE:</strong> A non-refundable administrative fee of
-              ${adminFee.toFixed(2)} is due upon move-in.
+              <strong>ADMINISTRATIVE MOVE-IN FEE:</strong> A one-time,
+              non-refundable administrative fee of ${adminFee.toFixed(2)} is
+              due upon move-in. It is charged once at the start of tenancy
+              and is never re-charged by a payment-terms amendment.
             </li>
             <li>
               <strong>COMMITMENT:</strong> Resident commits to a minimum stay of {commitmentTerm} from

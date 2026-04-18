@@ -29,7 +29,6 @@ interface Props {
   userId: string;
   residentName: string;
   currentRent: number;
-  currentAdminFee: number | null;
   currentPaymentFrequency: "weekly" | "monthly";
   effectiveDateDefault: string; // YYYY-MM-DD
 }
@@ -38,7 +37,6 @@ export function EditTermsDialog({
   userId,
   residentName,
   currentRent,
-  currentAdminFee,
   currentPaymentFrequency,
   effectiveDateDefault,
 }: Props) {
@@ -133,33 +131,21 @@ export function EditTermsDialog({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="admin_fee">Admin Fee</Label>
-                <Input
-                  id="admin_fee"
-                  name="admin_fee"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  defaultValue={(currentAdminFee ?? 0).toFixed(2)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="effective_date">Effective Date</Label>
-                <Input
-                  id="effective_date"
-                  name="effective_date"
-                  type="date"
-                  defaultValue={effectiveDateDefault}
-                  required
-                />
-              </div>
+            <div>
+              <Label htmlFor="effective_date">Effective Date</Label>
+              <Input
+                id="effective_date"
+                name="effective_date"
+                type="date"
+                defaultValue={effectiveDateDefault}
+                required
+              />
             </div>
             <p className="text-[11px] text-muted-foreground">
               {paymentFrequency === "weekly"
                 ? "Future rent charges will open on the same weekday as the effective date, every week. Past charges already opened at the old amount are preserved."
-                : "Future rent charges will open on this day of each month. Past charges already opened at the old amount are preserved."}
+                : "Future rent charges will open on this day of each month. Past charges already opened at the old amount are preserved."}{" "}
+              The one-time administrative move-in fee is never re-charged by an amendment.
             </p>
 
             <div>

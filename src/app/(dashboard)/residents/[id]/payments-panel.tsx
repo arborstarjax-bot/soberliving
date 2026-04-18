@@ -19,6 +19,7 @@ import type {
   PendingInitialCommitment,
   RecentPayment,
 } from "./_payments/types";
+import { dayOfMonthLocal } from "@/lib/local-date";
 import { daysUntil, formatMoney } from "./_payments/helpers";
 import { NextDueCard } from "./_payments/next-due-card";
 import { VirtualNextDueCard } from "./_payments/virtual-next-due-card";
@@ -80,6 +81,13 @@ export function ResidentPaymentsPanel({
     0
   );
 
+  // "Up to date" — no open charges at all. Used for the green pill
+  // on the Payment Terms card. We show the expected next-cycle date
+  // alongside it so staff can see at a glance when the next charge
+  // will land, even though no DB row exists yet.
+  const isUpToDate = sortedCharges.length === 0;
+  const nextCycleDate = terms && isUpToDate ? computeNextCycleIso(terms) : null;
+
   const totalPages = Math.max(
     1,
     Math.ceil(recentPayments.length / PAGE_SIZE)
@@ -112,6 +120,8 @@ export function ResidentPaymentsPanel({
           residentUserId={residentUserId}
           residentName={residentName}
           pendingAmendment={pendingAmendment}
+          isUpToDate={isUpToDate}
+          nextCycleDate={nextCycleDate}
         />
       )}
 
@@ -255,4 +265,57 @@ export function ResidentPaymentsPanel({
       </section>
     </div>
   );
+}
+
+// Figure out the ISO date (YYYY-MM-DD) of the resident's next billing
+// cycle, mirroring the logic the recurring-charge opener uses. Monthly:
+// this month's due day (clamped for Feb), rolling to next month once
+// today has passed it. Weekly: the next occurrence of the same weekday
+// as the commitment start. Called only when there are no open charges,
+// so the returned date is by definition in the future.
+function computeNextCycleIso(terms: PaymentTerms): string {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (terms.payment_frequency === "weekly") {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(terms.commitment_start_date);
+    const startWeekday = m
+      ? new Date(
+          Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+        ).getUTCDay()
+      : today.getDay();
+    const candidate = new Date(today);
+    const diff = (startWeekday - today.getDay() + 7) % 7;
+    candidate.setDate(candidate.getDate() + (diff === 0 ? 7 : diff));
+    return toIsoLocal(candidate);
+  }
+
+  const dayOfMonth = dayOfMonthLocal(terms.commitment_start_date);
+  const candidate = new Date(today.getFullYear(), today.getMonth(), 1);
+  const lastDayThis = new Date(
+    candidate.getFullYear(),
+    candidate.getMonth() + 1,
+    0
+  ).getDate();
+  candidate.setDate(Math.min(dayOfMonth, lastDayThis));
+  if (candidate.getTime() <= today.getTime()) {
+    candidate.setDate(1);
+    candidate.setMonth(candidate.getMonth() + 1);
+    const lastDayNext = new Date(
+      candidate.getFullYear(),
+      candidate.getMonth() + 1,
+      0
+    ).getDate();
+    candidate.setDate(Math.min(dayOfMonth, lastDayNext));
+  }
+  return toIsoLocal(candidate);
+}
+
+// Local YYYY-MM-DD formatter — bypasses toISOString()'s UTC shift so
+// a Pacific-evening "today" doesn't land on tomorrow's calendar day.
+function toIsoLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
