@@ -28,33 +28,9 @@ export function VirtualNextDueCard({
   residentName: string;
   houseId: string;
 }) {
-  // Pull day-of-month via dayOfMonthLocal — `new Date("2026-04-15")`
-  // parses as UTC midnight, which is the previous calendar day in US
-  // timezones, so `.getDate()` on a Postgres date-only string drifts.
-  // Matches the pattern used by the sibling PaymentTermsCard.
-  const dayOfMonth = dayOfMonthLocal(terms.commitment_start_date);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  // Start with this month's due day; if already past, roll forward
-  // one month. Clamp to the last day of the target month so Jan-31 →
-  // Feb-28/29, matching the opener's addMonthsClamped logic.
-  const candidate = new Date(today.getFullYear(), today.getMonth(), 1);
-  const lastDayThis = new Date(
-    candidate.getFullYear(),
-    candidate.getMonth() + 1,
-    0
-  ).getDate();
-  candidate.setDate(Math.min(dayOfMonth, lastDayThis));
-  if (candidate.getTime() <= today.getTime()) {
-    candidate.setDate(1);
-    candidate.setMonth(candidate.getMonth() + 1);
-    const lastDayNext = new Date(
-      candidate.getFullYear(),
-      candidate.getMonth() + 1,
-      0
-    ).getDate();
-    candidate.setDate(Math.min(dayOfMonth, lastDayNext));
-  }
+  const candidate = computeNextDue(terms, today);
   const msDay = 24 * 60 * 60 * 1000;
   const days = Math.round(
     (candidate.getTime() - today.getTime()) / msDay
@@ -114,4 +90,52 @@ function toIsoLocal(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+// Derive the next upcoming due date from the resident's payment terms.
+// Monthly: roll to this month's due day, or next month's if already past
+// today, clamping Jan-31 → Feb-28/29 the same way the opener does.
+// Weekly: step forward to the same weekday as `commitment_start_date`,
+// or today if today matches. Used by the Next Rent card and the
+// Record Payment dialog pre-fill so both match what the opener
+// will actually create.
+function computeNextDue(
+  terms: PaymentTerms,
+  today: Date
+): Date {
+  if (terms.payment_frequency === "weekly") {
+    // Parse the commitment start date-only string as UTC so the
+    // weekday we read is the literal calendar weekday the admin
+    // picked — not whatever it lands on in the viewer's TZ. Then
+    // reproject that weekday onto today's local clock.
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(terms.commitment_start_date);
+    const startWeekday = m
+      ? new Date(
+          Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+        ).getUTCDay()
+      : today.getDay();
+    const candidate = new Date(today);
+    const diff = (startWeekday - today.getDay() + 7) % 7;
+    candidate.setDate(candidate.getDate() + diff);
+    return candidate;
+  }
+  const dayOfMonth = dayOfMonthLocal(terms.commitment_start_date);
+  const candidate = new Date(today.getFullYear(), today.getMonth(), 1);
+  const lastDayThis = new Date(
+    candidate.getFullYear(),
+    candidate.getMonth() + 1,
+    0
+  ).getDate();
+  candidate.setDate(Math.min(dayOfMonth, lastDayThis));
+  if (candidate.getTime() < today.getTime()) {
+    candidate.setDate(1);
+    candidate.setMonth(candidate.getMonth() + 1);
+    const lastDayNext = new Date(
+      candidate.getFullYear(),
+      candidate.getMonth() + 1,
+      0
+    ).getDate();
+    candidate.setDate(Math.min(dayOfMonth, lastDayNext));
+  }
+  return candidate;
 }
