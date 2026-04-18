@@ -71,6 +71,14 @@ export default async function AdminPage() {
   }
 
   const supabase = await createClient();
+  // Used for reads against tables whose RLS policies are scoped to the
+  // row owner (e.g. `house_commitments` only lets a user see their own
+  // row). Staff on this dashboard need to see everyone's pending
+  // commitments, so those queries go through the service-role client,
+  // the same way `intake-review/page.tsx` already does. This page is
+  // already gated to admin/manager above, so bypassing RLS here is
+  // consistent with the intake-review pattern.
+  const adminClient = createAdminClient();
   const houseFilter = getAccessibleHouseFilter(user);
   const isAdmin = user.role === "admin";
 
@@ -140,7 +148,11 @@ export default async function AdminPage() {
   if (houseFilter)
     newIntakesActiveQuery = newIntakesActiveQuery.in("house_id", houseFilter);
 
-  let pendingSignatureQuery = supabase
+  // NOTE: uses adminClient, not `supabase`. house_commitments RLS
+  // prevents user-auth reads from seeing other users' rows, which
+  // would leave this bucket empty for staff and break the "Pending
+  // resident signature" label on the dashboard.
+  let pendingSignatureQuery = adminClient
     .from("house_commitments")
     .select(
       "id, user_id, created_at, house:houses(name), user:users(full_name)"
@@ -351,7 +363,6 @@ export default async function AdminPage() {
   let pendingIntakeCount = 0;
   let newIntakesPendingReview: NewIntakeItem[] = [];
   if (isAdmin) {
-    const adminClient = createAdminClient();
     const [{ data: intakeUsers }, { data: commitments }, { data: forms }] =
       await Promise.all([
         adminClient
