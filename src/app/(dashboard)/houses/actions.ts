@@ -6,6 +6,7 @@ import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { requireAuth, requireRole } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
+import { getHouseToday } from "@/lib/timezone";
 import {
   createHouseSchema,
   updateHouseSchema,
@@ -318,7 +319,7 @@ export async function deleteRoom(
     const bedIds = roomBeds.map((b) => b.id);
     await supabase
       .from("bed_assignments")
-      .update({ end_date: new Date().toISOString().split("T")[0] })
+      .update({ end_date: getHouseToday() })
       .in("bed_id", bedIds)
       .is("end_date", null);
     await supabase
@@ -429,7 +430,7 @@ export async function deleteBed(
   // End any active bed assignment for this bed
   await supabase
     .from("bed_assignments")
-    .update({ end_date: new Date().toISOString().split("T")[0] })
+    .update({ end_date: getHouseToday() })
     .eq("bed_id", bedId)
     .is("end_date", null);
 

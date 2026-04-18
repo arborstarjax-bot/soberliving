@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ALL_DAYS, DAY_LABELS } from "@/lib/validations";
 import { Camera } from "lucide-react";
-import { formatDateOnly } from "@/lib/timezone";
+import { formatDateOnly, getHouseToday } from "@/lib/timezone";
 
 interface Props {
   rotations: Array<{
@@ -73,7 +73,7 @@ function getTodayDate(timezone?: string): string {
     });
     return formatter.format(new Date());
   }
-  return new Date().toISOString().split("T")[0];
+  return getHouseToday();
 }
 
 export function ResidentChoreView({ rotations, userResidentId, forcePhoto }: Props) {
@@ -441,7 +441,7 @@ function SignoffCell({
   signoff: { id: string; status: string; sign_off_date: string };
   todayDate?: string;
 }) {
-  const today = todayDate ?? new Date().toISOString().split("T")[0];
+  const today = todayDate ?? getHouseToday();
   const isFuture = signoff.sign_off_date > today;
 
   if (signoff.status === "approved") {

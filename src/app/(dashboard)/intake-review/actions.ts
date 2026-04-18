@@ -14,6 +14,7 @@ import {
 } from "@/lib/payments/charges";
 import { generateReceiptPdf } from "@/lib/payments/receipt-pdf";
 import { z } from "zod";
+import { getHouseToday } from "@/lib/timezone";
 
 const FACILITY_NAME = "Sober Living";
 
@@ -179,7 +180,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
   // occupancy grid's "Mark Not Available" button instead.
   await adminClient
     .from("bed_assignments")
-    .update({ end_date: new Date().toISOString().split("T")[0] })
+    .update({ end_date: getHouseToday() })
     .eq("resident_id", residentId)
     .is("end_date", null);
 

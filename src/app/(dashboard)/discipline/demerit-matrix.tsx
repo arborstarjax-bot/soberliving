@@ -24,6 +24,7 @@ import {
   createRestriction,
   uploadDemeritPhoto,
 } from "./actions";
+import { getHouseToday } from "@/lib/timezone";
 
 const MAX_BOXES = 10;
 
@@ -484,7 +485,7 @@ function AddDemeritDialog({
         restrictionData.set("resident_id", formData.get("resident_id") as string);
         restrictionData.set("restriction_type", restrictionType);
         restrictionData.set("description", formData.get("restriction_description") as string || formData.get("reason") as string);
-        restrictionData.set("start_date", formData.get("restriction_start") as string || new Date().toISOString().split("T")[0]);
+        restrictionData.set("start_date", formData.get("restriction_start") as string || getHouseToday());
         const endDate = formData.get("restriction_end") as string;
         if (endDate) restrictionData.set("end_date", endDate);
         const notes = formData.get("restriction_notes") as string;
@@ -646,7 +647,7 @@ function AddDemeritDialog({
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-1">
                     <Label className="text-xs">Start Date</Label>
-                    <Input name="restriction_start" type="date" className="h-8 text-xs" defaultValue={new Date().toISOString().split("T")[0]} />
+                    <Input name="restriction_start" type="date" className="h-8 text-xs" defaultValue={getHouseToday()} />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">End Date</Label>

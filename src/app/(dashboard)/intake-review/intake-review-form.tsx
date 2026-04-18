@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SignaturePad } from "@/components/signature-pad";
 import { completeIntakeReview, getRoomsForHouse } from "./actions";
 import { Plus, Trash2 } from "lucide-react";
+import { getHouseToday } from "@/lib/timezone";
 
 interface CheckInRestriction {
   restriction_type: string;
@@ -50,7 +51,7 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
   const [rentAmount, setRentAmount] = useState("800");
   const [adminFee, setAdminFee] = useState("200");
   const [commitmentStartDate, setCommitmentStartDate] = useState(
-    new Date().toISOString().split("T")[0]
+    getHouseToday()
   );
 
   // Rent Due Date is derived from frequency + start date so admins
@@ -91,7 +92,7 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
     "cash" | "check" | "money_order" | "venmo" | "zelle" | "other"
   >("cash");
   const [moveInPaidAt, setMoveInPaidAt] = useState(
-    new Date().toISOString().split("T")[0]
+    getHouseToday()
   );
   const [moveInNote, setMoveInNote] = useState("");
 
@@ -103,10 +104,12 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
   const [isExistingTenant, setIsExistingTenant] = useState(false);
   const [skipAdminFee, setSkipAdminFee] = useState(true);
   const [nextRentDueDate, setNextRentDueDate] = useState(() => {
-    const d = new Date();
-    d.setMonth(d.getMonth() + 1);
-    d.setDate(1);
-    return d.toISOString().split("T")[0];
+    // First of next month, seeded from today-in-app-tz so it doesn't
+    // drift around the UTC midnight boundary (8 PM Eastern).
+    const [y, m] = getHouseToday().split("-").map(Number);
+    const nextY = m === 12 ? y + 1 : y;
+    const nextM = m === 12 ? 1 : m + 1;
+    return `${String(nextY).padStart(4, "0")}-${String(nextM).padStart(2, "0")}-01`;
   });
 
   // Derived move-in totals. The form lets the admin change rent /
@@ -572,7 +575,7 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
                     type="date"
                     value={nextRentDueDate}
                     onChange={(e) => setNextRentDueDate(e.target.value)}
-                    min={new Date().toISOString().split("T")[0]}
+                    min={getHouseToday()}
                     className="max-w-xs"
                   />
                   <span className="block text-xs text-muted-foreground">

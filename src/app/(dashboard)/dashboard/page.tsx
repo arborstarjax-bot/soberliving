@@ -376,7 +376,7 @@ async function ResidentDashboard({ userId }: { userId: string }) {
       {nextDueCharge && (() => {
         const balance =
           Number(nextDueCharge.amount) - Number(nextDueCharge.paid_amount);
-        const todayIso = new Date().toISOString().slice(0, 10);
+        const todayIso = getHouseToday();
         const pastDue = nextDueCharge.due_date < todayIso;
         const [y, m, d] = nextDueCharge.due_date.split("-").map(Number);
         const dueLabel = new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString(

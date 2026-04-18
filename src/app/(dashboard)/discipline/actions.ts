@@ -6,7 +6,7 @@ import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { createDemeritSchema } from "@/lib/validations";
-import { getHouseYesterday, isoDateInTz, DEFAULT_TIMEZONE } from "@/lib/timezone";
+import { getHouseToday, getHouseYesterday, isoDateInTz, DEFAULT_TIMEZONE } from "@/lib/timezone";
 import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 
 export async function createDemerit(
@@ -433,7 +433,7 @@ export async function createRestriction(
       restriction_type: restrictionType || "custom",
       description,
       notes: notes || null,
-      start_date: startDate || new Date().toISOString().split("T")[0],
+      start_date: startDate || getHouseToday(),
       end_date: endDate || null,
       is_house_commitment: isHouseCommitment,
       created_by: user.id,
@@ -616,7 +616,7 @@ export async function updateRestriction(
       restriction_type: restrictionType,
       description,
       notes: notes || null,
-      start_date: startDate || new Date().toISOString().split("T")[0],
+      start_date: startDate || getHouseToday(),
       end_date: endDate || null,
       updated_at: new Date().toISOString(),
     })
@@ -648,7 +648,7 @@ export async function expireRestrictions() {
   const user = await requireAuth();
   if (user.role === "resident") return { count: 0 };
   const supabase = await createClient();
-  const today = new Date().toISOString().split("T")[0];
+  const today = getHouseToday();
 
   const { data: expired } = await supabase
     .from("restrictions")

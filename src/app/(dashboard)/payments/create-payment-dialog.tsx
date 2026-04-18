@@ -14,7 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Plus } from "lucide-react";
-import { formatDateOnly } from "@/lib/timezone";
+import { formatDateOnly, getHouseToday } from "@/lib/timezone";
 
 // Record Payment dialog. When an open charge exists for the selected
 // resident, it's preselected and the amount / period / due date are
@@ -298,7 +298,7 @@ export function CreatePaymentDialog({ houses, residents, openCharges }: Props) {
               <Input
                 name="paid_at"
                 type="date"
-                defaultValue={new Date().toISOString().split("T")[0]}
+                defaultValue={getHouseToday()}
               />
             </div>
           </div>
