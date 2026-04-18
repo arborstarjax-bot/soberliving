@@ -137,6 +137,7 @@ export function ResidentPaymentsPanel({
       ) : terms ? (
         <VirtualNextDueCard
           terms={terms}
+          pendingAmendment={pendingAmendment}
           canRecordPayment={canRecordPayment && !!houseId}
           residentId={residentId}
           residentName={residentName}

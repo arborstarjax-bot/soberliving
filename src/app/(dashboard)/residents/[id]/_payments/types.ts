@@ -44,6 +44,12 @@ export interface PendingAmendment {
   effective_date: string | null;
   amendment_reason: string | null;
   created_at: string;
+  // Included on pending amendments so the Next Rent card can project
+  // the upcoming cycle off the amendment's new anchor instead of the
+  // active commitment's stale schedule (e.g. weekly Sunday cadence
+  // being replaced by Friday). Null for historical rows that predate
+  // the column being queried.
+  payment_frequency: "weekly" | "monthly" | null;
 }
 
 export interface PendingInitialCommitment {
