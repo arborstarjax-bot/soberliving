@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { canAccessHouse } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { getDaysSober } from "@/lib/milestones";
@@ -145,6 +145,21 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
       uploader_name: uploader?.full_name ?? null,
     };
   });
+
+  // Pre-sign every house document URL so Open/Download render as real
+  // anchor tags on the client. Otherwise the old click-then-await-then-
+  // window.open flow fails on mobile Safari because the user-gesture
+  // context is gone by the time the URL comes back.
+  const adminClient = createAdminClient();
+  const houseDocumentUrls: Record<string, string> = {};
+  await Promise.all(
+    houseDocuments.map(async (d) => {
+      const { data } = await adminClient.storage
+        .from("house-documents")
+        .createSignedUrl(d.file_path, 3600);
+      if (data?.signedUrl) houseDocumentUrls[d.id] = data.signedUrl;
+    })
+  );
 
   const managerNames: string[] = (managerAssignments ?? [])
     .map((ma) => (ma.users as unknown as { full_name: string } | null)?.full_name)
@@ -301,6 +316,7 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
             houseId={id}
             documents={houseDocuments}
             canManage={canManage}
+            signedUrls={houseDocumentUrls}
           />
         </TabsContent>
 

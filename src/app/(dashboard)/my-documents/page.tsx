@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { MyDocumentsView } from "./my-documents-view";
@@ -63,6 +63,23 @@ export default async function MyDocumentsPage() {
       docs: grouped.get(k) ?? [],
     }));
 
+  // Pre-sign every document's storage URL at render time so the client
+  // component can render real <a href=...> tags. This is critical for
+  // mobile Safari, which blocks `window.open` that's called after a
+  // server action awaits (the user-gesture window has closed by then).
+  // We parallelize the signings and fall back to a null URL if any one
+  // fails so the rest of the page still renders.
+  const adminClient = createAdminClient();
+  const signedUrls: Record<string, string> = {};
+  await Promise.all(
+    typed.map(async (d) => {
+      const { data } = await adminClient.storage
+        .from("documents")
+        .createSignedUrl(d.storage_path, 3600);
+      if (data?.signedUrl) signedUrls[d.id] = data.signedUrl;
+    })
+  );
+
   return (
     <div className="space-y-6">
       <div>
@@ -81,7 +98,7 @@ export default async function MyDocumentsPage() {
           </CardContent>
         </Card>
       ) : (
-        <MyDocumentsView groups={groups} />
+        <MyDocumentsView groups={groups} signedUrls={signedUrls} />
       )}
     </div>
   );
