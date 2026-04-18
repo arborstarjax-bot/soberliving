@@ -8,12 +8,14 @@ export default async function CheckInLayout({
 }) {
   const user = await requireAuth();
 
-  // Residents must complete intake + commitment before anything else
+  // Residents must complete intake + commitment before anything else.
+  // has_pending_commitment catches amendments proposed after the
+  // original commitment was signed (commitment_signed stays true).
   if (user.role === "resident") {
     if (!user.intake_completed) {
       redirect("/intake");
     }
-    if (!user.commitment_signed) {
+    if (!user.commitment_signed || user.has_pending_commitment) {
       redirect("/sign-commitment");
     }
   }

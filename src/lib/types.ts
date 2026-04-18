@@ -251,4 +251,10 @@ export interface SessionUser {
   intake_completed: boolean;
   is_resident: boolean;
   commitment_signed: boolean;
+  // True when the resident has a house_commitments row with
+  // status='pending_resident_signature' — covers both the initial
+  // commitment (before they've ever signed) and amendments proposed
+  // after they signed. Layouts use this to force residents into
+  // /sign-commitment regardless of their commitment_signed flag.
+  has_pending_commitment: boolean;
 }

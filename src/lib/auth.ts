@@ -56,6 +56,23 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const intakeCompleted = profile.intake_completed === true;
   const commitmentSigned = profile.commitment_signed === true;
 
+  // Pending commitment = any house_commitments row awaiting this
+  // user's signature. Covers the initial commitment (before they've
+  // ever signed) and amendments proposed after they signed. Layouts
+  // use this to force residents into /sign-commitment even when
+  // commitment_signed is already true.
+  let hasPendingCommitment = false;
+  if (isResident) {
+    const { data: pending } = await supabase
+      .from("house_commitments")
+      .select("id")
+      .eq("user_id", profile.id)
+      .eq("status", "pending_resident_signature")
+      .limit(1)
+      .maybeSingle();
+    hasPendingCommitment = !!pending;
+  }
+
   return {
     id: profile.id,
     email: profile.email,
@@ -65,6 +82,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     intake_completed: intakeCompleted,
     is_resident: isResident,
     commitment_signed: commitmentSigned,
+    has_pending_commitment: hasPendingCommitment,
   };
 });
 
