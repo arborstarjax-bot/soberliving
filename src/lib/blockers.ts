@@ -4,6 +4,53 @@ import { createAdminClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
+ * Checks whether a specific blocker row is targeted at `userId` per
+ * its `target_type` + `target_house_ids` / `target_user_ids` config.
+ *
+ * Server-side authorization gate for any action that mutates on
+ * behalf of a resident — e.g. `acknowledgeBlocker`. The /acknowledge/[id]
+ * page has the same check for the redirect gate, but a `"use server"`
+ * action can be invoked directly via POST, so the action must
+ * re-verify.
+ */
+export async function isBlockerApplicableToUser(
+  blockerId: string,
+  userId: string,
+  adminClient?: SupabaseClient
+): Promise<boolean> {
+  const admin = adminClient ?? createAdminClient();
+
+  const { data: blocker } = await admin
+    .from("blockers")
+    .select(
+      "id, archived_at, target_type, target_house_ids, target_user_ids"
+    )
+    .eq("id", blockerId)
+    .maybeSingle();
+  if (!blocker || blocker.archived_at) return false;
+
+  const targetType = blocker.target_type as string;
+  if (targetType === "all") return true;
+  if (targetType === "residents") {
+    const arr = (blocker.target_user_ids as string[] | null) ?? [];
+    return arr.includes(userId);
+  }
+  if (targetType === "house") {
+    const arr = (blocker.target_house_ids as string[] | null) ?? [];
+    if (arr.length === 0) return false;
+    const { data: residentRow } = await admin
+      .from("residents")
+      .select("house_id")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .maybeSingle();
+    const houseId = (residentRow?.house_id as string | null) ?? null;
+    return houseId !== null && arr.includes(houseId);
+  }
+  return false;
+}
+
+/**
  * Find the oldest active blocker targeted at `userId` that they
  * haven't acknowledged. Returns `null` if none — most resident
  * sessions are on this path so it's the hot case.

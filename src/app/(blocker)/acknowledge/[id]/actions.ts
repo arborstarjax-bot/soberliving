@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/server";
 import { logActivity } from "@/lib/activity";
-import { findPendingBlockerForUser } from "@/lib/blockers";
+import { isBlockerApplicableToUser } from "@/lib/blockers";
 
 /**
  * Resident-side ack of a blocker. Writes the signature + an optional
@@ -28,38 +28,30 @@ export async function acknowledgeBlocker(
 
   const admin = createAdminClient();
 
-  // Re-check applicability server-side — the resident could have
-  // navigated to an arbitrary /acknowledge/<id> URL. findPendingBlockerForUser
-  // encodes the same target-filter logic used by the layout gate
-  // and confirms this blocker is the one they're currently being
-  // blocked by (or at least in their applicable + unacknowledged set).
+  // Load the blocker row for the downstream PDF + log + save-to-docs
+  // flow. `isBlockerApplicableToUser` below also reads the row but
+  // we need the title / save_to_docs fields here anyway.
   const { data: blocker } = await admin
     .from("blockers")
-    .select("id, title, body, save_to_docs, archived_at, target_type, target_house_ids, target_user_ids")
+    .select(
+      "id, title, body, save_to_docs, archived_at, target_type, target_house_ids, target_user_ids"
+    )
     .eq("id", blockerId)
     .maybeSingle();
   if (!blocker) return { error: "Blocker not found" };
   if (blocker.archived_at) return { error: "Blocker is no longer active" };
 
-  // Confirm this user is actually targeted (prevents ack of a
-  // blocker aimed at a different resident via URL-guessing).
-  const applicable = await findPendingBlockerForUser(user.id, admin);
-  const { data: allPendingForUser } = await admin
-    .from("blockers")
-    .select("id, target_type, target_house_ids, target_user_ids, archived_at")
-    .eq("id", blockerId);
-  const row = allPendingForUser?.[0];
-  if (!row || row.archived_at) {
-    return { error: "Blocker is no longer active" };
-  }
-
-  // Cheap targeting re-check: the helper already applies full rules,
-  // so if this blockerId matches the current pending OR any other
-  // applicable-but-already-acked blocker, allow. For simplicity we
-  // require applicable to be non-null (meaning the user has at least
-  // one pending) and that blockerId is in their set.
-  if (!applicable && (await hasExistingAck(admin, blockerId, user.id))) {
-    return { error: "Already acknowledged" };
+  // Re-check targeting server-side. A `"use server"` action can be
+  // invoked directly via HTTP POST — bypassing the page-level gate —
+  // so we must verify that THIS blockerId is targeted at THIS user,
+  // not just that the user has some pending blocker somewhere.
+  const applicable = await isBlockerApplicableToUser(
+    blockerId,
+    user.id,
+    admin
+  );
+  if (!applicable) {
+    return { error: "Blocker is not applicable to this user" };
   }
 
   // Upsert the ack row. PK is (blocker_id, user_id) so a retry from
