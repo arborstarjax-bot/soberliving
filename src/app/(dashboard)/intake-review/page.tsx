@@ -214,7 +214,7 @@ export default async function IntakeReviewPage({
                         {user.email}
                         {house ? ` • ${house.name}` : ""}
                         {commit?.commitment_start_date
-                          ? ` • Starts ${new Date(commit.commitment_start_date).toLocaleDateString()}`
+                          ? ` • Starts ${new Date(commit.commitment_start_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
                           : ""}
                       </p>
                     </div>
@@ -297,10 +297,10 @@ export default async function IntakeReviewPage({
                       <p className="text-sm text-muted-foreground">
                         {user.email}
                         {intake?.completed_at
-                          ? ` • Applied ${new Date(intake.completed_at).toLocaleDateString()}`
+                          ? ` • Applied ${new Date(intake.completed_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
                           : ""}
                         {u.denied_at
-                          ? ` • Denied ${new Date(u.denied_at).toLocaleDateString()}`
+                          ? ` • Denied ${new Date(u.denied_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
                           : ""}
                       </p>
                       {u.denial_reason?.trim() && (

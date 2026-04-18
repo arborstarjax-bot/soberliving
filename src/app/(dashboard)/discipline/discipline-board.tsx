@@ -106,7 +106,7 @@ export function DisciplineBoard({
                       {resident.move_in_date
                         ? new Date(resident.move_in_date).toLocaleDateString(
                             "en-US",
-                            { month: "short", day: "numeric" }
+                            { timeZone: "America/New_York", month: "short", day: "numeric" }
                           )
                         : "—"}
                     </td>
@@ -123,7 +123,7 @@ export function DisciplineBoard({
                       const isWorkedOff = demerit.status === "worked_off";
                       const date = new Date(
                         demerit.created_at
-                      ).toLocaleDateString();
+                      ).toLocaleDateString("en-US", { timeZone: "America/New_York" });
 
                       return (
                         <td key={i} className="py-2 px-1 text-center">

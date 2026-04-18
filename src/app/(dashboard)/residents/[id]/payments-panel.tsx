@@ -139,7 +139,7 @@ function paymentLabel(type: string | null, method: string | null): string {
 }
 
 function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString();
+  return new Date(value).toLocaleDateString("en-US", { timeZone: "America/New_York" });
 }
 
 function ordinal(n: number): string {
@@ -505,7 +505,7 @@ function VirtualNextDueCard({
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Calendar className="h-3.5 w-3.5" />
-          {candidate.toLocaleDateString()}
+          {candidate.toLocaleDateString("en-US", { timeZone: "America/New_York" })}
         </div>
         {canRecordPayment && (
           <div className="pt-2 border-t">

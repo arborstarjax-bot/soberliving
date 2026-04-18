@@ -47,7 +47,7 @@ function formatCurrency(amount: number) {
 function formatMonthDay(iso: string) {
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
-  return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return dt.toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", year: "numeric" });
 }
 
 export function CreatePaymentDialog({ houses, residents, openCharges }: Props) {

@@ -2,9 +2,10 @@ import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { getDaysSober, isSobrietyDateFuture } from "@/lib/milestones";
+import { getHouseToday, DEFAULT_TIMEZONE } from "@/lib/timezone";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Home, Users, ClipboardCheck, AlertTriangle, CalendarClock, Bed, Activity, DollarSign } from "lucide-react";
+import { Home, Users, ClipboardCheck, AlertTriangle, CalendarClock, Bed, Activity, DollarSign, ListChecks } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SobrietyDateSetter } from "./sobriety-date-setter";
@@ -164,7 +165,7 @@ export default async function DashboardPage() {
                   <div className="flex-1 min-w-0">
                     <p>{entry.description}</p>
                     <p className="text-xs text-muted-foreground">
-                      {new Date(entry.created_at).toLocaleString()}
+                      {new Date(entry.created_at).toLocaleString("en-US", { timeZone: "America/New_York" })}
                     </p>
                   </div>
                 </div>
@@ -269,6 +270,56 @@ async function ResidentDashboard({ userId }: { userId: string }) {
     (ba: { end_date: string | null }) => !ba.end_date
   );
 
+  // Compute chores due today so we can render a big "Chore due today"
+  // notification at the top of the resident dashboard. We look across
+  // every rotation_assignment for this resident and pick any signoff
+  // whose sign_off_date is today (in the app timezone) AND is still
+  // actionable (pending or redo — anything else is already closed out).
+  const todayStr = getHouseToday(DEFAULT_TIMEZONE);
+  const choresDueTodayCount = (() => {
+    const rows = (myRotationAssignments ?? []) as unknown as Array<{
+      chore: { name: string } | null;
+      chore_signoffs: Array<{
+        sign_off_date: string;
+        status: string;
+      }> | null;
+    }>;
+    let count = 0;
+    for (const ra of rows) {
+      for (const s of ra.chore_signoffs ?? []) {
+        if (
+          s.sign_off_date === todayStr &&
+          (s.status === "pending" || s.status === "redo")
+        ) {
+          count++;
+        }
+      }
+    }
+    return count;
+  })();
+  const choresDueTodayLabel = (() => {
+    if (choresDueTodayCount === 0) return null;
+    const names = new Set<string>();
+    const rows = (myRotationAssignments ?? []) as unknown as Array<{
+      chore: { name: string } | null;
+      chore_signoffs: Array<{
+        sign_off_date: string;
+        status: string;
+      }> | null;
+    }>;
+    for (const ra of rows) {
+      for (const s of ra.chore_signoffs ?? []) {
+        if (
+          s.sign_off_date === todayStr &&
+          (s.status === "pending" || s.status === "redo")
+        ) {
+          if (ra.chore?.name) names.add(ra.chore.name);
+        }
+      }
+    }
+    return Array.from(names).join(", ");
+  })();
+
   return (
     <div className="space-y-6">
       {/* Sign Out toggle is the very first thing on the resident
@@ -281,6 +332,38 @@ async function ResidentDashboard({ userId }: { userId: string }) {
           residentName={resident.full_name}
           openSignOut={openSignOut}
         />
+      )}
+
+      {/* Chore due today — high-visibility amber notification modeled
+          on the Sign Out banner. Only appears when the resident has
+          at least one `pending` or `redo` signoff dated today (in the
+          app timezone). One tap jumps to /chores to sign it off. */}
+      {choresDueTodayCount > 0 && (
+        <Link href="/chores" className="block">
+          <div className="rounded-2xl border-2 border-amber-500 bg-amber-500 p-5 text-white shadow-lg shadow-amber-500/20 hover:bg-amber-600 active:scale-[0.99] transition">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold uppercase tracking-widest text-white/90">
+                  Chore Due Today
+                </p>
+                <p className="mt-1 flex items-center gap-1.5 text-lg font-bold truncate">
+                  <ListChecks className="h-5 w-5 shrink-0" />
+                  {choresDueTodayCount === 1
+                    ? "1 chore to sign off"
+                    : `${choresDueTodayCount} chores to sign off`}
+                </p>
+                {choresDueTodayLabel && (
+                  <p className="mt-1 text-xs text-white/90 truncate">
+                    {choresDueTodayLabel}
+                  </p>
+                )}
+              </div>
+              <div className="h-14 min-w-[7rem] rounded-md bg-white text-amber-700 font-bold flex items-center justify-center px-4 text-base">
+                Sign Off
+              </div>
+            </div>
+          </div>
+        </Link>
       )}
 
       <div>
@@ -298,7 +381,7 @@ async function ResidentDashboard({ userId }: { userId: string }) {
         const [y, m, d] = nextDueCharge.due_date.split("-").map(Number);
         const dueLabel = new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString(
           "en-US",
-          { month: "short", day: "numeric", year: "numeric" }
+          { timeZone: "America/New_York", month: "short", day: "numeric", year: "numeric" }
         );
         return (
           <Link href="/payments" className="block">
@@ -377,8 +460,8 @@ async function ResidentDashboard({ userId }: { userId: string }) {
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {isSobrietyDateFuture(resident.sobriety_date)
-                    ? `Starts ${new Date(resident.sobriety_date).toLocaleDateString()}`
-                    : `Since ${new Date(resident.sobriety_date).toLocaleDateString()}`}
+                    ? `Starts ${new Date(resident.sobriety_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
+                    : `Since ${new Date(resident.sobriety_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`}
                 </p>
               </div>
             ) : (
@@ -450,8 +533,8 @@ async function ResidentDashboard({ userId }: { userId: string }) {
                 >
                   <div>
                     <p className="text-sm">
-                      {new Date(lr.departure_date).toLocaleDateString()} —{" "}
-                      {new Date(lr.expected_return_date).toLocaleDateString()}
+                      {new Date(lr.departure_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} —{" "}
+                      {new Date(lr.expected_return_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                     </p>
                     {lr.reason && (
                       <p className="text-xs text-muted-foreground">

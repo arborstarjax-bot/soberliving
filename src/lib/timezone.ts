@@ -8,9 +8,39 @@
  */
 
 /**
- * Default timezone used when a house has no timezone set.
+ * Default IANA timezone used when a house has no timezone set.
+ *
+ * The app is operated out of the US East coast, so every time we render,
+ * log, or compute a date without a house-specific override we pin it to
+ * Eastern time. "America/New_York" handles EST/EDT DST automatically.
  */
-export const DEFAULT_TIMEZONE = "America/Los_Angeles";
+export const DEFAULT_TIMEZONE = "America/New_York";
+
+/**
+ * App-wide timezone constant. Client components (which can't read the
+ * house row) should pass this to `toLocaleDateString` / `toLocaleString`
+ * so rendered times don't drift to the viewer's browser timezone.
+ */
+export const APP_TIMEZONE = DEFAULT_TIMEZONE;
+
+/**
+ * Formats a Date or ISO timestamp in the app's Eastern timezone.
+ * Pass Intl.DateTimeFormatOptions to customize; `timeZone` is always
+ * forced to APP_TIMEZONE and cannot be overridden.
+ */
+export function formatInAppTz(
+  value: Date | string | number | null | undefined,
+  options: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }
+): string {
+  if (value === null || value === undefined) return "";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("en-US", { ...options, timeZone: APP_TIMEZONE });
+}
 
 /**
  * Returns today's date string (YYYY-MM-DD) in the given IANA timezone.

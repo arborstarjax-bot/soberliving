@@ -598,7 +598,7 @@ function ResidentsTab({
                   <div>
                     <p className="font-medium text-sm">{r.full_name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {houseName} &middot; Moved in {new Date(r.move_in_date).toLocaleDateString()}
+                      {houseName} &middot; Moved in {new Date(r.move_in_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -816,8 +816,8 @@ function LeaveTab({ pendingLeave }: { pendingLeave: any[] }) {
                 <p className="font-medium text-sm">{resident?.full_name}</p>
                 <p className="text-xs text-muted-foreground">
                   {resident?.houses?.name} &middot;{" "}
-                  {new Date(lr.departure_date).toLocaleDateString()} →{" "}
-                  {new Date(lr.expected_return_date).toLocaleDateString()}
+                  {new Date(lr.departure_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} →{" "}
+                  {new Date(lr.expected_return_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                 </p>
                 {lr.reason && (
                   <p className="text-xs text-muted-foreground mt-1">{lr.reason}</p>
@@ -1132,7 +1132,7 @@ function DemeritsTab({
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         {(inc.house as { name: string } | null)?.name} &middot;{" "}
-                        {new Date(inc.occurred_at).toLocaleDateString()}
+                        {new Date(inc.occurred_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                         {inc.category && ` · ${inc.category}`}
                       </p>
                     </div>
@@ -1174,7 +1174,7 @@ function DemeritCard({ demerit: d, resolved }: { demerit: any; resolved?: boolea
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               {(d.house as { name: string } | null)?.name} &middot;{" "}
-              {new Date(d.created_at).toLocaleDateString()} &middot;{" "}
+              {new Date(d.created_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })} &middot;{" "}
               Issued by {(d.issuer as { full_name: string } | null)?.full_name}
             </p>
           </div>
@@ -1433,7 +1433,7 @@ function chargeTypeLabel(t: string) {
 function formatChargeDate(iso: string) {
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
-  return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return dt.toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
 }
 
 function PaymentsTab({
@@ -1574,7 +1574,7 @@ function PaymentsTab({
                     </p>
                     <p className="text-xs text-muted-foreground truncate">
                       {p.house?.name} · {chargeTypeLabel(p.payment_type)} ·{" "}
-                      {new Date(p.paid_at).toLocaleDateString()}
+                      {new Date(p.paid_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                       {p.receipt_number ? ` · ${p.receipt_number}` : ""}
                     </p>
                   </div>

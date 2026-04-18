@@ -151,7 +151,7 @@ function ApplicantSummary({
       </p>
       {submittedAt && (
         <p className="text-xs text-muted-foreground mt-1">
-          Submitted {new Date(submittedAt).toLocaleDateString()}
+          Submitted {new Date(submittedAt).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
         </p>
       )}
     </div>
@@ -218,7 +218,7 @@ function ReviewPacket({
           {email ? ` • ${email}` : ""}
           {phone ? ` • ${phone}` : ""}
           {submittedAt
-            ? ` • Submitted ${new Date(submittedAt).toLocaleDateString()}`
+            ? ` • Submitted ${new Date(submittedAt).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
             : ""}
         </p>
       </header>

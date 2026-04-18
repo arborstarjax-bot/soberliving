@@ -164,9 +164,9 @@ export function DisciplineTabs({
                               <p className="text-sm text-muted-foreground italic">Note: {r.notes}</p>
                             )}
                             <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                              <span>From: {new Date(r.start_date).toLocaleDateString()}</span>
+                              <span>From: {new Date(r.start_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}</span>
                               {r.end_date ? (
-                                <span>Until: {new Date(r.end_date).toLocaleDateString()}</span>
+                                <span>Until: {new Date(r.end_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}</span>
                               ) : (
                                 <span>Indefinite</span>
                               )}
@@ -225,8 +225,8 @@ export function DisciplineTabs({
                           <div className="flex items-center gap-2">
                             <span className="text-xs text-muted-foreground">
                               {r.end_date
-                                ? `Expired ${new Date(r.end_date).toLocaleDateString()}`
-                                : `Lifted ${new Date(r.updated_at).toLocaleDateString()}`}
+                                ? `Expired ${new Date(r.end_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
+                                : `Lifted ${new Date(r.updated_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`}
                             </span>
                             {isStaff && <DeleteRestrictionButton restrictionId={r.id} />}
                           </div>
@@ -281,7 +281,7 @@ export function DisciplineTabs({
                           </span>
                         </div>
                         <span className="text-xs text-muted-foreground">
-                          {new Date(inc.occurred_at).toLocaleDateString()}
+                          {new Date(inc.occurred_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                         </span>
                       </div>
                       <p className="text-sm mt-1">{inc.description}</p>

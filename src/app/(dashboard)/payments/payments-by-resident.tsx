@@ -70,7 +70,7 @@ function formatMoney(n: number): string {
 
 function formatDate(iso: string) {
   const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
-  return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString("en-US", {
+  return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString("en-US", { timeZone: "America/New_York",
     month: "short",
     day: "numeric",
     year: "numeric",

@@ -138,7 +138,7 @@ export function CommitmentSigningForm({
       }
     }
     drawText(
-      `Date: ${staffSignedAt ? new Date(staffSignedAt).toLocaleDateString() : ""}`,
+      `Date: ${staffSignedAt ? new Date(staffSignedAt).toLocaleDateString("en-US", { timeZone: "America/New_York" }) : ""}`,
       250,
       y - 40,
       9
@@ -156,7 +156,7 @@ export function CommitmentSigningForm({
         drawText("[Resident signature on file]", 50, y - 15, 9);
       }
     }
-    drawText(`Date: ${new Date().toLocaleDateString()}`, 250, y - 40, 9);
+    drawText(`Date: ${new Date().toLocaleDateString("en-US", { timeZone: "America/New_York" })}`, 250, y - 40, 9);
 
     const pdfBytes = await pdf.save();
     const bytes = new Uint8Array(pdfBytes);
@@ -229,7 +229,7 @@ export function CommitmentSigningForm({
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  Effective {new Date(commitmentStartDate).toLocaleDateString()}
+                  Effective {new Date(commitmentStartDate).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                 </p>
               </div>
             </div>
@@ -253,7 +253,7 @@ export function CommitmentSigningForm({
             </div>
             <div className="p-3 rounded-lg bg-muted">
               <p className="text-muted-foreground text-xs">Start Date</p>
-              <p className="font-medium">{new Date(commitmentStartDate).toLocaleDateString()}</p>
+              <p className="font-medium">{new Date(commitmentStartDate).toLocaleDateString("en-US", { timeZone: "America/New_York" })}</p>
               <p className="text-muted-foreground text-xs mt-1">Term: {commitmentTerm}</p>
             </div>
             <div className="p-3 rounded-lg bg-muted">
@@ -294,7 +294,7 @@ export function CommitmentSigningForm({
             </li>
             <li>
               <strong>COMMITMENT:</strong> Resident commits to a minimum stay of {commitmentTerm} from
-              the start date of {new Date(commitmentStartDate).toLocaleDateString()}.
+              the start date of {new Date(commitmentStartDate).toLocaleDateString("en-US", { timeZone: "America/New_York" })}.
             </li>
             <li>
               <strong>EARLY MOVE-OUT:</strong> Resident must provide at least 48 hours written
@@ -342,7 +342,7 @@ export function CommitmentSigningForm({
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                Signed on {staffSignedAt ? new Date(staffSignedAt).toLocaleDateString() : "—"}
+                Signed on {staffSignedAt ? new Date(staffSignedAt).toLocaleDateString("en-US", { timeZone: "America/New_York" }) : "—"}
               </p>
             </div>
           ) : (

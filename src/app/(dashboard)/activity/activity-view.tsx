@@ -127,7 +127,7 @@ export function ActivityView({
                     <div className="flex-1 min-w-0">
                       <p className="text-sm">{log.description}</p>
                       <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                        <span>{new Date(log.created_at).toLocaleString()}</span>
+                        <span>{new Date(log.created_at).toLocaleString("en-US", { timeZone: "America/New_York" })}</span>
                         {log.house?.name && (
                           <>
                             <span>·</span>

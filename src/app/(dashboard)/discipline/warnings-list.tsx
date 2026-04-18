@@ -125,7 +125,7 @@ export function WarningsList({ warnings, canEdit = false }: Props) {
                   )}
                   <p className="text-[11px] text-muted-foreground">
                     Issued by {w.issuer_name} on{" "}
-                    {new Date(w.created_at).toLocaleDateString()}
+                    {new Date(w.created_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                   </p>
                 </div>
                 {canEdit && (

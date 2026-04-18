@@ -146,7 +146,7 @@ export async function submitCheckIn(
   if (!uploadError) {
     await adminClient.from("documents").insert({
       user_id: user.id,
-      name: `Check In - ${new Date().toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" })}`,
+      name: `Check In - ${new Date().toLocaleDateString("en-US", { timeZone: "America/New_York", month: "numeric", day: "numeric", year: "numeric" })}`,
       document_type: "check_in",
       storage_path: fileName,
       file_size: pdfBuffer.length,

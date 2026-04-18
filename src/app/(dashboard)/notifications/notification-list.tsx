@@ -200,7 +200,7 @@ export function NotificationList({
                     </div>
                     <p className="text-sm text-muted-foreground">{n.message}</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {new Date(n.created_at).toLocaleString()}
+                      {new Date(n.created_at).toLocaleString("en-US", { timeZone: "America/New_York" })}
                     </p>
                     {/* Leave-request approval notifications are
                         actionable. Covering resident, house manager, and

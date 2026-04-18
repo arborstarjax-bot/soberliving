@@ -22,7 +22,7 @@ function formatDate(iso?: string | null) {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("en-US", {
+  return d.toLocaleDateString("en-US", { timeZone: "America/New_York",
     month: "long",
     day: "numeric",
     year: "numeric",
@@ -234,7 +234,7 @@ export async function generateReceiptPdf(data: ReceiptData): Promise<Uint8Array>
     font,
     color: rgb(0.45, 0.45, 0.45),
   });
-  const generatedAt = `Generated ${new Date().toLocaleString()}`;
+  const generatedAt = `Generated ${new Date().toLocaleString("en-US", { timeZone: "America/New_York" })}`;
   const genWidth = font.widthOfTextAtSize(generatedAt, 9);
   page.drawText(generatedAt, {
     x: PAGE_WIDTH - MARGIN - genWidth,

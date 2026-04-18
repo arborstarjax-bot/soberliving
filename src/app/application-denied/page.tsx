@@ -59,7 +59,7 @@ export default async function ApplicationDeniedPage() {
             {p.denied_at && (
               <p className="text-xs text-muted-foreground mt-2">
                 Decision recorded{" "}
-                {new Date(p.denied_at).toLocaleDateString()}.
+                {new Date(p.denied_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}.
               </p>
             )}
           </div>

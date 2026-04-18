@@ -274,7 +274,7 @@ export function ResidentsTabs({
               </div>
               <p className="text-xs text-muted-foreground">
                 {p.house_name}
-                {p.move_in_date && ` · Moved in ${new Date(p.move_in_date).toLocaleDateString()}`}
+                {p.move_in_date && ` · Moved in ${new Date(p.move_in_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`}
                 {p.staffRole === "manager" && p.assigned_house_names.length > 0 && (
                   ` · Houses: ${p.assigned_house_names.join(", ")}`
                 )}
@@ -528,7 +528,7 @@ export function ResidentsTabs({
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
                           Invited{" "}
-                          {new Date(user.createdAt).toLocaleDateString()} ·
+                          {new Date(user.createdAt).toLocaleDateString("en-US", { timeZone: "America/New_York" })} ·
                           Account created — hasn&apos;t started the intake form
                           yet.
                         </p>
@@ -571,7 +571,7 @@ export function ResidentsTabs({
                         {user.lastUpdatedAt && (
                           <p className="text-xs text-muted-foreground mt-1">
                             Last updated{" "}
-                            {new Date(user.lastUpdatedAt).toLocaleDateString()}
+                            {new Date(user.lastUpdatedAt).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                           </p>
                         )}
                       </div>
@@ -727,7 +727,7 @@ export function ResidentsTabs({
                         {user.deniedAt && (
                           <p className="text-xs text-muted-foreground mt-1">
                             Denied{" "}
-                            {new Date(user.deniedAt).toLocaleDateString()}
+                            {new Date(user.deniedAt).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                           </p>
                         )}
                         {user.denialReason?.trim() && (

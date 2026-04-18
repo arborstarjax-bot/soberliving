@@ -21,7 +21,7 @@ interface Props {
 
 function formatDateTime(iso: string) {
   const d = new Date(iso);
-  return d.toLocaleString("en-US", {
+  return d.toLocaleString("en-US", { timeZone: "America/New_York",
     month: "short",
     day: "numeric",
     hour: "numeric",

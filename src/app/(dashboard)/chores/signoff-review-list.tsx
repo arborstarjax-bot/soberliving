@@ -57,7 +57,7 @@ function SignoffReviewCard({ signoff }: { signoff: Signoff }) {
           <p className="font-medium">{ra?.chore?.name}</p>
           <p className="text-xs text-muted-foreground">
             {ra?.resident?.full_name} ·{" "}
-            {new Date(signoff.sign_off_date).toLocaleDateString()} ·{" "}
+            {new Date(signoff.sign_off_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} ·{" "}
             <span className="capitalize">{signoff.day_of_week}</span> (Week{" "}
             {signoff.week_number})
           </p>

@@ -129,7 +129,7 @@ export function RecordChargePaymentDialog({
             <DialogTitle>Record Payment</DialogTitle>
             <DialogDescription>
               {residentName} · {chargeTypeLabel(charge.charge_type)} due{" "}
-              {new Date(charge.due_date).toLocaleDateString()} ·{" "}
+              {new Date(charge.due_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} ·{" "}
               {formatMoney(balance)} open
             </DialogDescription>
           </DialogHeader>

@@ -30,7 +30,7 @@ function formatCurrency(amount: number) {
 function formatDueDate(iso: string) {
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
-  return dt.toLocaleDateString("en-US", {
+  return dt.toLocaleDateString("en-US", { timeZone: "America/New_York",
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -646,7 +646,7 @@ function PaymentLedgerList({
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                       <span>
                         {payment.paid_at
-                          ? new Date(payment.paid_at).toLocaleDateString()
+                          ? new Date(payment.paid_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })
                           : payment.status}
                       </span>
                       {payment.payment_method && (
@@ -664,8 +664,8 @@ function PaymentLedgerList({
                       {payment.period_start && payment.period_end && (
                         <span>
                           · Period:{" "}
-                          {new Date(payment.period_start).toLocaleDateString()} –{" "}
-                          {new Date(payment.period_end).toLocaleDateString()}
+                          {new Date(payment.period_start).toLocaleDateString("en-US", { timeZone: "America/New_York" })} –{" "}
+                          {new Date(payment.period_end).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                         </span>
                       )}
                     </div>
