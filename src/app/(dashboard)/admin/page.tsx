@@ -152,13 +152,24 @@ export default async function AdminPage() {
   // prevents user-auth reads from seeing other users' rows, which
   // would leave this bucket empty for staff and break the "Pending
   // resident signature" label on the dashboard.
+  //
+  // We also deliberately do NOT filter on `parent_commitment_id is
+  // null`. Both initial onboarding commitments and amendments can be
+  // in `pending_resident_signature` status — and for an already-active
+  // resident with a pending amendment, the dashboard should still
+  // read "Pending resident signature" rather than "Complete" (dedupe
+  // by user_id a few lines down collapses the active+pending rows
+  // into one). A unique index (`uq_house_commitments_one_pending_per_user`)
+  // guarantees at most one pending row per user, so we won't double-count.
+  //
+  // We also don't embed users in this query — the user row is fetched
+  // separately below. Keeping it simple dodges any edge cases where
+  // the embed returns null (e.g. intake users missing a public.users
+  // row for any reason) and silently drops the resident from the list.
   let pendingSignatureQuery = adminClient
     .from("house_commitments")
-    .select(
-      "id, user_id, created_at, house:houses(name), user:users(full_name)"
-    )
+    .select("id, user_id, created_at, house:houses(name)")
     .eq("status", "pending_resident_signature")
-    .is("parent_commitment_id", null)
     .order("created_at", { ascending: false });
   if (houseFilter)
     pendingSignatureQuery = pendingSignatureQuery.in("house_id", houseFilter);
@@ -279,20 +290,45 @@ export default async function AdminPage() {
     user_id: string;
     created_at: string;
     house: { name: string } | { name: string }[] | null;
-    user: { full_name: string } | { full_name: string }[] | null;
   };
   const iso = (d: string) => d.slice(0, 10);
-  const newIntakesPendingSig: NewIntakeItem[] = (
-    (pendingSignatureRaw as unknown as PendingSignatureRow[] | null) ?? []
-  )
-    .filter((r) => r.user)
+  const pendingSigRows =
+    (pendingSignatureRaw as unknown as PendingSignatureRow[] | null) ?? [];
+
+  // Fetch full names for the pending-signature user_ids via the admin
+  // client — same pattern the pending_review block uses below. Done
+  // here (not inside the Promise.all above) because we need the
+  // user_ids from the commitments query first.
+  const pendingSigUserIdList = Array.from(
+    new Set(pendingSigRows.map((r) => r.user_id))
+  );
+  const { data: pendingSigUserRows } =
+    pendingSigUserIdList.length > 0
+      ? await adminClient
+          .from("users")
+          .select("id, full_name")
+          .in("id", pendingSigUserIdList)
+      : { data: [] as { id: string; full_name: string }[] };
+  const pendingSigNameById = new Map(
+    (pendingSigUserRows ?? []).map((u) => [u.id as string, u.full_name as string])
+  );
+
+  // Dedupe by user_id: unique index enforces at most one pending row
+  // per user at the DB level, but we defensively collapse here in
+  // case two rows sneak through.
+  const seenPendingSigUserIds = new Set<string>();
+  const newIntakesPendingSig: NewIntakeItem[] = pendingSigRows
+    .filter((r) => {
+      if (seenPendingSigUserIds.has(r.user_id)) return false;
+      seenPendingSigUserIds.add(r.user_id);
+      return true;
+    })
     .map((r) => {
       const house = Array.isArray(r.house) ? r.house[0] : r.house;
-      const u = Array.isArray(r.user) ? r.user![0] : r.user!;
       return {
         kind: "pending_signature" as const,
         id: r.user_id,
-        full_name: u.full_name,
+        full_name: pendingSigNameById.get(r.user_id) ?? "Unknown",
         dated: iso(r.created_at),
         house_name: house?.name ?? null,
         status_label: "Pending resident signature",
