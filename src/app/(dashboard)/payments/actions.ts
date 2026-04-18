@@ -534,6 +534,11 @@ export async function proposeAmendment(
   const newAdminFee = Number(formData.get("admin_fee") ?? 0);
   const effectiveDate = String(formData.get("effective_date") ?? "");
   const reason = String(formData.get("reason") ?? "").trim();
+  const rawFrequency = String(formData.get("payment_frequency") ?? "");
+  const newFrequency: "weekly" | "monthly" | null =
+    rawFrequency === "weekly" || rawFrequency === "monthly"
+      ? rawFrequency
+      : null;
 
   if (!userId) return { error: "Resident is required" };
   if (!Number.isFinite(newRent) || newRent < 0) {
@@ -546,6 +551,9 @@ export async function proposeAmendment(
     return { error: "Effective date is required" };
   }
   if (!reason) return { error: "Reason for the change is required" };
+  if (rawFrequency && !newFrequency) {
+    return { error: "Payment frequency must be weekly or monthly" };
+  }
 
   const admin = createAdminClient();
 
@@ -598,7 +606,11 @@ export async function proposeAmendment(
       house_id: active.house_id,
       room_id: active.room_id,
       bed_id: active.bed_id,
-      payment_frequency: active.payment_frequency,
+      // Amendment may change the frequency (e.g. admin switches a
+      // resident from monthly to weekly billing). Fall back to the
+      // current commitment's frequency when the form didn't include
+      // one — keeps old callers safe.
+      payment_frequency: newFrequency ?? active.payment_frequency,
       rent_amount: newRent,
       admin_fee: newAdminFee,
       // New rent schedule anchors on the effective date — future
@@ -618,7 +630,9 @@ export async function proposeAmendment(
         // which when read with `timeZone: "America/New_York"` flips
         // back 4 hours to the previous day's name.
         const dt = new Date(Date.UTC(y, m - 1, d));
-        const freq = active.payment_frequency as string | null;
+        const freq = (newFrequency ?? active.payment_frequency) as
+          | string
+          | null;
         if (freq === "weekly") {
           const weekday = dt.toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long" });
           return `Every ${weekday}`;
@@ -666,11 +680,12 @@ export async function proposeAmendment(
     eventType: "commitment_amendment_proposed",
     entityType: "house_commitment",
     entityId: inserted.id as string,
-    description: `${user.full_name} proposed a payment-terms amendment (new rent $${newRent.toFixed(2)}, effective ${effectiveDate})`,
+    description: `${user.full_name} proposed a payment-terms amendment (new rent $${newRent.toFixed(2)} ${newFrequency ?? active.payment_frequency ?? "monthly"}, effective ${effectiveDate})`,
     metadata: {
       parent_commitment_id: active.id,
       new_rent: newRent,
       new_admin_fee: newAdminFee,
+      new_payment_frequency: newFrequency ?? active.payment_frequency,
       effective_date: effectiveDate,
       reason,
     },

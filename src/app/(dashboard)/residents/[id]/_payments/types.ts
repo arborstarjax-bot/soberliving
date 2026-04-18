@@ -32,6 +32,7 @@ export interface PaymentTerms {
   commitment_id: string;
   rent_amount: number;
   admin_fee: number | null;
+  payment_frequency: "weekly" | "monthly";
   commitment_start_date: string;
   pdf_storage_path: string | null;
 }
