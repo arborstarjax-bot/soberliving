@@ -40,6 +40,7 @@ export function PaymentTermsCard({
   const [downloading, setDownloading] = useState(false);
   const router = useRouter();
   const [cancelPending, startCancel] = useTransition();
+  const [cancelError, setCancelError] = useState<string | null>(null);
   // Pull the day-of-month directly from the ISO string — going
   // through `new Date(iso).getDate()` drifts a day in US timezones
   // because date-only strings parse as UTC midnight.
@@ -174,21 +175,35 @@ export function PaymentTermsCard({
                 : ""}
             </p>
             {isAdmin && (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-7 px-2 text-xs text-amber-900 hover:bg-amber-100"
-                disabled={cancelPending}
-                onClick={() =>
-                  startCancel(async () => {
-                    await cancelPendingAmendment(pendingAmendment.id);
-                    router.refresh();
-                  })
-                }
-              >
-                {cancelPending ? "Cancelling…" : "Cancel amendment"}
-              </Button>
+              <div className="space-y-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2 text-xs text-amber-900 hover:bg-amber-100"
+                  disabled={cancelPending}
+                  onClick={() =>
+                    startCancel(async () => {
+                      setCancelError(null);
+                      const res = await cancelPendingAmendment(
+                        pendingAmendment.id
+                      );
+                      if (res?.error) {
+                        setCancelError(res.error);
+                        return;
+                      }
+                      router.refresh();
+                    })
+                  }
+                >
+                  {cancelPending ? "Cancelling…" : "Cancel amendment"}
+                </Button>
+                {cancelError && (
+                  <p className="text-[11px] text-red-700">
+                    Could not cancel: {cancelError}
+                  </p>
+                )}
+              </div>
             )}
           </div>
         )}
