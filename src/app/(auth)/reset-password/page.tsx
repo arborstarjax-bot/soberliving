@@ -40,39 +40,66 @@ export default function ResetPasswordPage() {
     initialized.current = true;
 
     async function handleTokens() {
-      // Parse hash fragment for access_token and refresh_token
+      // Supabase recovery / invite links can arrive in three shapes
+      // depending on how the Auth project is configured:
+      //   1. Hash fragment with tokens (implicit flow, older default):
+      //        /reset-password#access_token=...&refresh_token=...
+      //   2. Query string with PKCE code (modern default):
+      //        /reset-password?code=...
+      //   3. Already exchanged via /api/auth/callback before landing
+      //      here — the session cookie is already set.
+      // We handle all three before falling through to "link expired".
+
+      // (1) Hash fragment tokens.
       const hash = window.location.hash.substring(1);
-      const params = new URLSearchParams(hash);
-      const accessToken = params.get("access_token");
-      const refreshToken = params.get("refresh_token");
+      const hashParams = new URLSearchParams(hash);
+      const accessToken = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token");
 
       if (accessToken && refreshToken) {
-        // Set the session from the URL hash tokens
         const { error: sessionError } = await getSupabase().auth.setSession({
           access_token: accessToken,
           refresh_token: refreshToken,
         });
-
         if (sessionError) {
           console.error("Failed to set session:", sessionError.message);
           setLinkExpired(true);
           return;
         }
-
-        // Clear the hash from the URL for cleanliness
         window.history.replaceState(null, "", "/reset-password");
         setSessionReady(true);
         return;
       }
 
-      // No hash tokens — check if we already have a session (e.g. from callback)
+      // (2) PKCE code. exchangeCodeForSession reads the `?code=`
+      // query param (or accepts it explicitly) and writes a cookie
+      // session we can then update the password against.
+      const queryParams = new URLSearchParams(window.location.search);
+      const code = queryParams.get("code");
+      if (code) {
+        const { error: exchangeError } =
+          await getSupabase().auth.exchangeCodeForSession(code);
+        if (exchangeError) {
+          console.error(
+            "Failed to exchange recovery code:",
+            exchangeError.message
+          );
+          setLinkExpired(true);
+          return;
+        }
+        window.history.replaceState(null, "", "/reset-password");
+        setSessionReady(true);
+        return;
+      }
+
+      // (3) Session already exists (e.g. came through /api/auth/callback).
       const { data: { session } } = await getSupabase().auth.getSession();
       if (session) {
         setSessionReady(true);
         return;
       }
 
-      // No session and no tokens — link is invalid/expired
+      // No session, no tokens, no code — link is invalid/expired.
       setLinkExpired(true);
     }
 
@@ -143,8 +170,8 @@ export default function ResetPasswordPage() {
             {sessionReady
               ? "Choose a password for your account."
               : linkExpired
-                ? "This invite link has expired or is invalid."
-                : "Verifying your invite link\u2026"}
+                ? "This link has expired or is invalid."
+                : "Verifying your link\u2026"}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -184,10 +211,17 @@ export default function ResetPasswordPage() {
           ) : linkExpired ? (
             <div className="space-y-3 text-center">
               <p className="text-sm text-muted-foreground">
-                Please ask your admin to generate a new invite link.
+                Request a new link and try again.
               </p>
               <Button
                 variant="outline"
+                className="w-full"
+                onClick={() => (window.location.href = "/forgot-password")}
+              >
+                Request a new link
+              </Button>
+              <Button
+                variant="ghost"
                 className="w-full"
                 onClick={() => (window.location.href = "/login")}
               >
