@@ -372,7 +372,14 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
           />
 
           <RentFlowKpis
-            charges={monthCharges}
+            monthCharges={monthCharges}
+            openCharges={openChargeRows.map((c) => ({
+              amount: Number(c.amount),
+              paid_amount: Number(c.paid_amount),
+              due_date: c.due_date as string,
+              status: c.status as string,
+              charge_type: c.charge_type as string,
+            }))}
             payments={(payments ?? []).map((p) => ({
               amount: Number(p.amount),
               paid_at: p.paid_at as string,
