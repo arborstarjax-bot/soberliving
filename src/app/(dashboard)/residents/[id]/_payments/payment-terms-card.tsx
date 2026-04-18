@@ -33,6 +33,20 @@ export function PaymentTermsCard({
   // through `new Date(iso).getDate()` drifts a day in US timezones
   // because date-only strings parse as UTC midnight.
   const dueDay = dayOfMonthLocal(terms.commitment_start_date);
+  const isWeekly = terms.payment_frequency === "weekly";
+  // Weekday label for the card's "Due Day" row when the resident
+  // is on weekly cadence. Parse the date-only string as UTC to avoid
+  // the same TZ drift `dayOfMonthLocal` guards against.
+  const weeklyWeekday = (() => {
+    const iso = terms.commitment_start_date;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    if (!m) return "";
+    const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+    return d.toLocaleDateString("en-US", {
+      timeZone: "UTC",
+      weekday: "long",
+    });
+  })();
 
   async function openCommitment() {
     if (!terms.pdf_storage_path) return;
@@ -66,7 +80,9 @@ export function PaymentTermsCard({
         </div>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div>
-            <p className="text-xs text-muted-foreground">Monthly Rent</p>
+            <p className="text-xs text-muted-foreground">
+              {isWeekly ? "Weekly Rent" : "Monthly Rent"}
+            </p>
             <p className="font-semibold">{formatMoney(terms.rent_amount)}</p>
           </div>
           {terms.admin_fee !== null && terms.admin_fee > 0 && (
@@ -77,7 +93,13 @@ export function PaymentTermsCard({
           )}
           <div>
             <p className="text-xs text-muted-foreground">Due Day</p>
-            <p className="font-semibold">{ordinal(dueDay)} of each month</p>
+            <p className="font-semibold">
+              {isWeekly
+                ? weeklyWeekday
+                  ? `Every ${weeklyWeekday}`
+                  : "Weekly"
+                : `${ordinal(dueDay)} of each month`}
+            </p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Effective</p>
