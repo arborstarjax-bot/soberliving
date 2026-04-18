@@ -111,6 +111,7 @@ export function DocumentsList({
                     <a
                       href={url ?? "#"}
                       download={doc.name || "document"}
+                      target="_blank"
                       rel="noopener noreferrer"
                       aria-label={`Download ${doc.name}`}
                       aria-disabled={!url}
