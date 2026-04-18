@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { DollarSign, Calendar } from "lucide-react";
 import { RecordUpcomingRentDialog } from "@/app/(dashboard)/payments/record-upcoming-rent-dialog";
 import { dayOfMonthLocal } from "@/lib/local-date";
-import type { PaymentTerms } from "./types";
+import type { PaymentTerms, PendingAmendment } from "./types";
 import { formatMoney } from "./helpers";
 
 // Shown when the resident has no open charges on the books — the next
@@ -17,12 +17,21 @@ import { formatMoney } from "./helpers";
 // real charge (the morning of the due day).
 export function VirtualNextDueCard({
   terms,
+  pendingAmendment,
   canRecordPayment,
   residentId,
   residentName,
   houseId,
 }: {
   terms: PaymentTerms;
+  // When a pending amendment exists with a future effective date we
+  // project the Next Rent card off of it instead of the (still
+  // active) parent commitment — otherwise the card reads "$X due next
+  // Sunday" even though the admin has already decided the new cycle
+  // will anchor on Friday 4/17. The admin hasn't literally changed
+  // the schedule yet (resident signature is pending), but showing the
+  // old cadence is misleading so we visually roll forward.
+  pendingAmendment: PendingAmendment | null;
   canRecordPayment: boolean;
   residentId: string;
   residentName: string;
@@ -30,7 +39,27 @@ export function VirtualNextDueCard({
 }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const candidate = computeNextDue(terms, today);
+
+  const projection = projectFromAmendment(pendingAmendment, today);
+
+  const effectiveTerms: PaymentTerms = projection
+    ? {
+        ...terms,
+        rent_amount: projection.rentAmount,
+        commitment_start_date: projection.anchorIso,
+        payment_frequency: projection.frequency,
+      }
+    : terms;
+
+  // When projecting off a future-dated amendment, that effective
+  // date IS the next due — no need to roll forward from today. For
+  // amendments whose effective date is already in the past
+  // (resident just hasn't signed yet), fall back to the regular
+  // computeNextDue so we don't show a stale date.
+  const candidate =
+    projection && projection.anchorDate.getTime() >= today.getTime()
+      ? projection.anchorDate
+      : computeNextDue(effectiveTerms, today);
   const msDay = 24 * 60 * 60 * 1000;
   const days = Math.round(
     (candidate.getTime() - today.getTime()) / msDay
@@ -45,25 +74,29 @@ export function VirtualNextDueCard({
             </p>
             <p className="text-2xl font-bold flex items-center gap-1.5">
               <DollarSign className="h-5 w-5 text-muted-foreground" />
-              {formatMoney(terms.rent_amount)}
+              {formatMoney(effectiveTerms.rent_amount)}
             </p>
             <p className="text-sm text-muted-foreground">
-              Opens on due day — no charge yet
+              {projection
+                ? "Once amendment is signed — not yet charged"
+                : "Opens on due day — no charge yet"}
             </p>
           </div>
           <Badge variant="outline" className="whitespace-nowrap">
-            {days === 0
-              ? "Due today"
-              : days === 1
-                ? "Due tomorrow"
-                : `Due in ${days}d`}
+            {days < 0
+              ? `${Math.abs(days)}d ago`
+              : days === 0
+                ? "Due today"
+                : days === 1
+                  ? "Due tomorrow"
+                  : `Due in ${days}d`}
           </Badge>
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Calendar className="h-3.5 w-3.5" />
           {candidate.toLocaleDateString("en-US", { timeZone: "America/New_York" })}
         </div>
-        {canRecordPayment && (
+        {canRecordPayment && !projection && (
           <div className="pt-2 border-t">
             <RecordUpcomingRentDialog
               commitmentId={terms.commitment_id}
@@ -80,6 +113,40 @@ export function VirtualNextDueCard({
       </CardContent>
     </Card>
   );
+}
+
+// Derive the projected Next Rent anchor from a pending amendment.
+// Returns null when the amendment doesn't carry enough info to
+// project (missing effective_date / payment_frequency on rows
+// created before those columns were captured). Callers fall back
+// to the active commitment's terms in that case.
+function projectFromAmendment(
+  pa: PendingAmendment | null,
+  today: Date
+):
+  | {
+      anchorDate: Date;
+      anchorIso: string;
+      rentAmount: number;
+      frequency: "weekly" | "monthly";
+    }
+  | null {
+  if (!pa || !pa.effective_date || !pa.payment_frequency) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(pa.effective_date);
+  if (!m) return null;
+  const [, y, mo, d] = m;
+  const anchorDate = new Date(Number(y), Number(mo) - 1, Number(d));
+  anchorDate.setHours(0, 0, 0, 0);
+  // If the amendment's effective date is already behind us (resident
+  // hasn't signed yet), fall back to the active commitment's
+  // computation. Null from here → caller uses `terms` directly.
+  if (anchorDate.getTime() < today.getTime()) return null;
+  return {
+    anchorDate,
+    anchorIso: pa.effective_date,
+    rentAmount: pa.rent_amount,
+    frequency: pa.payment_frequency,
+  };
 }
 
 // Local YYYY-MM-DD formatter — avoids the toISOString() UTC drift

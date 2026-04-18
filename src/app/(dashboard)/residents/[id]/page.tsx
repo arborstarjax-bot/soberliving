@@ -98,7 +98,7 @@ export default async function ResidentDetailPage(
     ? await supabase
         .from("house_commitments")
         .select(
-          "id, rent_amount, admin_fee, effective_date, amendment_reason, created_at, parent_commitment_id"
+          "id, rent_amount, admin_fee, effective_date, amendment_reason, created_at, parent_commitment_id, payment_frequency"
         )
         .eq("user_id", resident.user_id)
         .eq("status", "pending_resident_signature")
@@ -630,6 +630,11 @@ export default async function ResidentDetailPage(
                       (pendingAmendment.amendment_reason as string | null) ??
                       null,
                     created_at: pendingAmendment.created_at as string,
+                    payment_frequency:
+                      (pendingAmendment.payment_frequency as
+                        | "weekly"
+                        | "monthly"
+                        | null) ?? null,
                   }
                 : null
             }
