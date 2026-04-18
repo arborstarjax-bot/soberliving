@@ -6,6 +6,27 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "5mb",
     },
   },
+  // Next.js 16 blocks cross-origin requests to dev resources (HMR
+  // websocket, /_next/*) by default. When testing the app on a phone
+  // connected to the same Wi-Fi as the dev machine, the phone hits
+  // http://<LAN-IP>:3000 and every dev resource is rejected — so
+  // client JS never hydrates and every button / tab is dead on
+  // mobile even though SSR still renders the page.
+  //
+  // Next's matcher uses dot-segmented wildcards (like DNS globs), not
+  // CIDR. Covering the common RFC1918 private ranges (10.x.x.x,
+  // 172.16-31.x.x, 192.168.x.x) means any teammate testing on the
+  // same Wi-Fi as their dev machine works without touching config.
+  // Only affects `next dev`; production ignores this.
+  allowedDevOrigins: [
+    "10.*.*.*",
+    "172.16.*.*", "172.17.*.*", "172.18.*.*", "172.19.*.*",
+    "172.20.*.*", "172.21.*.*", "172.22.*.*", "172.23.*.*",
+    "172.24.*.*", "172.25.*.*", "172.26.*.*", "172.27.*.*",
+    "172.28.*.*", "172.29.*.*", "172.30.*.*", "172.31.*.*",
+    "192.168.*.*",
+    "*.local",
+  ],
 };
 
 export default nextConfig;

@@ -13,21 +13,20 @@ export default async function ResidentsPage() {
   const isAdmin = user.role === "admin";
   const isStaff = user.role === "admin" || user.role === "manager";
 
-  // Fetch residents
-  let query = supabase
+  // Build the independent top-level queries. Residents, houses, staff
+  // roster, the intake users list, and the check-in batches are all
+  // independent — fire them in parallel so the page isn't bounded by
+  // the sum of their latencies.
+  let residentsQuery = supabase
     .from("residents")
     .select(
       "id, full_name, status, move_in_date, sobriety_date, house_id, user_id, houses(name)"
     )
     .order("full_name");
-
   if (houseFilter) {
-    query = query.in("house_id", houseFilter);
+    residentsQuery = residentsQuery.in("house_id", houseFilter);
   }
 
-  const { data: residents } = await query;
-
-  // Fetch houses (with address for intake review form)
   let housesQuery = supabase
     .from("houses")
     .select("id, name, address")
@@ -36,9 +35,7 @@ export default async function ResidentsPage() {
   if (houseFilter) {
     housesQuery = housesQuery.in("id", houseFilter);
   }
-  const { data: houses } = await housesQuery;
 
-  // Fetch staff users (admins + managers) with house assignments
   type RawStaffUser = {
     id: string;
     full_name: string;
@@ -51,17 +48,46 @@ export default async function ResidentsPage() {
       unassigned_at: string | null;
     }>;
   };
+  const staffQuery = isStaff
+    ? supabase
+        .from("users")
+        .select(
+          "id, full_name, email, is_active, user_roles(role), manager_house_assignments(house_id, houses(name), unassigned_at)"
+        )
+        .order("full_name")
+    : null;
 
-  let rawStaffUsers: RawStaffUser[] = [];
-  if (isStaff) {
-    const { data } = await supabase
-      .from("users")
-      .select(
-        "id, full_name, email, is_active, user_roles(role), manager_house_assignments(house_id, houses(name), unassigned_at)"
-      )
-      .order("full_name");
-    rawStaffUsers = (data as RawStaffUser[] | null) ?? [];
-  }
+  const adminClient = isStaff ? createAdminClient() : null;
+  const intakeUsersQuery = isStaff && adminClient
+    ? adminClient
+        .from("users")
+        .select(
+          "id, full_name, email, phone, intake_completed, commitment_signed, is_active, account_status, denial_reason, denied_at, created_at, user_roles(role)"
+        )
+        .eq("commitment_signed", false)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false })
+    : null;
+
+  const checkInBatchesPromise = isStaff ? getCheckInBatches() : null;
+
+  const nullRes = Promise.resolve({ data: null });
+
+  const [
+    { data: residents },
+    { data: houses },
+    staffRes,
+    intakeUsersRes,
+    checkInBatchesResult,
+  ] = await Promise.all([
+    residentsQuery,
+    housesQuery,
+    staffQuery ?? nullRes,
+    intakeUsersQuery ?? nullRes,
+    checkInBatchesPromise ?? Promise.resolve(null),
+  ]);
+
+  const rawStaffUsers = (staffRes.data as RawStaffUser[] | null) ?? [];
 
   // Normalize residents for the tabs component
   const normalizedResidents = (residents ?? []).map((r) => ({
@@ -109,8 +135,21 @@ export default async function ResidentsPage() {
       };
     });
 
-  // Fetch intake data for staff (pending reviews + awaiting signatures)
-  let intakePending: Array<{
+  // Fetch intake data for staff (full lifecycle: invited, in progress,
+  // awaiting review, awaiting signature, denied).
+  const intakeInvited: Array<{
+    id: string;
+    full_name: string;
+    email: string;
+    createdAt: string;
+  }> = [];
+  const intakeInProgress: Array<{
+    id: string;
+    full_name: string;
+    email: string;
+    lastUpdatedAt: string | null;
+  }> = [];
+  const intakePending: Array<{
     id: string;
     full_name: string;
     email: string;
@@ -119,74 +158,161 @@ export default async function ResidentsPage() {
     intakeFormData: Record<string, unknown>;
     completedAt: string | null;
   }> = [];
-  let intakeAwaiting: Array<{
+  const intakeAwaiting: Array<{
     id: string;
     full_name: string;
     email: string;
+    commitment: {
+      paymentFrequency: "weekly" | "monthly";
+      rentAmount: number;
+      adminFee: number;
+      commitmentStartDate: string;
+      commitmentTerm: string;
+      notes: string | null;
+      isAmendment: boolean;
+    } | null;
+  }> = [];
+  let intakeDenied: Array<{
+    id: string;
+    full_name: string;
+    email: string;
+    denialReason: string | null;
+    deniedAt: string | null;
   }> = [];
 
-  if (isStaff) {
-    const adminClient = createAdminClient();
+  if (isStaff && adminClient) {
+    type IntakeUser = {
+      id: string;
+      full_name: string;
+      email: string;
+      phone: string | null;
+      intake_completed: boolean;
+      account_status: string | null;
+      denial_reason: string | null;
+      denied_at: string | null;
+      created_at: string;
+      user_roles: { role: string } | Array<{ role: string }> | null;
+    };
+    const rawIntakeUsers = (intakeUsersRes.data as IntakeUser[] | null) ?? [];
+    // Only residents show up in the intake funnel — admins and managers
+    // share the users table but should never appear here.
+    const intakeUsers = rawIntakeUsers.filter((u) => {
+      const roles = u.user_roles;
+      const role = Array.isArray(roles) ? roles[0]?.role : roles?.role;
+      return role === "resident" || role == null;
+    });
 
-    // Get users who completed intake but don't have commitment_signed
-    const { data: intakeUsers } = await adminClient
-      .from("users")
-      .select("id, full_name, email, phone, intake_completed, commitment_signed, is_active, created_at")
-      .eq("intake_completed", true)
-      .eq("commitment_signed", false)
-      .eq("is_active", true)
-      .order("created_at", { ascending: false });
-
-    const intakeUserIds = (intakeUsers ?? []).map((u) => u.id);
-    const { data: existingCommitments } = await adminClient
-      .from("house_commitments")
-      .select("user_id, status")
-      .in("user_id", intakeUserIds.length > 0 ? intakeUserIds : ["none"]);
-
-    const usersWithCommitments = new Set(
-      (existingCommitments ?? []).map((c) => c.user_id)
+    // Split denied out before any commitment/intake-form joins — they
+    // don't need the review packet surfaced, just a "Denied" row with
+    // Reopen for admins. This is what stops already-denied applicants
+    // from reappearing in the Pending list and letting staff "re-deny"
+    // them (which the server rejects with "already denied").
+    const deniedUsers = intakeUsers.filter((u) => u.account_status === "rejected");
+    const activeIntakeUsers = intakeUsers.filter(
+      (u) => u.account_status !== "rejected"
     );
+    const activeIntakeIds = activeIntakeUsers.map((u) => u.id);
 
-    const pendingUsers = (intakeUsers ?? []).filter((u) => !usersWithCommitments.has(u.id));
-    const awaitingSignature = (existingCommitments ?? [])
-      .filter((c) => c.status === "pending_resident_signature")
-      .map((c) => c.user_id);
-    const awaitingUsers = (intakeUsers ?? []).filter((u) => awaitingSignature.includes(u.id));
+    // Commitments and intake forms both key off the active intake ids,
+    // but neither depends on the other. Fetch them in parallel.
+    // We pull ALL intake-form rows (draft + completed) so we can tell
+    // "still filling it out" apart from "never started."
+    const [{ data: existingCommitments }, { data: intakeForms }] = await Promise.all([
+      adminClient
+        .from("house_commitments")
+        .select(
+          "user_id, status, payment_frequency, rent_amount, admin_fee, commitment_start_date, commitment_term, notes, parent_commitment_id"
+        )
+        .in("user_id", activeIntakeIds.length > 0 ? activeIntakeIds : ["none"]),
+      adminClient
+        .from("intake_forms")
+        .select("user_id, form_data, completed_at, status, updated_at")
+        .in("user_id", activeIntakeIds.length > 0 ? activeIntakeIds : ["none"]),
+    ]);
 
-    // Get intake form data for pending users
-    const pendingIds = pendingUsers.map((u) => u.id);
-    const { data: intakeForms } = await adminClient
-      .from("intake_forms")
-      .select("user_id, form_data, completed_at")
-      .in("user_id", pendingIds.length > 0 ? pendingIds : ["none"])
-      .eq("status", "completed");
-
-    const intakeMap = new Map(
+    const commitmentByUser = new Map(
+      (existingCommitments ?? []).map((c) => [c.user_id, c])
+    );
+    const intakeFormByUser = new Map(
       (intakeForms ?? []).map((f) => [f.user_id, f])
     );
 
-    intakePending = pendingUsers.map((u) => {
-      const intake = intakeMap.get(u.id);
-      return {
+    for (const u of activeIntakeUsers) {
+      const commitment = commitmentByUser.get(u.id);
+      const form = intakeFormByUser.get(u.id);
+
+      if (commitment?.status === "pending_resident_signature") {
+        intakeAwaiting.push({
+          id: u.id,
+          full_name: u.full_name,
+          email: u.email,
+          commitment: {
+            paymentFrequency:
+              ((commitment.payment_frequency as
+                | "weekly"
+                | "monthly"
+                | null) ?? "monthly"),
+            rentAmount: Number(commitment.rent_amount ?? 0),
+            adminFee: Number(commitment.admin_fee ?? 0),
+            commitmentStartDate:
+              (commitment.commitment_start_date as string | null) ??
+              new Date().toISOString().split("T")[0],
+            commitmentTerm:
+              (commitment.commitment_term as string | null) ?? "181 days",
+            notes: (commitment.notes as string | null) ?? null,
+            isAmendment: Boolean(commitment.parent_commitment_id),
+          },
+        });
+        continue;
+      }
+      if (commitment) {
+        // Commitment exists in some other state (e.g. already signed
+        // but flags not yet flipped, or cancelled) — skip.
+        continue;
+      }
+      if (u.intake_completed && form?.status === "completed") {
+        intakePending.push({
+          id: u.id,
+          full_name: u.full_name,
+          email: u.email,
+          phone: u.phone ?? null,
+          created_at: u.created_at,
+          intakeFormData: (form.form_data ?? {}) as Record<string, unknown>,
+          completedAt: form.completed_at ?? null,
+        });
+        continue;
+      }
+      if (form && form.status !== "completed") {
+        intakeInProgress.push({
+          id: u.id,
+          full_name: u.full_name,
+          email: u.email,
+          lastUpdatedAt:
+            (form as { updated_at?: string | null }).updated_at ?? null,
+        });
+        continue;
+      }
+      // No form row yet — they were invited but haven't logged in or
+      // haven't opened the intake form.
+      intakeInvited.push({
         id: u.id,
         full_name: u.full_name,
         email: u.email,
-        phone: u.phone ?? null,
-        created_at: u.created_at,
-        intakeFormData: (intake?.form_data ?? {}) as Record<string, unknown>,
-        completedAt: intake?.completed_at ?? null,
-      };
-    });
+        createdAt: u.created_at,
+      });
+    }
 
-    intakeAwaiting = awaitingUsers.map((u) => ({
+    intakeDenied = deniedUsers.map((u) => ({
       id: u.id,
       full_name: u.full_name,
       email: u.email,
+      denialReason: u.denial_reason,
+      deniedAt: u.denied_at,
     }));
   }
 
-  // Fetch check-in batches for staff
-  let checkInBatches: Array<{
+  // Check-in batches already fetched in the top-level Promise.all
+  type CheckInBatch = {
     id: string;
     createdBy: string;
     houseNames: string;
@@ -202,12 +328,9 @@ export default async function ResidentsPage() {
       formData: Record<string, unknown> | null;
       houseId: string;
     }>;
-  }> = [];
-
-  if (isStaff) {
-    const result = await getCheckInBatches();
-    checkInBatches = result.batches ?? [];
-  }
+  };
+  const checkInBatches: CheckInBatch[] =
+    (checkInBatchesResult as { batches?: CheckInBatch[] } | null)?.batches ?? [];
 
   return (
     <div className="space-y-6">
@@ -228,8 +351,11 @@ export default async function ResidentsPage() {
         staffUsers={normalizedStaff}
         isAdmin={isAdmin}
         isStaff={isStaff}
+        intakeInvited={intakeInvited}
+        intakeInProgress={intakeInProgress}
         intakePending={intakePending}
         intakeAwaiting={intakeAwaiting}
+        intakeDenied={intakeDenied}
         checkInBatches={checkInBatches}
       />
     </div>

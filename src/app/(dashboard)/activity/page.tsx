@@ -1,47 +1,102 @@
 import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Activity } from "lucide-react";
+import { getPageParams, buildPaginationMeta } from "@/lib/pagination";
+import { ActivityView } from "./activity-view";
+import {
+  ACTIVITY_CATEGORIES,
+  eventTypesForCategory,
+  allMappedEventTypes,
+} from "./categories";
 
-export default async function ActivityLogPage() {
+interface ActivityLogRow {
+  id: string;
+  event_type: string;
+  description: string;
+  created_at: string;
+  actor: { full_name: string } | { full_name: string }[] | null;
+  house: { name: string } | { name: string }[] | null;
+}
+
+function firstOrNull<T>(value: T | T[] | null | undefined): T | null {
+  if (!value) return null;
+  return Array.isArray(value) ? (value[0] ?? null) : value;
+}
+
+function normalizeTab(
+  raw: string | string[] | undefined
+): (typeof ACTIVITY_CATEGORIES)[number] {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (!value) return "All";
+  const match = ACTIVITY_CATEGORIES.find(
+    (c) => c.toLowerCase() === value.toLowerCase()
+  );
+  return match ?? "All";
+}
+
+interface PageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function ActivityLogPage({ searchParams }: PageProps) {
   const user = await requireAuth();
   const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
 
+  const params = await searchParams;
+  const activeTab = normalizeTab(params.tab);
+  const { page, offset, pageSize } = getPageParams(params);
+
+  // Build the base query. `count: "exact"` gives us the total row count
+  // so we can show "Page X of Y" and hide Next on the last page. We keep
+  // the select list tight — only the columns the list row renders.
   let query = supabase
     .from("activity_log")
-    .select("*, actor:users!actor_id(full_name), house:houses!house_id(name), resident:residents!resident_id(full_name)")
-    .order("created_at", { ascending: false })
-    .limit(100);
+    .select(
+      "id, event_type, description, created_at, actor:users!actor_id(full_name), house:houses!house_id(name)",
+      { count: "exact" }
+    )
+    .order("created_at", { ascending: false });
 
   if (houseFilter) {
     query = query.in("house_id", houseFilter);
   }
 
-  const { data: logs } = await query;
+  // Apply the category filter server-side so pagination counts the right
+  // subset. "All" skips the filter entirely; "Other" is "event_type not
+  // in any mapped category".
+  if (activeTab !== "All") {
+    if (activeTab === "Other") {
+      const mapped = allMappedEventTypes();
+      if (mapped.length > 0) {
+        // `.not("event_type", "in", "(a,b,c)")` — the tuple form is how
+        // PostgREST consumes NOT IN. No quoting needed for our ASCII
+        // event_type values.
+        query = query.not("event_type", "in", `(${mapped.join(",")})`);
+      }
+    } else {
+      const events = eventTypesForCategory(activeTab);
+      if (events.length > 0) {
+        query = query.in("event_type", events);
+      } else {
+        // Safety: no mapped events → this tab is empty by definition.
+        query = query.eq("event_type", "__never__");
+      }
+    }
+  }
 
-  const eventColor: Record<string, string> = {
-    move_in: "bg-green-500",
-    move_out: "bg-gray-500",
-    bed_assigned: "bg-blue-500",
-    bed_vacated: "bg-blue-300",
-    chore_created: "bg-indigo-400",
-    chore_assigned: "bg-indigo-500",
-    chore_completed: "bg-emerald-400",
-    chore_approved: "bg-emerald-500",
-    chore_rejected: "bg-red-400",
-    incident_logged: "bg-red-500",
-    leave_requested: "bg-yellow-500",
-    leave_approved: "bg-green-400",
-    leave_denied: "bg-red-400",
-    leave_returned: "bg-green-500",
-    note_added: "bg-purple-400",
-    user_created: "bg-blue-400",
-    role_changed: "bg-orange-400",
-    rotation_created: "bg-indigo-400",
-  };
+  const { data: logs, count } = await query.range(offset, offset + pageSize - 1);
+
+  const normalized = ((logs ?? []) as ActivityLogRow[]).map((l) => ({
+    id: l.id,
+    event_type: l.event_type,
+    description: l.description,
+    created_at: l.created_at,
+    actor: firstOrNull(l.actor),
+    house: firstOrNull(l.house),
+  }));
+
+  const meta = buildPaginationMeta(count ?? 0, page, pageSize);
 
   return (
     <div className="space-y-6">
@@ -51,55 +106,12 @@ export default async function ActivityLogPage() {
           Recent activity across all houses
         </p>
       </div>
-
-      {(logs ?? []).length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Activity className="mx-auto h-12 w-12 text-muted-foreground/50" />
-            <p className="mt-4 text-muted-foreground">No activity yet</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="relative">
-          <div className="absolute left-4 top-0 bottom-0 w-px bg-border" />
-          <div className="space-y-4">
-            {(logs ?? []).map((log) => (
-              <div key={log.id} className="relative flex items-start gap-4 pl-10">
-                <div
-                  className={`absolute left-2.5 top-1.5 h-3 w-3 rounded-full ${eventColor[log.event_type] ?? "bg-gray-400"}`}
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm">{log.description}</p>
-                  <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                    <span>
-                      {new Date(log.created_at).toLocaleString()}
-                    </span>
-                    {(log.house as unknown as { name: string } | null)?.name && (
-                      <>
-                        <span>·</span>
-                        <span>
-                          {(log.house as unknown as { name: string } | null)?.name}
-                        </span>
-                      </>
-                    )}
-                    {(log.actor as unknown as { full_name: string } | null)?.full_name && (
-                      <>
-                        <span>·</span>
-                        <span>
-                          by {(log.actor as unknown as { full_name: string } | null)?.full_name}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <Badge variant="outline" className="text-xs capitalize shrink-0">
-                  {log.event_type.replace(/_/g, " ")}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <ActivityView
+        logs={normalized}
+        activeTab={activeTab}
+        meta={meta}
+        searchParams={params}
+      />
     </div>
   );
 }

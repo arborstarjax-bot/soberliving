@@ -146,10 +146,16 @@ export function OccupancyGrid({
                       (ba) => !ba.end_date
                     );
                     const isOccupied = !!activeAssignment;
-                    const isMarkedEmpty = bed.label.endsWith(" [Empty]");
-                    const displayLabel = isMarkedEmpty
-                      ? bed.label.slice(0, -" [Empty]".length)
-                      : bed.label;
+                    const notAvailableTag = " [Not Available]";
+                    const legacyEmptyTag = " [Empty]";
+                    const isMarkedEmpty =
+                      bed.label.endsWith(notAvailableTag) ||
+                      bed.label.endsWith(legacyEmptyTag);
+                    const displayLabel = bed.label.endsWith(notAvailableTag)
+                      ? bed.label.slice(0, -notAvailableTag.length)
+                      : bed.label.endsWith(legacyEmptyTag)
+                        ? bed.label.slice(0, -legacyEmptyTag.length)
+                        : bed.label;
 
                     return (
                       <div
@@ -182,7 +188,7 @@ export function OccupancyGrid({
                             variant={isOccupied ? "default" : isMarkedEmpty ? "outline" : "secondary"}
                             className={`text-xs ${isMarkedEmpty ? "border-amber-400 text-amber-700 bg-amber-50" : ""}`}
                           >
-                            {isOccupied ? "Occupied" : isMarkedEmpty ? "Empty" : "Available"}
+                            {isOccupied ? "Occupied" : isMarkedEmpty ? "Not Available" : "Available"}
                           </Badge>
                         </div>
                         {isOccupied && activeAssignment?.resident ? (
@@ -216,7 +222,7 @@ export function OccupancyGrid({
                             />
                           </div>
                         ) : isMarkedEmpty ? (
-                          <p className="text-xs text-amber-600 mt-1">This bed is currently empty</p>
+                          <p className="text-xs text-amber-600 mt-1">This bed is marked not available</p>
                         ) : null}
                       </div>
                     );
@@ -512,10 +518,10 @@ function ToggleBedEmptyButton({
           ? "text-amber-700 hover:text-foreground hover:bg-muted"
           : "text-muted-foreground hover:text-amber-700 hover:bg-amber-50"
       }`}
-      title={isMarkedEmpty ? "Mark as available" : "Mark as empty"}
+      title={isMarkedEmpty ? "Mark as available" : "Mark as not available"}
     >
       <BedDouble className="h-3.5 w-3.5" />
-      {isPending ? "…" : isMarkedEmpty ? "Mark Available" : "Mark Empty"}
+      {isPending ? "…" : isMarkedEmpty ? "Mark Available" : "Mark Not Available"}
     </button>
   );
 }

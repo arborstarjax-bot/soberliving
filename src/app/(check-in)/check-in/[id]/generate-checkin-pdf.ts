@@ -50,7 +50,7 @@ export async function generateCheckInPdf(
   drawText("Resident:", 50, y, 10, true);
   drawText(residentName, 120, y);
   drawText("Date:", 300, y, 10, true);
-  drawText(formData.date ?? new Date().toLocaleDateString(), 340, y);
+  drawText(formData.date ?? new Date().toLocaleDateString("en-US", { timeZone: "America/New_York" }), 340, y);
   drawText("House:", 440, y, 10, true);
   drawText(houseName, 485, y);
   y -= 10;

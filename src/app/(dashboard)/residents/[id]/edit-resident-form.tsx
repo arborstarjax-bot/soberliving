@@ -18,6 +18,7 @@ interface EditResidentFormProps {
     date_of_birth: string | null;
     sobriety_date: string | null;
     move_in_date: string;
+    move_out_date: string | null;
     emergency_contact_name: string | null;
     emergency_contact_phone: string | null;
     emergency_contact_relationship: string | null;
@@ -125,8 +126,26 @@ export function EditResidentForm({ residentId, resident, userId, currentRole, is
           <Input id="email" name="email" type="email" defaultValue={resident.email ?? ""} />
         </div>
         <div className="space-y-1.5">
+          <Label htmlFor="date_of_birth">Date of Birth</Label>
+          <Input id="date_of_birth" name="date_of_birth" type="date" defaultValue={resident.date_of_birth ?? ""} />
+        </div>
+        <div className="space-y-1.5">
           <Label htmlFor="sobriety_date">Sobriety Date</Label>
-          <Input id="sobriety_date" name="sobriety_date" type="date" defaultValue={resident.sobriety_date ?? ""} />
+          <Input
+            id="sobriety_date"
+            name="sobriety_date"
+            type="date"
+            defaultValue={resident.sobriety_date ?? ""}
+            max={new Date().toISOString().slice(0, 10)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="move_in_date">Move-in Date</Label>
+          <Input id="move_in_date" name="move_in_date" type="date" defaultValue={resident.move_in_date} required />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="move_out_date">Move-out Date</Label>
+          <Input id="move_out_date" name="move_out_date" type="date" defaultValue={resident.move_out_date ?? ""} />
         </div>
         {isAdmin && userId && (
           <div className="space-y-1.5">
@@ -134,7 +153,6 @@ export function EditResidentForm({ residentId, resident, userId, currentRole, is
             <select
               id="role"
               name="role"
-              defaultValue={currentRole ?? "resident"}
               value={selectedRole}
               onChange={(e) => setSelectedRole(e.target.value)}
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"

@@ -15,11 +15,21 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("id, email, full_name, intake_completed, commitment_signed, is_resident")
+    .select(
+      "id, email, full_name, intake_completed, commitment_signed, is_resident, account_status"
+    )
     .eq("id", user.id)
     .single();
 
   if (!profile) return null;
+
+  // Gate pending / rejected accounts at the session layer. Defense in
+  // depth: the login action already blocks these, but this also catches
+  // users whose status was changed while they were holding a stale
+  // session cookie.
+  const status = (profile as { account_status?: string | null })
+    .account_status;
+  if (status && status !== "active") return null;
 
   const { data: roleRecord } = await supabase
     .from("user_roles")

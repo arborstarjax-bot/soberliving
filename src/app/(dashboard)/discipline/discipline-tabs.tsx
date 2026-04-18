@@ -6,9 +6,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ShieldAlert, AlertTriangle } from "lucide-react";
 import { LiftRestrictionButton, DeleteRestrictionButton } from "./lift-restriction-button";
+import { EditRestrictionDialog } from "./edit-restriction-dialog";
+import { formatDateOnly } from "@/lib/timezone";
 
 const RESTRICTION_TYPE_LABELS: Record<string, string> = {
   no_leave: "No Leave",
+  no_overnight: "No Overnight",
   weekend_restriction: "Weekend",
   house_commitment: "House Commitment",
   curfew: "Curfew",
@@ -58,6 +61,8 @@ interface DisciplineTabsProps {
   pastRestrictions: PastRestriction[];
   addRestrictionButton: ReactNode;
   demeritMatrixContent: ReactNode;
+  warningsContent?: ReactNode;
+  warningsCount?: number;
   incidents?: Incident[];
   addIncidentButton?: ReactNode;
 }
@@ -68,6 +73,8 @@ export function DisciplineTabs({
   pastRestrictions,
   addRestrictionButton,
   demeritMatrixContent,
+  warningsContent,
+  warningsCount = 0,
   incidents = [],
   addIncidentButton,
 }: DisciplineTabsProps) {
@@ -75,6 +82,14 @@ export function DisciplineTabs({
     <Tabs defaultValue="demerits">
       <TabsList>
         <TabsTrigger value="demerits">Demerits</TabsTrigger>
+        <TabsTrigger value="warnings">
+          Warnings
+          {warningsCount > 0 && (
+            <Badge variant="secondary" className="ml-1.5 text-[10px] px-1.5 py-0">
+              {warningsCount}
+            </Badge>
+          )}
+        </TabsTrigger>
         <TabsTrigger value="restrictions">
           Restrictions
           {activeRestrictions.length > 0 && (
@@ -100,6 +115,11 @@ export function DisciplineTabs({
         <div className="space-y-6 pt-2">
           {demeritMatrixContent}
         </div>
+      </TabsContent>
+
+      {/* Warnings Tab */}
+      <TabsContent value="warnings">
+        <div className="space-y-6 pt-2">{warningsContent}</div>
       </TabsContent>
 
       {/* Restrictions Tab */}
@@ -145,16 +165,30 @@ export function DisciplineTabs({
                               <p className="text-sm text-muted-foreground italic">Note: {r.notes}</p>
                             )}
                             <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                              <span>From: {new Date(r.start_date).toLocaleDateString()}</span>
+                              <span>From: {formatDateOnly(r.start_date)}</span>
                               {r.end_date ? (
-                                <span>Until: {new Date(r.end_date).toLocaleDateString()}</span>
+                                <span>Until: {formatDateOnly(r.end_date)}</span>
                               ) : (
                                 <span>Indefinite</span>
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            {isStaff && <LiftRestrictionButton restrictionId={r.id} />}
+                          <div className="flex items-center gap-1">
+                            {isStaff && (
+                              <>
+                                <EditRestrictionDialog
+                                  restriction={{
+                                    id: r.id,
+                                    restriction_type: r.restriction_type,
+                                    description: r.description,
+                                    notes: r.notes,
+                                    start_date: r.start_date,
+                                    end_date: r.end_date,
+                                  }}
+                                />
+                                <LiftRestrictionButton restrictionId={r.id} />
+                              </>
+                            )}
                           </div>
                         </div>
                       </CardContent>
@@ -192,8 +226,8 @@ export function DisciplineTabs({
                           <div className="flex items-center gap-2">
                             <span className="text-xs text-muted-foreground">
                               {r.end_date
-                                ? `Expired ${new Date(r.end_date).toLocaleDateString()}`
-                                : `Lifted ${new Date(r.updated_at).toLocaleDateString()}`}
+                                ? `Expired ${formatDateOnly(r.end_date)}`
+                                : `Lifted ${new Date(r.updated_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`}
                             </span>
                             {isStaff && <DeleteRestrictionButton restrictionId={r.id} />}
                           </div>
@@ -248,7 +282,7 @@ export function DisciplineTabs({
                           </span>
                         </div>
                         <span className="text-xs text-muted-foreground">
-                          {new Date(inc.occurred_at).toLocaleDateString()}
+                          {formatDateOnly(inc.occurred_at)}
                         </span>
                       </div>
                       <p className="text-sm mt-1">{inc.description}</p>

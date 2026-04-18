@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { createUser } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -12,7 +13,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Copy, Check, Mail } from "lucide-react";
+import { Plus, Copy, Check, Mail, Share2 } from "lucide-react";
 
 interface House {
   id: string;
@@ -23,6 +24,11 @@ export function CreateUserDialog({ houses = [] }: { houses?: House[] }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState(createUser, undefined);
   const [copied, setCopied] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Web Share API is nice on iOS because it surfaces Messages, Mail,
+  // AirDrop, etc. Show it alongside Copy when available.
+  const canShare =
+    typeof navigator !== "undefined" && typeof navigator.share === "function";
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
@@ -32,10 +38,54 @@ export function CreateUserDialog({ houses = [] }: { houses?: House[] }) {
   }
 
   async function handleCopyLink() {
-    if (state?.inviteLink) {
-      await navigator.clipboard.writeText(state.inviteLink);
+    const link = state?.inviteLink;
+    if (!link) return;
+    let ok = false;
+    // navigator.clipboard.writeText only works in secure contexts
+    // (https/localhost) and must run inside a user gesture. On the
+    // iPhone hitting http://<LAN-IP>:3000 the secure-context check
+    // fails silently, so fall back to the legacy execCommand path
+    // which still works inside a user-gesture click handler on iOS
+    // Safari — just needs a real DOM selection first.
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.clipboard &&
+      window.isSecureContext
+    ) {
+      try {
+        await navigator.clipboard.writeText(link);
+        ok = true;
+      } catch {
+        ok = false;
+      }
+    }
+    if (!ok && inputRef.current) {
+      const el = inputRef.current;
+      try {
+        el.focus();
+        el.setSelectionRange(0, link.length);
+        ok = document.execCommand("copy");
+      } catch {
+        ok = false;
+      }
+    }
+    if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  }
+
+  async function handleShare() {
+    const link = state?.inviteLink;
+    if (!link) return;
+    try {
+      await navigator.share({
+        title: "Sober Living invite",
+        text: "Set up your Sober Living account:",
+        url: link,
+      });
+    } catch {
+      // User cancelled or share unsupported — no-op.
     }
   }
 
@@ -60,29 +110,57 @@ export function CreateUserDialog({ houses = [] }: { houses?: House[] }) {
             </div>
             <div className="space-y-2">
               <Label>Invite Link</Label>
+              {/* Raw <input> so we can attach a ref for the execCommand
+                  fallback. Mirrors the styling of the shared Input
+                  primitive. */}
+              <input
+                ref={inputRef}
+                readOnly
+                value={state.inviteLink}
+                onFocus={(e) => e.currentTarget.select()}
+                onClick={(e) => e.currentTarget.select()}
+                className={cn(
+                  "flex h-9 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+                  "selection:bg-primary selection:text-primary-foreground"
+                )}
+              />
               <div className="flex items-center gap-2">
-                <Input
-                  readOnly
-                  value={state.inviteLink}
-                  className="text-xs"
-                />
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
                   onClick={handleCopyLink}
-                  className="shrink-0"
+                  className="flex-1"
                 >
                   {copied ? (
-                    <Check className="h-4 w-4 text-green-600" />
+                    <>
+                      <Check className="mr-1 h-4 w-4 text-green-600" />
+                      Copied
+                    </>
                   ) : (
-                    <Copy className="h-4 w-4" />
+                    <>
+                      <Copy className="mr-1 h-4 w-4" />
+                      Copy Link
+                    </>
                   )}
                 </Button>
+                {canShare && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleShare}
+                    className="flex-1"
+                  >
+                    <Share2 className="mr-1 h-4 w-4" />
+                    Share
+                  </Button>
+                )}
               </div>
               <p className="text-xs text-muted-foreground">
                 Share this link with the resident so they can set their password
-                and log in.
+                and log in. On mobile, you can also long-press the link above to
+                copy it manually.
               </p>
             </div>
             <Button

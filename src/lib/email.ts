@@ -1,6 +1,23 @@
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Lazy init: don't construct Resend at module load. If RESEND_API_KEY is
+// missing in the environment (e.g. preview/dev), the old `new Resend(undefined)`
+// pattern crashed with "Missing API key" the moment any server action that
+// imports this module was invoked — blowing up POSTs across the app even
+// though the action itself didn't need email.
+//
+// With this lazy pattern, modules import fine without a key. If a code path
+// actually tries to SEND an email without a key, we log a loud warning and
+// return gracefully so the calling server action still succeeds (action
+// completes, user sees no error — just no email goes out). Ops gets a
+// clear signal in the logs to set RESEND_API_KEY.
+let _client: Resend | null = null;
+function getResend(): Resend | null {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return null;
+  if (!_client) _client = new Resend(key);
+  return _client;
+}
 
 // Resend requires a verified domain. Use FROM_EMAIL for a verified
 // sender, or fall back to Resend's default sandbox address.
@@ -23,17 +40,43 @@ export async function sendInviteEmail({
   fullName,
   role,
   inviteLink,
+  appUrl,
 }: {
   to: string;
   fullName: string;
   role: string;
   inviteLink: string;
+  /**
+   * Canonical app origin (e.g. https://soberliving.vercel.app). Passed
+   * in rather than derived here so server actions can resolve it from
+   * the incoming request headers — avoids hard-coded localhost
+   * fallbacks in production emails.
+   */
+  appUrl?: string;
 }) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const resend = getResend();
+  if (!resend) {
+    // Soft-fail so a missing key doesn't break the server action that
+    // triggered the email. Ops sees the warning in Vercel logs.
+    console.warn(
+      "[email] RESEND_API_KEY not set — skipping sendInviteEmail to",
+      to
+    );
+    return { error: null, id: null, skipped: true as const };
+  }
+
+  // Match getAppOrigin()'s priority (SITE_URL first) so the email
+  // footer URL stays consistent with invite/redirect URLs generated
+  // by the canonical helper.
+  const resolvedAppUrl =
+    appUrl ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "http://localhost:3000";
   const safeName = escapeHtml(fullName);
   const safeRole = escapeHtml(role);
   const safeLink = escapeHtml(inviteLink);
-  const safeAppUrl = escapeHtml(appUrl);
+  const safeAppUrl = escapeHtml(resolvedAppUrl);
 
   const { data, error } = await resend.emails.send({
     from: fromEmail,

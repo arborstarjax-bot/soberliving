@@ -18,11 +18,6 @@ const MILESTONE_DEFINITIONS = [
   { label: "90 Days", days: 90 },
   { label: "6 Months", days: 182 },
   { label: "1 Year", days: 365 },
-  { label: "18 Months", days: 548 },
-  { label: "2 Years", days: 730 },
-  { label: "3 Years", days: 1095 },
-  { label: "5 Years", days: 1825 },
-  { label: "10 Years", days: 3650 },
 ];
 
 export function calculateMilestones(sobrietyDate: string): Milestone[] {
@@ -43,8 +38,23 @@ export function calculateMilestones(sobrietyDate: string): Milestone[] {
   });
 }
 
+/**
+ * Whole days between now and the given sobriety date. Floored at 0 —
+ * a future sobriety date (start date hasn't arrived yet) reports 0
+ * days rather than a negative number. Callers that need to know
+ * whether the date is in the future should use `isSobrietyDateFuture`.
+ */
 export function getDaysSober(sobrietyDate: string): number {
-  return differenceInDays(new Date(), new Date(sobrietyDate));
+  const raw = differenceInDays(new Date(), new Date(sobrietyDate));
+  return raw < 0 ? 0 : raw;
+}
+
+/**
+ * True when the stored sobriety date is after today. Used by UI to
+ * show "Starts MM/DD/YYYY" in place of a days-sober counter.
+ */
+export function isSobrietyDateFuture(sobrietyDate: string): boolean {
+  return differenceInDays(new Date(), new Date(sobrietyDate)) < 0;
 }
 
 export function getSobrietySummary(sobrietyDate: string): string {

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
+import { openAllChargesForCommitment } from "@/lib/payments/charges";
 
 export async function getCommitmentForResident() {
   const user = await requireAuth();
@@ -29,10 +30,14 @@ export async function signCommitment(
   const user = await requireAuth();
   const adminClient = createAdminClient();
 
-  // Verify this commitment belongs to the user
+  // Verify this commitment belongs to the user. Also pulls the
+  // amendment fields so we can branch on "is this a first-time sign
+  // or an amendment?" below.
   const { data: commitment } = await adminClient
     .from("house_commitments")
-    .select("id, user_id, status")
+    .select(
+      "id, user_id, status, parent_commitment_id, effective_date, resident_id"
+    )
     .eq("id", commitmentId)
     .eq("user_id", user.id)
     .eq("status", "pending_resident_signature")
@@ -107,15 +112,59 @@ export async function signCommitment(
       .eq("id", commitmentId);
   }
 
+  const isAmendment = Boolean(commitment.parent_commitment_id);
+
+  // Amendment-specific cleanup: supersede the parent commitment so
+  // future sweeps only open charges against the new row, and drop any
+  // still-open (unpaid, zero paid_amount) rent charges on the parent
+  // dated on or after the amendment's effective date. This keeps the
+  // schedule clean — old-rate charges don't linger alongside
+  // new-rate ones. Already-paid charges are preserved.
+  if (isAmendment && commitment.parent_commitment_id) {
+    const parentId = commitment.parent_commitment_id as string;
+    const effective = (commitment.effective_date as string | null) ?? null;
+
+    await adminClient
+      .from("house_commitments")
+      .update({ status: "superseded", updated_at: new Date().toISOString() })
+      .eq("id", parentId);
+
+    if (effective && commitment.resident_id) {
+      await adminClient
+        .from("payment_charges")
+        .delete()
+        .eq("commitment_id", parentId)
+        .eq("resident_id", commitment.resident_id as string)
+        .gte("due_date", effective)
+        .eq("status", "open")
+        .eq("paid_amount", 0);
+    }
+  }
+
   await logActivity({
     actorId: user.id,
-    eventType: "commitment_signed",
+    eventType: isAmendment
+      ? "commitment_amendment_signed"
+      : "commitment_signed",
     entityType: "house_commitment",
     entityId: commitmentId,
-    description: `${user.full_name} signed the house commitment agreement`,
+    description: isAmendment
+      ? `${user.full_name} signed a payment-terms amendment`
+      : `${user.full_name} signed the house commitment agreement`,
   });
+
+  // Open the startup (admin fee / deposit) and first rent charges
+  // now that the commitment is active. Errors here don't fail the
+  // sign action — the lazy sweep on the payments page will catch
+  // anything missed.
+  try {
+    await openAllChargesForCommitment(commitmentId);
+  } catch (e) {
+    console.error("Failed to open initial charges for commitment", commitmentId, e);
+  }
 
   revalidatePath("/dashboard");
   revalidatePath("/sign-commitment");
+  revalidatePath("/payments");
   return {};
 }

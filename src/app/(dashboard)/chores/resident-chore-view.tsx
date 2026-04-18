@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ALL_DAYS, DAY_LABELS } from "@/lib/validations";
 import { Camera } from "lucide-react";
+import { formatDateOnly } from "@/lib/timezone";
 
 interface Props {
   rotations: Array<{
@@ -109,13 +110,9 @@ export function ResidentChoreView({ rotations, userResidentId, forcePhoto }: Pro
                   <div>
                     <CardTitle>{assignment.chore.name}</CardTitle>
                     <p className="text-sm text-muted-foreground">
-                      {new Date(
-                        rotation.cycle_start_date
-                      ).toLocaleDateString()}{" "}
+                      {formatDateOnly(rotation.cycle_start_date)}{" "}
                       —{" "}
-                      {new Date(
-                        rotation.cycle_end_date
-                      ).toLocaleDateString()}
+                      {formatDateOnly(rotation.cycle_end_date)}
                     </p>
                   </div>
                   <Badge variant="outline">
@@ -315,7 +312,7 @@ function ResidentSignoffButton({ signoffId, forcePhoto }: { signoffId: string; f
       <button
         type="button"
         disabled={pending}
-        className="inline-flex items-center justify-center h-8 w-8 rounded-full border-2 border-dashed border-green-500/50 text-green-600 hover:border-green-500 hover:bg-green-50 transition-colors text-sm font-medium"
+        className="inline-flex items-center justify-center h-10 w-10 rounded-full border-2 border-dashed border-green-500/50 text-green-600 hover:border-green-500 hover:bg-green-50 active:scale-95 transition text-sm font-medium"
         title={forcePhoto ? "Photo required — click to sign off" : "Mark as done"}
         onClick={() => {
           if (forcePhoto) {

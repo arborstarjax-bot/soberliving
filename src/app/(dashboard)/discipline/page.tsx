@@ -4,6 +4,9 @@ import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { CreateRestrictionDialog } from "./create-restriction-dialog";
 import { DemeritMatrix } from "./demerit-matrix";
 import { DisciplineTabs } from "./discipline-tabs";
+import { CreateWarningDialog } from "./create-warning-dialog";
+import { WarningsList } from "./warnings-list";
+import { CleanupBackfilledDemeritsButton } from "./cleanup-backfilled-demerits-button";
 import { CreateIncidentDialog } from "../incidents/create-incident-dialog";
 
 export default async function DisciplinePage() {
@@ -42,7 +45,23 @@ export default async function DisciplinePage() {
     }
   }
 
-  // Get houses
+  // The auto-expire UPDATE has to land BEFORE the restrictions SELECTs,
+  // because otherwise active-restrictions would still include
+  // past-their-end-date rows and past-restrictions would miss the
+  // ones we just flipped. Keep that serialized, but then fan out the
+  // rest of the page's queries in parallel.
+  const today = new Date().toISOString().split("T")[0];
+  let expireQuery = adminClient
+    .from("restrictions")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq("is_active", true)
+    .lte("end_date", today)
+    .not("end_date", "is", null);
+  if (houseFilter && houseFilter.length > 0) expireQuery = expireQuery.in("house_id", houseFilter);
+  if (residentRecordId) expireQuery = expireQuery.eq("resident_id", residentRecordId);
+  await expireQuery;
+
+  // Build the five independent read queries, then await them all at once.
   let housesQuery = adminClient
     .from("houses")
     .select("id, name")
@@ -50,9 +69,7 @@ export default async function DisciplinePage() {
     .order("name");
   if (houseFilter && houseFilter.length > 0) housesQuery = housesQuery.in("id", houseFilter);
   if (residentHouseId) housesQuery = housesQuery.eq("id", residentHouseId);
-  const { data: houses } = await housesQuery;
 
-  // Get residents — for residents, only show themselves
   let residentsQuery = adminClient
     .from("residents")
     .select("id, full_name, house_id")
@@ -60,9 +77,7 @@ export default async function DisciplinePage() {
     .order("full_name");
   if (houseFilter && houseFilter.length > 0) residentsQuery = residentsQuery.in("house_id", houseFilter);
   if (residentRecordId) residentsQuery = residentsQuery.eq("id", residentRecordId);
-  const { data: residents } = await residentsQuery;
 
-  // Get demerits (select only needed columns to avoid body size limit)
   let demeritsQuery = adminClient
     .from("demerits")
     .select("id, resident_id, house_id, reason, notes, category, status, auto_generated, created_at, resolved_at, resolution_note, photo_url")
@@ -70,33 +85,28 @@ export default async function DisciplinePage() {
     .limit(200);
   if (houseFilter && houseFilter.length > 0) demeritsQuery = demeritsQuery.in("house_id", houseFilter);
   if (residentRecordId) demeritsQuery = demeritsQuery.eq("resident_id", residentRecordId);
-  const { data: demerits } = await demeritsQuery;
 
-  // Auto-expire restrictions past their end date (runs for all users)
-  const today = new Date().toISOString().split("T")[0];
-  {
-    let expireQuery = adminClient
-      .from("restrictions")
-      .update({ is_active: false, updated_at: new Date().toISOString() })
-      .eq("is_active", true)
-      .lte("end_date", today)
-      .not("end_date", "is", null);
-    if (houseFilter && houseFilter.length > 0) expireQuery = expireQuery.in("house_id", houseFilter);
-    if (residentRecordId) expireQuery = expireQuery.eq("resident_id", residentRecordId);
-    await expireQuery;
-  }
+  // Warnings are a separate, no-points disciplinary record. Fetched
+  // alongside demerits so the Warnings tab on this page can render the
+  // house-scoped list in the same round-trip as everything else.
+  let warningsQuery = adminClient
+    .from("warnings")
+    .select(
+      "id, resident_id, house_id, reason, notes, category, photo_url, signoff_id, created_at, resident:residents(full_name), house:houses(name), issuer:users!issued_by(full_name)"
+    )
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (houseFilter && houseFilter.length > 0) warningsQuery = warningsQuery.in("house_id", houseFilter);
+  if (residentRecordId) warningsQuery = warningsQuery.eq("resident_id", residentRecordId);
 
-  // Get active restrictions
-  let restrictionsQuery = adminClient
+  let activeRestrictionsQuery = adminClient
     .from("restrictions")
     .select("*, resident:residents(full_name), house:houses(name)")
     .eq("is_active", true)
     .order("created_at", { ascending: false });
-  if (houseFilter && houseFilter.length > 0) restrictionsQuery = restrictionsQuery.in("house_id", houseFilter);
-  if (residentRecordId) restrictionsQuery = restrictionsQuery.eq("resident_id", residentRecordId);
-  const { data: activeRestrictions } = await restrictionsQuery;
+  if (houseFilter && houseFilter.length > 0) activeRestrictionsQuery = activeRestrictionsQuery.in("house_id", houseFilter);
+  if (residentRecordId) activeRestrictionsQuery = activeRestrictionsQuery.eq("resident_id", residentRecordId);
 
-  // Get recently lifted/expired restrictions
   let pastRestrictionsQuery = adminClient
     .from("restrictions")
     .select("*, resident:residents(full_name), house:houses(name)")
@@ -105,7 +115,47 @@ export default async function DisciplinePage() {
     .limit(20);
   if (houseFilter && houseFilter.length > 0) pastRestrictionsQuery = pastRestrictionsQuery.in("house_id", houseFilter);
   if (residentRecordId) pastRestrictionsQuery = pastRestrictionsQuery.eq("resident_id", residentRecordId);
-  const { data: pastRestrictions } = await pastRestrictionsQuery;
+
+  const [
+    { data: houses },
+    { data: residents },
+    { data: demerits },
+    { data: warnings },
+    { data: activeRestrictions },
+    { data: pastRestrictions },
+  ] = await Promise.all([
+    housesQuery,
+    residentsQuery,
+    demeritsQuery,
+    warningsQuery,
+    activeRestrictionsQuery,
+    pastRestrictionsQuery,
+  ]);
+
+  // Normalize warnings: flatten the joined resident / house / issuer arrays
+  // (Supabase returns them as single-element arrays on some joins) so the
+  // client component can treat each warning as a flat record.
+  const normalizedWarnings = (warnings ?? []).map((w) => {
+    const resident = Array.isArray(w.resident) ? w.resident[0] : w.resident;
+    const house = Array.isArray(w.house) ? w.house[0] : w.house;
+    const issuer = Array.isArray(w.issuer) ? w.issuer[0] : w.issuer;
+    return {
+      id: w.id as string,
+      resident_id: w.resident_id as string,
+      house_id: w.house_id as string,
+      reason: w.reason as string,
+      category: (w.category as string) ?? null,
+      notes: (w.notes as string) ?? null,
+      photo_url: (w.photo_url as string) ?? null,
+      signoff_id: (w.signoff_id as string) ?? null,
+      created_at: w.created_at as string,
+      resident_name:
+        (resident as { full_name?: string } | null)?.full_name ?? "Unknown",
+      house_name: (house as { name?: string } | null)?.name ?? "",
+      issuer_name:
+        (issuer as { full_name?: string } | null)?.full_name ?? "Unknown",
+    };
+  });
 
   // Normalize restriction data for client component
   const normalizedActiveRestrictions = (activeRestrictions ?? []).map((r) => ({
@@ -214,6 +264,21 @@ export default async function DisciplinePage() {
         pastRestrictions={normalizedPastRestrictions}
         addRestrictionButton={addRestrictionButton}
         demeritMatrixContent={demeritMatrixContent}
+        warningsContent={
+          <div className="space-y-4">
+            {isStaff && (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <CleanupBackfilledDemeritsButton />
+                <CreateWarningDialog
+                  houses={houses ?? []}
+                  residents={residents ?? []}
+                />
+              </div>
+            )}
+            <WarningsList warnings={normalizedWarnings} canEdit={isStaff} />
+          </div>
+        }
+        warningsCount={normalizedWarnings.length}
         incidents={incidents}
         addIncidentButton={addIncidentButton}
       />

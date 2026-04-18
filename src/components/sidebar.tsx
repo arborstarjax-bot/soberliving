@@ -11,18 +11,20 @@ import {
   ClipboardCheck,
   AlertTriangle,
   CalendarClock,
-  UserCog,
-  Activity,
   Settings,
   LogOut,
+  LogOut as SignOutIcon,
   Menu,
   X,
   ShieldAlert,
   MessageSquare,
   Bell,
   FileText,
+  Folder,
+  DollarSign,
 } from "lucide-react";
 import { useState } from "react";
+import { InstallAppButton } from "@/components/pwa/install-app-button";
 
 interface NavItem {
   label: string;
@@ -70,10 +72,38 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["admin", "manager", "resident"],
   },
   {
-    label: "Leave Requests",
+    label: "Overnight Request",
     href: "/leave-requests",
     icon: CalendarClock,
     roles: ["admin", "manager", "resident"],
+  },
+  {
+    // Staff-only nav link. Residents don't see this — they sign in /
+    // out via the toggle at the top of their dashboard and don't need
+    // a roster of who else is out.
+    label: "Sign Out Sheet",
+    href: "/sign-out-sheet",
+    icon: SignOutIcon,
+    roles: ["admin", "manager"],
+  },
+  {
+    // Staff-only Payments hub — By Resident / Outstanding / Paid tabs.
+    // Residents have their own payments view at /payments but reach it
+    // via the Next Due hero card on their dashboard, not a nav link,
+    // so the sidebar stays uncluttered for them.
+    label: "Payments",
+    href: "/payments",
+    icon: DollarSign,
+    roles: ["admin", "manager"],
+  },
+  {
+    // Resident-facing doc library — application, signed commitment,
+    // payment receipts. Staff already see these on the resident profile
+    // Documents tab so this nav entry is resident-only.
+    label: "My Documents",
+    href: "/my-documents",
+    icon: Folder,
+    roles: ["resident"],
   },
   {
     label: "Bulletin",
@@ -89,18 +119,12 @@ const NAV_ITEMS: NavItem[] = [
   },
   // Intake Review is now a tab inside the Residents page
   // Users & Roles folded into Residents page — /users route still works for direct access
-  {
-    label: "Activity Log",
-    href: "/activity",
-    icon: Activity,
-    roles: ["admin", "manager"],
-  },
-  {
-    label: "Settings",
-    href: "/settings",
-    icon: Settings,
-    roles: ["admin"],
-  },
+  // Activity Log is no longer a primary nav item — reachable from the
+  // admin dashboard Activity tile or the per-resident profile timeline.
+  // Settings is no longer a primary nav item — admins reach it via
+  // the gear icon in the user footer area at the bottom of the
+  // sidebar (see navContent below). Residents and managers don't have
+  // meaningful settings today, so there's no entry for them either.
 ];
 
 interface SidebarProps {
@@ -125,7 +149,7 @@ export function Sidebar({ role, userName, hasNoLeaveRestriction, unreadNotificat
 
   const navContent = (
     <>
-      <div className="flex h-14 items-center border-b border-sidebar-border px-4">
+      <div className="flex items-center border-b border-sidebar-border px-4 pt-[env(safe-area-inset-top)] h-[calc(3.5rem+env(safe-area-inset-top))]">
         <Link
           href="/dashboard"
           className="flex items-center gap-2 font-semibold text-sidebar-foreground"
@@ -147,10 +171,14 @@ export function Sidebar({ role, userName, hasNoLeaveRestriction, unreadNotificat
               href={item.href}
               onClick={() => setMobileOpen(false)}
               className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                // Nav rows are the primary tap target on phones — give
+                // them at least 44px of effective height (py-3 = 48px
+                // total) so they meet Apple's HIG minimum without
+                // changing desktop density at lg: breakpoint.
+                "flex items-center gap-3 rounded-md px-3 py-3 lg:py-2 text-sm font-medium transition active:scale-[0.98]",
                 isActive
                   ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground active:bg-sidebar-accent/60"
               )}
             >
               <item.icon className="h-4 w-4 shrink-0" />
@@ -179,6 +207,23 @@ export function Sidebar({ role, userName, hasNoLeaveRestriction, unreadNotificat
             <p className="text-sm font-medium truncate text-sidebar-foreground">{userName}</p>
             <p className="text-xs text-sidebar-foreground/60 capitalize">{role}</p>
           </div>
+          {role === "admin" && (
+            <Link
+              href="/settings"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Settings"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors"
+            >
+              <Settings className="h-4 w-4" />
+            </Link>
+          )}
+        </div>
+        {/* PWA install affordance. The button self-hides when the app
+            is already running in standalone mode, or on browsers that
+            don't support install prompts, so it won't linger as a dead
+            element for already-installed users. */}
+        <div className="px-3 pb-2">
+          <InstallAppButton className="w-full" />
         </div>
         <form action="/api/auth/logout" method="POST">
           <button
@@ -195,12 +240,15 @@ export function Sidebar({ role, userName, hasNoLeaveRestriction, unreadNotificat
 
   return (
     <>
-      {/* Mobile toggle */}
-      <div className="sticky top-0 z-40 flex h-14 items-center border-b border-sidebar-border bg-sidebar px-4 lg:hidden text-sidebar-foreground">
+      {/* Mobile toggle — sticks to the top on phones, respects notch /
+          Dynamic Island via safe-area-inset-top so the bar isn't
+          behind the camera cutout on notched devices. */}
+      <div className="sticky top-0 z-40 flex h-14 items-center border-b border-sidebar-border bg-sidebar px-4 lg:hidden text-sidebar-foreground pt-[env(safe-area-inset-top)] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] h-[calc(3.5rem+env(safe-area-inset-top))]">
         <button
           type="button"
           onClick={() => setMobileOpen(!mobileOpen)}
-          className="inline-flex items-center justify-center h-9 w-9 rounded-md text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
+          aria-label={mobileOpen ? "Close menu" : "Open menu"}
+          className="inline-flex items-center justify-center h-11 w-11 -ml-2 rounded-md text-sidebar-foreground hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60 active:scale-95 transition"
         >
           {mobileOpen ? (
             <X className="h-5 w-5" />
@@ -208,7 +256,7 @@ export function Sidebar({ role, userName, hasNoLeaveRestriction, unreadNotificat
             <Menu className="h-5 w-5" />
           )}
         </button>
-        <span className="ml-3 font-semibold">Sober Living</span>
+        <span className="ml-2 font-semibold">Sober Living</span>
       </div>
 
       {/* Mobile overlay */}

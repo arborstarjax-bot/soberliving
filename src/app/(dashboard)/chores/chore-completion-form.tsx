@@ -121,7 +121,7 @@ export function ChoreCompletionForm({
           )}
         </CardTitle>
         <p className="text-xs text-muted-foreground">
-          {new Date().toLocaleDateString("en-US", {
+          {new Date().toLocaleDateString("en-US", { timeZone: "America/New_York",
             weekday: "long",
             month: "long",
             day: "numeric",

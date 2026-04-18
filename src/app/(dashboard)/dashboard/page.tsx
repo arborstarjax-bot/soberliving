@@ -1,13 +1,15 @@
 import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
-import { getDaysSober } from "@/lib/milestones";
+import { getDaysSober, isSobrietyDateFuture } from "@/lib/milestones";
+import { getHouseToday, DEFAULT_TIMEZONE, formatDateOnly } from "@/lib/timezone";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Home, Users, ClipboardCheck, AlertTriangle, CalendarClock, Bed, Activity, DollarSign } from "lucide-react";
+import { Home, Users, ClipboardCheck, AlertTriangle, CalendarClock, Bed, Activity, DollarSign, ListChecks } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SobrietyDateSetter } from "./sobriety-date-setter";
+import { SignOutToggle } from "../sign-out-sheet/sign-out-toggle";
 
 export default async function DashboardPage() {
   const user = await requireAuth();
@@ -129,7 +131,7 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-3 grid-cols-2 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {stats.map((stat) => (
           <Link key={stat.label} href={stat.href}>
             <Card className="hover:bg-muted/50 transition-colors">
@@ -163,7 +165,7 @@ export default async function DashboardPage() {
                   <div className="flex-1 min-w-0">
                     <p>{entry.description}</p>
                     <p className="text-xs text-muted-foreground">
-                      {new Date(entry.created_at).toLocaleString()}
+                      {new Date(entry.created_at).toLocaleString("en-US", { timeZone: "America/New_York" })}
                     </p>
                   </div>
                 </div>
@@ -202,6 +204,57 @@ async function ResidentDashboard({ userId }: { userId: string }) {
     .order("created_at", { ascending: false })
     .limit(5);
 
+  // Currently open sign-out row (if any) + active No Leave restriction
+  // so we can render the Sign Out / Sign In toggle at the top of the
+  // resident dashboard. Residents under a No Leave or House Commitment
+  // restriction don't see the button at all.
+  const [openSignOutRes, restrictionsRes, nextDueRes] = resident?.id
+    ? await Promise.all([
+        supabase
+          .from("sign_out_sheet")
+          .select("id, destination, time_out")
+          .eq("resident_id", resident.id)
+          .is("time_in", null)
+          .maybeSingle(),
+        supabase
+          .from("restrictions")
+          .select("restriction_type")
+          .eq("resident_id", resident.id)
+          .eq("is_active", true),
+        // Soonest open rent charge — shown as the "Next Rent Due"
+        // card so residents always know what's owed without having
+        // to tap through to /payments.
+        supabase
+          .from("payment_charges")
+          .select("id, amount, paid_amount, due_date, charge_type")
+          .eq("resident_id", resident.id)
+          .in("status", ["open", "partial"])
+          .order("due_date", { ascending: true })
+          .limit(1)
+          .maybeSingle(),
+      ])
+    : [
+        { data: null },
+        { data: [] as { restriction_type: string }[] },
+        { data: null },
+      ];
+  const openSignOut = openSignOutRes.data ?? null;
+  // Per product spec: the Sign Out toggle is only hidden by an active
+  // No Leave restriction. House Commitment and No Overnight do NOT
+  // hide it (No Overnight is about curfew, not whether they can step
+  // out at all).
+  const residentHasNoLeave = (restrictionsRes.data ?? []).some(
+    (r) => (r as { restriction_type: string }).restriction_type === "no_leave"
+  );
+  const nextDueCharge =
+    (nextDueRes?.data as unknown as {
+      id: string;
+      amount: number;
+      paid_amount: number;
+      due_date: string;
+      charge_type: string;
+    } | null) ?? null;
+
   if (!resident) {
     return (
       <div className="space-y-4">
@@ -217,14 +270,161 @@ async function ResidentDashboard({ userId }: { userId: string }) {
     (ba: { end_date: string | null }) => !ba.end_date
   );
 
+  // Compute chores due today so we can render a big "Chore due today"
+  // notification at the top of the resident dashboard. We look across
+  // every rotation_assignment for this resident and pick any signoff
+  // whose sign_off_date is today (in the app timezone) AND is still
+  // actionable (pending or redo — anything else is already closed out).
+  const todayStr = getHouseToday(DEFAULT_TIMEZONE);
+  const choresDueTodayCount = (() => {
+    const rows = (myRotationAssignments ?? []) as unknown as Array<{
+      chore: { name: string } | null;
+      chore_signoffs: Array<{
+        sign_off_date: string;
+        status: string;
+      }> | null;
+    }>;
+    let count = 0;
+    for (const ra of rows) {
+      for (const s of ra.chore_signoffs ?? []) {
+        if (
+          s.sign_off_date === todayStr &&
+          (s.status === "pending" || s.status === "redo")
+        ) {
+          count++;
+        }
+      }
+    }
+    return count;
+  })();
+  const choresDueTodayLabel = (() => {
+    if (choresDueTodayCount === 0) return null;
+    const names = new Set<string>();
+    const rows = (myRotationAssignments ?? []) as unknown as Array<{
+      chore: { name: string } | null;
+      chore_signoffs: Array<{
+        sign_off_date: string;
+        status: string;
+      }> | null;
+    }>;
+    for (const ra of rows) {
+      for (const s of ra.chore_signoffs ?? []) {
+        if (
+          s.sign_off_date === todayStr &&
+          (s.status === "pending" || s.status === "redo")
+        ) {
+          if (ra.chore?.name) names.add(ra.chore.name);
+        }
+      }
+    }
+    return Array.from(names).join(", ");
+  })();
+
   return (
     <div className="space-y-6">
+      {/* Sign Out toggle is the very first thing on the resident
+          dashboard — one tap to step out or back in without hunting
+          through the app. Hidden only when a No Leave restriction is
+          active. */}
+      {!residentHasNoLeave && (
+        <SignOutToggle
+          residentId={resident.id}
+          residentName={resident.full_name}
+          openSignOut={openSignOut}
+        />
+      )}
+
+      {/* Chore due today — high-visibility amber notification modeled
+          on the Sign Out banner. Only appears when the resident has
+          at least one `pending` or `redo` signoff dated today (in the
+          app timezone). One tap jumps to /chores to sign it off. */}
+      {choresDueTodayCount > 0 && (
+        <Link href="/chores" className="block">
+          <div className="rounded-2xl border-2 border-amber-500 bg-amber-500 p-5 text-white shadow-lg shadow-amber-500/20 hover:bg-amber-600 active:scale-[0.99] transition">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold uppercase tracking-widest text-white/90">
+                  Chore Due Today
+                </p>
+                <p className="mt-1 flex items-center gap-1.5 text-lg font-bold truncate">
+                  <ListChecks className="h-5 w-5 shrink-0" />
+                  {choresDueTodayCount === 1
+                    ? "1 chore to sign off"
+                    : `${choresDueTodayCount} chores to sign off`}
+                </p>
+                {choresDueTodayLabel && (
+                  <p className="mt-1 text-xs text-white/90 truncate">
+                    {choresDueTodayLabel}
+                  </p>
+                )}
+              </div>
+              <div className="h-14 min-w-[7rem] rounded-md bg-white text-amber-700 font-bold flex items-center justify-center px-4 text-base">
+                Sign Off
+              </div>
+            </div>
+          </div>
+        </Link>
+      )}
+
       <div>
         <h1 className="text-2xl font-bold">My Dashboard</h1>
         <p className="text-muted-foreground">
           Welcome, {resident.full_name}
         </p>
       </div>
+
+      {nextDueCharge && (() => {
+        const balance =
+          Number(nextDueCharge.amount) - Number(nextDueCharge.paid_amount);
+        const todayIso = new Date().toISOString().slice(0, 10);
+        const pastDue = nextDueCharge.due_date < todayIso;
+        const [y, m, d] = nextDueCharge.due_date.split("-").map(Number);
+        const dueLabel = new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString(
+          "en-US",
+          { timeZone: "America/New_York", month: "short", day: "numeric", year: "numeric" }
+        );
+        return (
+          <Link href="/payments" className="block">
+            <Card
+              className={
+                pastDue
+                  ? "border-red-500/40 bg-red-500/5"
+                  : "border-amber-500/30 bg-amber-500/5"
+              }
+            >
+              <CardContent className="flex items-center justify-between gap-4 p-4">
+                <div>
+                  <p
+                    className={`text-xs font-semibold uppercase tracking-wide ${
+                      pastDue ? "text-red-600" : "text-amber-600"
+                    }`}
+                  >
+                    {pastDue
+                      ? "Past Due"
+                      : nextDueCharge.charge_type === "rent"
+                        ? "Next Rent Due"
+                        : "Next Payment Due"}
+                  </p>
+                  <p className="mt-1 text-2xl font-bold">
+                    {new Intl.NumberFormat("en-US", {
+                      style: "currency",
+                      currency: "USD",
+                    }).format(balance)}
+                  </p>
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    Due {dueLabel}
+                  </p>
+                </div>
+                <DollarSign
+                  className={`h-8 w-8 shrink-0 ${
+                    pastDue ? "text-red-500/60" : "text-amber-500/60"
+                  }`}
+                />
+              </CardContent>
+            </Card>
+          </Link>
+        );
+      })()}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card>
@@ -259,7 +459,9 @@ async function ResidentDashboard({ userId }: { userId: string }) {
                   {getDaysSober(resident.sobriety_date)} days
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Since {new Date(resident.sobriety_date).toLocaleDateString()}
+                  {isSobrietyDateFuture(resident.sobriety_date)
+                    ? `Starts ${formatDateOnly(resident.sobriety_date)}`
+                    : `Since ${formatDateOnly(resident.sobriety_date)}`}
                 </p>
               </div>
             ) : (
@@ -331,8 +533,8 @@ async function ResidentDashboard({ userId }: { userId: string }) {
                 >
                   <div>
                     <p className="text-sm">
-                      {new Date(lr.departure_date).toLocaleDateString()} —{" "}
-                      {new Date(lr.expected_return_date).toLocaleDateString()}
+                      {formatDateOnly(lr.departure_date)} —{" "}
+                      {formatDateOnly(lr.expected_return_date)}
                     </p>
                     {lr.reason && (
                       <p className="text-xs text-muted-foreground">

@@ -50,7 +50,7 @@ export function ResidentNotes({ residentId, notes, userRole }: Props) {
               <p className="text-sm whitespace-pre-wrap">{note.content}</p>
               <p className="text-xs text-muted-foreground mt-2">
                 {note.author?.full_name ?? "Unknown"} ·{" "}
-                {new Date(note.created_at).toLocaleString()}
+                {new Date(note.created_at).toLocaleString("en-US", { timeZone: "America/New_York" })}
               </p>
             </div>
           ))}

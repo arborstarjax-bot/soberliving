@@ -11,6 +11,15 @@ export async function setSobrietyDate(sobrietyDate: string) {
 
   if (!sobrietyDate) return { error: "Sobriety date is required" };
 
+  // Reject future dates. Residents shouldn't be able to set a sobriety
+  // start date that hasn't happened yet.
+  const entered = new Date(sobrietyDate);
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
+  if (isNaN(entered.getTime()) || entered.getTime() > endOfToday.getTime()) {
+    return { error: "Sobriety date cannot be in the future" };
+  }
+
   // Verify the user is a resident with a residents record
   const { data: resident } = await adminClient
     .from("residents")

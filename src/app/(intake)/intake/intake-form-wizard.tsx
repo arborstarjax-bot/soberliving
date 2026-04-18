@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SignaturePad } from "@/components/signature-pad";
+import { Loader2 } from "lucide-react";
 import { saveIntakeProgress, submitIntakeForm } from "../actions";
 import { generateIntakePdf } from "./generate-pdf";
 
@@ -108,6 +109,33 @@ export function IntakeFormWizard({
 
   return (
     <div className="space-y-6">
+      {isSubmitting && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-live="assertive"
+          aria-label="Submitting application"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm"
+          style={{
+            paddingTop: "env(safe-area-inset-top)",
+            paddingBottom: "env(safe-area-inset-bottom)",
+            paddingLeft: "env(safe-area-inset-left)",
+            paddingRight: "env(safe-area-inset-right)",
+          }}
+        >
+          <div className="mx-4 max-w-sm rounded-2xl border bg-card p-8 text-center shadow-xl">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+              <Loader2 className="h-10 w-10 animate-spin text-primary" />
+            </div>
+            <h2 className="text-xl font-semibold">Submitting Your Application</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              This may take a few minutes — we&apos;re generating your intake
+              packet and notifying staff. Please keep this screen open and
+              don&apos;t close the app.
+            </p>
+          </div>
+        </div>
+      )}
       <div>
         <h1 className="text-2xl font-bold">Intake Packet</h1>
         <p className="text-muted-foreground">
@@ -260,6 +288,7 @@ function Field({
   type = "text",
   required,
   placeholder,
+  max,
 }: {
   label: string;
   name: string;
@@ -268,6 +297,7 @@ function Field({
   type?: string;
   required?: boolean;
   placeholder?: string;
+  max?: string;
 }) {
   return (
     <div className="space-y-1.5">
@@ -283,6 +313,7 @@ function Field({
         onChange={(e) => onChange(name, e.target.value)}
         placeholder={placeholder}
         required={required}
+        max={max}
       />
     </div>
   );

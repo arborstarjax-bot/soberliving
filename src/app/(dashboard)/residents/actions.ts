@@ -11,6 +11,7 @@ import {
   updateResidentSchema,
   createNoteSchema,
 } from "@/lib/validations";
+import { sendNotification } from "@/lib/notifications";
 
 // --- Residents ---
 
@@ -99,12 +100,17 @@ export async function updateResident(residentId: string, formData: FormData) {
 
   const parsed = updateResidentSchema.safeParse({
     full_name: formData.get("full_name") || undefined, // name should never be cleared
+    date_of_birth: fieldVal("date_of_birth"),
     phone: fieldVal("phone"),
     email: fieldVal("email"),
     emergency_contact_name: fieldVal("emergency_contact_name"),
     emergency_contact_phone: fieldVal("emergency_contact_phone"),
     emergency_contact_relationship: fieldVal("emergency_contact_relationship"),
     sobriety_date: fieldVal("sobriety_date"),
+    // move_in_date must always have a value — never write an empty
+    // string back; skip the key when blank so the DB keeps its value.
+    move_in_date: formData.get("move_in_date") || undefined,
+    move_out_date: fieldVal("move_out_date"),
     notes: fieldVal("notes"),
   });
 
@@ -133,7 +139,11 @@ export async function updateResident(residentId: string, formData: FormData) {
   return {};
 }
 
-export async function dischargeResident(residentId: string, reason?: string) {
+export async function dischargeResident(
+  residentId: string,
+  reason?: string,
+  isVoluntary?: boolean
+) {
   const user = await requireAuth();
   const supabase = await createClient();
 
@@ -160,19 +170,24 @@ export async function dischargeResident(residentId: string, reason?: string) {
     .eq("resident_id", residentId)
     .is("end_date", null);
 
-  // Update resident status with discharge date and optional reason
+  // Update resident status with discharge date, optional reason, and
+  // voluntary flag. The boolean is stored so the State of the House report
+  // can reliably split "Discharged" vs "Voluntary departures" instead of
+  // inferring from whether a reason was provided.
   const { error } = await supabase
     .from("residents")
     .update({
       status: "discharged",
       move_out_date: dischargeDate,
       discharge_reason: reason || null,
+      discharge_is_voluntary: isVoluntary ?? false,
       updated_at: new Date().toISOString(),
     })
     .eq("id", residentId);
 
   if (error) return { error: error.message };
 
+  const voluntaryText = isVoluntary ? " (voluntary)" : "";
   const reasonText = reason ? ` — Reason: ${reason}` : "";
   await logActivity({
     houseId: resident.house_id,
@@ -181,8 +196,30 @@ export async function dischargeResident(residentId: string, reason?: string) {
     eventType: "move_out",
     entityType: "resident",
     entityId: residentId,
-    description: `${resident.full_name} discharged by ${user.full_name}${reasonText}`,
+    description: `${resident.full_name} discharged${voluntaryText} by ${user.full_name}${reasonText}`,
   });
+
+  // Notify the resident about their own discharge. Kept minimal — if the
+  // discharge was involuntary and sensitive, the reason is redacted here
+  // (staff can still see full details in the activity log).
+  const { data: residentUser } = await supabase
+    .from("residents")
+    .select("user_id")
+    .eq("id", residentId)
+    .single();
+
+  if (residentUser?.user_id) {
+    await sendNotification({
+      userId: residentUser.user_id,
+      type: "discharge",
+      title: isVoluntary ? "Departure Recorded" : "Discharge Recorded",
+      message: isVoluntary
+        ? "Your voluntary departure has been recorded."
+        : "Your discharge has been recorded. Please contact house staff with any questions.",
+      entityType: "resident",
+      entityId: residentId,
+    });
+  }
 
   revalidatePath(`/residents/${residentId}`);
   revalidatePath(`/houses/${resident.house_id}`);
@@ -350,6 +387,148 @@ export async function assignBed(
     description: `${resident?.full_name} assigned to ${(bed?.room as unknown as { name: string } | null)?.name} / ${bed?.label} by ${user.full_name}`,
     metadata: { bed_id: bedId },
   });
+
+  const { data: residentUser } = await supabase
+    .from("residents")
+    .select("user_id")
+    .eq("id", residentId)
+    .single();
+
+  if (residentUser?.user_id) {
+    const roomName = (bed?.room as unknown as { name: string } | null)?.name ?? "your room";
+    await sendNotification({
+      userId: residentUser.user_id,
+      type: "bed_assigned",
+      title: "Bed Assigned",
+      message: `You were assigned to ${roomName} / ${bed?.label ?? "a bed"}.`,
+      actionUrl: `/houses/${houseId}`,
+      entityType: "bed_assignment",
+      entityId: data.id,
+    });
+  }
+
+  revalidatePath(`/houses/${houseId}`);
+  revalidatePath(`/residents/${residentId}`);
+  return {};
+}
+
+/**
+ * Change a resident's current bed.
+ *
+ * - Vacates any active bed assignment(s) for the resident.
+ * - If `bedId` is provided, assigns them to that bed.
+ * - If `bedId` is null/empty, the resident is left with no specific bed
+ *   (i.e., occupying the room as a "private room" / no bed association).
+ */
+export async function changeResidentBed(
+  residentId: string,
+  bedId: string | null,
+  houseId: string
+) {
+  const user = await requireAuth();
+
+  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+    return { error: "Not authorized" };
+  }
+
+  const supabase = await createClient();
+
+  // If a target bed is specified, make sure it's free first so we don't
+  // vacate the resident and then fail to reassign.
+  if (bedId) {
+    const { data: occupied } = await supabase
+      .from("bed_assignments")
+      .select("id, resident_id")
+      .eq("bed_id", bedId)
+      .is("end_date", null)
+      .maybeSingle();
+
+    if (occupied && occupied.resident_id !== residentId) {
+      return { error: "This bed is already occupied" };
+    }
+    if (occupied && occupied.resident_id === residentId) {
+      // Resident is already in that bed — nothing to do.
+      return {};
+    }
+  }
+
+  const today = new Date().toISOString().split("T")[0];
+
+  // Vacate any active beds for this resident.
+  const { error: vacateError } = await supabase
+    .from("bed_assignments")
+    .update({ end_date: today })
+    .eq("resident_id", residentId)
+    .is("end_date", null);
+
+  if (vacateError) return { error: vacateError.message };
+
+  const { data: resident } = await supabase
+    .from("residents")
+    .select("full_name")
+    .eq("id", residentId)
+    .single();
+
+  if (bedId) {
+    const { data, error } = await supabase
+      .from("bed_assignments")
+      .insert({
+        resident_id: residentId,
+        bed_id: bedId,
+        start_date: today,
+        assigned_by: user.id,
+      })
+      .select("id")
+      .single();
+
+    if (error) return { error: error.message };
+
+    const { data: bed } = await supabase
+      .from("beds")
+      .select("label, room:rooms(name)")
+      .eq("id", bedId)
+      .single();
+
+    await logActivity({
+      houseId,
+      residentId,
+      actorId: user.id,
+      eventType: "bed_assigned",
+      entityType: "bed_assignment",
+      entityId: data.id,
+      description: `${resident?.full_name} moved to ${(bed?.room as unknown as { name: string } | null)?.name} / ${bed?.label} by ${user.full_name}`,
+      metadata: { bed_id: bedId },
+    });
+
+    const { data: residentUser } = await supabase
+      .from("residents")
+      .select("user_id")
+      .eq("id", residentId)
+      .single();
+
+    if (residentUser?.user_id) {
+      const roomName = (bed?.room as unknown as { name: string } | null)?.name ?? "your room";
+      await sendNotification({
+        userId: residentUser.user_id,
+        type: "bed_changed",
+        title: "Bed Changed",
+        message: `You were moved to ${roomName} / ${bed?.label ?? "a bed"}.`,
+        actionUrl: `/houses/${houseId}`,
+        entityType: "bed_assignment",
+        entityId: data.id,
+      });
+    }
+  } else {
+    await logActivity({
+      houseId,
+      residentId,
+      actorId: user.id,
+      eventType: "bed_vacated",
+      entityType: "resident",
+      entityId: residentId,
+      description: `${resident?.full_name} set to no specific bed (private room) by ${user.full_name}`,
+    });
+  }
 
   revalidatePath(`/houses/${houseId}`);
   revalidatePath(`/residents/${residentId}`);

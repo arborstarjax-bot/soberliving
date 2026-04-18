@@ -51,7 +51,9 @@ export default async function DashboardLayout({
     unreadNotificationCount = count ?? 0;
   }
 
-  // Check if resident has an active "no_leave" restriction to hide Leave Requests nav
+  // Hide the Overnight Request nav link from residents with an
+  // active no_leave or no_overnight restriction — they can't leave
+  // the house overnight so the whole flow is off-limits.
   let hasNoLeaveRestriction = false;
   if (user.role === "resident") {
     const supabase = await createClient();
@@ -68,7 +70,7 @@ export default async function DashboardLayout({
         .select("id")
         .eq("resident_id", myResident.id)
         .eq("is_active", true)
-        .in("restriction_type", ["no_leave", "house_commitment"])
+        .in("restriction_type", ["no_leave", "no_overnight", "house_commitment"])
         .limit(1)
         .maybeSingle();
       hasNoLeaveRestriction = !!noLeave;
@@ -76,10 +78,23 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    // h-dvh (dynamic viewport height) instead of h-screen so the shell
+    // tracks mobile browser chrome (address bar collapse, keyboard
+    // open). 100vh on iOS Safari is locked to the tallest possible
+    // height which makes the bottom of the app hide behind the URL bar.
+    //
+    // flex-col on mobile so the Sidebar's mobile top bar (first child)
+    // spans the full width above <main>. lg:flex-row puts the desktop
+    // sidebar on the left of <main> at lg+. Without flex-col on
+    // mobile the top bar would be treated as a narrow left-column
+    // flex item instead of a full-width sticky header.
+    <div className="flex flex-col lg:flex-row h-dvh overflow-hidden">
       <Sidebar role={user.role} userName={user.full_name} hasNoLeaveRestriction={hasNoLeaveRestriction} unreadNotificationCount={unreadNotificationCount} />
-      <main className="flex-1 overflow-y-auto">
-        <div className="container mx-auto p-4 lg:p-6 max-w-7xl">
+      <main className="flex-1 overflow-y-auto min-w-0">
+        {/* Safe-area insets so the main scroll region respects the
+            iPhone notch, Dynamic Island, and home-indicator rail. No
+            visual change on desktop — the env() values resolve to 0. */}
+        <div className="container mx-auto p-4 lg:p-6 max-w-7xl pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] lg:pt-[max(1.5rem,env(safe-area-inset-top))] lg:pb-[max(1.5rem,env(safe-area-inset-bottom))]">
           {children}
         </div>
       </main>

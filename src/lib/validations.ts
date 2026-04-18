@@ -1,5 +1,19 @@
 import { z } from "zod";
 
+// Shared refine for a sobriety_date string value. Accepts empty/unset;
+// rejects any date strictly in the future (compared to today in the
+// server's local time). Used by every entry point that writes
+// residents.sobriety_date so a future date can never land in the DB.
+function notFutureDate(val: string | null | undefined): boolean {
+  if (!val) return true;
+  const entered = new Date(val);
+  if (isNaN(entered.getTime())) return true; // let other checks handle bad format
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  return entered.getTime() <= today.getTime();
+}
+const FUTURE_DATE_ERROR = "Sobriety date cannot be in the future";
+
 // --- Houses ---
 
 export const createHouseSchema = z.object({
@@ -50,7 +64,10 @@ export const createResidentSchema = z.object({
   emergency_contact_name: z.string().min(1, "Emergency contact name is required"),
   emergency_contact_phone: z.string().min(1, "Emergency contact phone is required"),
   emergency_contact_relationship: z.string().optional(),
-  sobriety_date: z.string().optional(),
+  sobriety_date: z
+    .string()
+    .optional()
+    .refine(notFutureDate, { message: FUTURE_DATE_ERROR }),
   move_in_date: z.string().min(1, "Move-in date is required"),
   notes: z.string().optional(),
 });
@@ -63,8 +80,12 @@ export const updateResidentSchema = z.object({
   emergency_contact_name: z.string().nullish(),
   emergency_contact_phone: z.string().nullish(),
   emergency_contact_relationship: z.string().nullish(),
-  sobriety_date: z.string().nullish(),
+  sobriety_date: z
+    .string()
+    .nullish()
+    .refine(notFutureDate, { message: FUTURE_DATE_ERROR }),
   move_in_date: z.string().optional(),
+  move_out_date: z.string().nullish(),
   notes: z.string().nullish(),
 });
 
@@ -118,11 +139,22 @@ export const createChoreSchema = z.object({
 
 export const updateChoreSchema = z.object({
   name: z.string().min(1, "Chore name is required").max(200),
+  days_of_week: z.array(dayOfWeekEnum).min(1, "Select at least one day"),
+  cycle_weeks: z.coerce.number().int().min(1).max(4),
 });
 
 export const createChoreTaskSchema = z.object({
   chore_id: z.string().uuid(),
   description: z.string().min(1, "Task description is required").max(500),
+});
+
+export const updateChoreTaskSchema = z.object({
+  description: z.string().min(1, "Task description is required").max(500),
+});
+
+export const setChoreRoomExclusionsSchema = z.object({
+  chore_id: z.string().uuid(),
+  room_ids: z.array(z.string().uuid()),
 });
 
 export const createRotationSchema = z.object({
@@ -191,7 +223,16 @@ export const createPaymentSchema = z.object({
   amount: z.coerce.number().positive("Amount must be greater than 0"),
   payment_type: z.enum(["rent", "deposit", "fee", "other"]),
   payment_method: z.enum(["cash", "check", "money_order", "venmo", "zelle", "other"]).optional(),
-  status: z.enum(["completed", "pending"]).default("completed"),
+  // status is always "completed" on insert now — no more "pending"
+  // state since there's no late-fee / auto-reconciliation workflow.
+  // Admins can void a completed payment from the list row.
+  charge_id: z.string().uuid().optional(),
+  // Optional commitment hook used by the "Pay Upcoming Rent" flow.
+  // When no charge_id is provided but commitment_id is, the server
+  // materializes the next rent cycle's charge for that commitment on
+  // the fly and applies the payment to it. Lets staff collect rent
+  // before the scheduled due day without pre-opening the whole year.
+  commitment_id: z.string().uuid().optional(),
   period_start: z.string().optional(),
   period_end: z.string().optional(),
   due_date: z.string().optional(),
@@ -201,6 +242,11 @@ export const createPaymentSchema = z.object({
 
 export const voidPaymentSchema = z.object({
   payment_id: z.string().uuid(),
+  reason: z.string().trim().min(1, "Reason is required when voiding a payment"),
+});
+
+export const deletePaymentSchema = z.object({
+  payment_id: z.string().uuid(),
 });
 
 // --- Rent Config ---
@@ -209,8 +255,6 @@ export const upsertRentConfigSchema = z.object({
   house_id: z.string().uuid(),
   monthly_amount: z.coerce.number().positive("Monthly amount must be greater than 0"),
   due_day_of_month: z.coerce.number().int().min(1).max(28, "Due day must be between 1 and 28"),
-  late_fee: z.coerce.number().min(0, "Late fee cannot be negative").default(0),
-  grace_period_days: z.coerce.number().int().min(0, "Grace period cannot be negative").default(0),
 });
 
 // --- Demerits ---
@@ -219,6 +263,15 @@ export const createDemeritSchema = z.object({
   resident_id: z.string().uuid("Resident is required"),
   house_id: z.string().uuid("House is required"),
   points: z.coerce.number().int().min(1).max(10).default(1),
+  reason: z.string().min(1, "Reason is required"),
+  category: z.string().optional(),
+});
+
+// --- Warnings (no points; documentation + notification only) ---
+
+export const createWarningSchema = z.object({
+  resident_id: z.string().uuid("Resident is required"),
+  house_id: z.string().uuid("House is required"),
   reason: z.string().min(1, "Reason is required"),
   category: z.string().optional(),
 });

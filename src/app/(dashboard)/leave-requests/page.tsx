@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CreateLeaveRequestDialog } from "./create-leave-request-dialog";
 import { LeaveReviewActions } from "./leave-review-actions";
+import { formatDateOnly } from "@/lib/timezone";
 
 function statusLabel(status: string) {
   switch (status) {
@@ -45,19 +46,31 @@ export default async function LeaveRequestsPage() {
     userResidentId = myResident?.id;
   }
 
+  // Leave requests and the residents list (for the create dialog) are
+  // independent of one another once we know the viewer's resident id.
+  // Build both queries and fire them in a single Promise.all.
   let query = supabase
     .from("leave_requests")
     .select("*, resident:residents!leave_requests_resident_id_fkey(id, full_name, house_id, user_id), covering_resident:residents!leave_requests_covering_resident_id_fkey(id, full_name, user_id)")
     .order("created_at", { ascending: false });
 
   if (user.role === "resident") {
-    // Residents see requests they made OR requests where they are the covering resident
     if (userResidentId) {
       query = query.or(`resident_id.eq.${userResidentId},covering_resident_id.eq.${userResidentId}`);
     }
   }
 
-  const { data: allRequests } = await query;
+  let residentsQuery = supabase
+    .from("residents")
+    .select("id, full_name, house_id")
+    .eq("status", "active")
+    .order("full_name");
+  if (houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
+
+  const [
+    { data: allRequests },
+    { data: residents },
+  ] = await Promise.all([query, residentsQuery]);
 
   let requests = allRequests ?? [];
   if (houseFilter && user.role !== "resident") {
@@ -75,20 +88,11 @@ export default async function LeaveRequestsPage() {
     (r) => r.status === "rejected" || r.status === "returned"
   );
 
-  // Get residents for the create dialog
-  let residentsQuery = supabase
-    .from("residents")
-    .select("id, full_name, house_id")
-    .eq("status", "active")
-    .order("full_name");
-  if (houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
-  const { data: residents } = await residentsQuery;
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Leave Requests</h1>
+          <h1 className="text-2xl font-bold">Overnight Requests</h1>
           <p className="text-muted-foreground">
             {pendingAll.length} pending · Multi-step approval
           </p>
@@ -104,13 +108,37 @@ export default async function LeaveRequestsPage() {
       <Tabs defaultValue="pending">
         <TabsList>
           <TabsTrigger value="pending">
-            Pending ({pendingAll.length})
+            Pending
+            {pendingAll.length > 0 && (
+              <Badge
+                variant="default"
+                className="ml-1.5 text-[10px] px-1.5 py-0"
+              >
+                {pendingAll.length}
+              </Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="approved">
-            Approved ({approved.length})
+            Approved
+            {approved.length > 0 && (
+              <Badge
+                variant="secondary"
+                className="ml-1.5 text-[10px] px-1.5 py-0"
+              >
+                {approved.length}
+              </Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="history">
-            History ({others.length})
+            History
+            {others.length > 0 && (
+              <Badge
+                variant="secondary"
+                className="ml-1.5 text-[10px] px-1.5 py-0"
+              >
+                {others.length}
+              </Badge>
+            )}
           </TabsTrigger>
         </TabsList>
 
@@ -127,8 +155,8 @@ export default async function LeaveRequestsPage() {
                         <div>
                           <p className="font-medium">{resident?.full_name}</p>
                           <p className="text-sm text-muted-foreground">
-                            {new Date(lr.departure_date).toLocaleDateString()} →{" "}
-                            {new Date(lr.expected_return_date).toLocaleDateString()}
+                            {formatDateOnly(lr.departure_date)} →{" "}
+                            {formatDateOnly(lr.expected_return_date)}
                           </p>
                           {lr.reason_for_pass && (
                             <p className="text-xs text-muted-foreground mt-1">
@@ -200,8 +228,8 @@ export default async function LeaveRequestsPage() {
                       <div>
                         <p className="font-medium">{resident?.full_name}</p>
                         <p className="text-sm text-muted-foreground">
-                          {new Date(lr.departure_date).toLocaleDateString()} →{" "}
-                          {new Date(lr.expected_return_date).toLocaleDateString()}
+                          {formatDateOnly(lr.departure_date)} →{" "}
+                          {formatDateOnly(lr.expected_return_date)}
                         </p>
                       </div>
                       <LeaveReviewActions
@@ -233,8 +261,8 @@ export default async function LeaveRequestsPage() {
                       <div>
                         <p className="font-medium">{resident?.full_name}</p>
                         <p className="text-sm text-muted-foreground">
-                          {new Date(lr.departure_date).toLocaleDateString()} →{" "}
-                          {new Date(lr.expected_return_date).toLocaleDateString()}
+                          {formatDateOnly(lr.departure_date)} →{" "}
+                          {formatDateOnly(lr.expected_return_date)}
                         </p>
                         {lr.denial_note && (
                           <p className="text-xs text-destructive mt-1">

@@ -5,13 +5,20 @@ import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { calculateMilestones, getDaysSober } from "@/lib/milestones";
+import {
+  calculateMilestones,
+  getDaysSober,
+  isSobrietyDateFuture,
+} from "@/lib/milestones";
+import { formatDateOnly } from "@/lib/timezone";
 import { ResidentTimeline } from "./timeline";
 import { ResidentNotes } from "./notes";
 import { ForcePhotoToggle } from "./force-photo-toggle";
 import { EditResidentForm } from "./edit-resident-form";
 import { DischargeDialog } from "./discharge-dialog";
+import { ChangeBedDialog, type BedOption } from "./change-bed-dialog";
 import { DocumentsList } from "@/components/documents-list";
+import { ResidentPaymentsPanel } from "./payments-panel";
 
 export default async function ResidentDetailPage(
   props: PageProps<"/residents/[id]">
@@ -43,13 +50,16 @@ export default async function ResidentDetailPage(
     .eq("resident_id", id)
     .order("start_date", { ascending: false });
 
-  // Chore rotation assignments
-  const { data: choreAssignments } = await supabase
+  // Chore rotation assignments — only current cycles. Past rotations
+  // are noise in the resident's profile; the /chores calendar is the
+  // place to go back through history.
+  const { data: choreAssignmentsRaw } = await supabase
     .from("chore_rotation_assignments")
-    .select("*, chore:chores(name), rotation:chore_rotations(cycle_start_date, cycle_end_date, is_current), chore_signoffs(*)")
+    .select("*, chore:chores(name), rotation:chore_rotations!inner(cycle_start_date, cycle_end_date, is_current), chore_signoffs(*)")
     .eq("resident_id", id)
-    .order("created_at", { ascending: false })
-    .limit(20);
+    .eq("rotation.is_current", true)
+    .order("created_at", { ascending: false });
+  const choreAssignments = choreAssignmentsRaw ?? [];
 
   // Incidents
   const { data: incidents } = await supabase
@@ -64,6 +74,95 @@ export default async function ResidentDetailPage(
     .select("*")
     .eq("resident_id", id)
     .order("created_at", { ascending: false });
+
+  // Active commitment — source of truth for payment terms (rent,
+  // admin fee, due day). Pulled first so we can backfill any missing
+  // charges BEFORE we read them, otherwise the first page load shows
+  // "No open charges" until a second refresh.
+  const { data: activeCommitment } = await supabase
+    .from("house_commitments")
+    .select(
+      "id, rent_amount, admin_fee, commitment_start_date, status, pdf_storage_path"
+    )
+    .eq("resident_id", id)
+    .eq("status", "active")
+    .order("commitment_start_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  // Pending payment-terms amendment awaiting resident signature. Shown
+  // as a callout on the Payment Terms card so admins don't propose a
+  // second amendment while one is in flight (the DB unique index
+  // prevents it, but the callout gives them a clearer reason).
+  const { data: pendingAmendment } = resident.user_id
+    ? await supabase
+        .from("house_commitments")
+        .select(
+          "id, rent_amount, admin_fee, effective_date, amendment_reason, created_at, parent_commitment_id"
+        )
+        .eq("user_id", resident.user_id)
+        .eq("status", "pending_resident_signature")
+        .not("parent_commitment_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    : { data: null };
+
+  // Pending INITIAL commitment (never signed). Distinct from an
+  // amendment — parent_commitment_id is null. Shows up when the admin
+  // ran intake review but the resident hasn't signed yet. Surfaces an
+  // Edit/Resend/Mark Complete control set so staff don't have to
+  // bounce back to Intake Review.
+  const { data: pendingInitialCommitment } = resident.user_id
+    ? await supabase
+        .from("house_commitments")
+        .select(
+          "id, rent_amount, admin_fee, payment_frequency, commitment_start_date, commitment_term, rent_due_date, notes, created_at"
+        )
+        .eq("user_id", resident.user_id)
+        .eq("status", "pending_resident_signature")
+        .is("parent_commitment_id", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    : { data: null };
+
+  // Backfill-on-view: open any missing admin_fee / rent charges for
+  // this commitment. Residents activated before the intake-review
+  // opener was wired up have commitments but zero charges; this
+  // lazily seeds them the first time an admin opens their profile.
+  // Idempotent — the unique index blocks duplicates.
+  if (activeCommitment?.id) {
+    try {
+      const { openAllChargesForCommitment } = await import(
+        "@/lib/payments/charges"
+      );
+      await openAllChargesForCommitment(activeCommitment.id as string);
+    } catch (e) {
+      console.error("Charge backfill failed on resident detail load", e);
+    }
+  }
+
+  // Open charges + recent payments for this resident. Pulled here so
+  // the Payments tab and the "Next Due" header tile on this page both
+  // render off the same data without a second round trip.
+  const { data: residentOpenCharges } = await supabase
+    .from("payment_charges")
+    .select(
+      "id, charge_type, amount, paid_amount, due_date, period_start, period_end, status"
+    )
+    .eq("resident_id", id)
+    .in("status", ["open", "partial"])
+    .order("due_date", { ascending: true });
+
+  const { data: residentRecentPayments } = await supabase
+    .from("payments")
+    .select(
+      "id, amount, payment_type, payment_method, paid_at, status, receipt_number, receipt_storage_path, note"
+    )
+    .eq("resident_id", id)
+    .order("paid_at", { ascending: false })
+    .limit(100);
 
   // Notes (staff only)
   const { data: notes } = await supabase
@@ -80,13 +179,14 @@ export default async function ResidentDetailPage(
     .eq("is_active", true)
     .order("created_at", { ascending: false });
 
-  // Activity log
+  // Activity log — pull a large window; the client Timeline pages
+  // through this in chunks of 20.
   const { data: activity } = await supabase
     .from("activity_log")
     .select("*")
     .eq("resident_id", id)
     .order("created_at", { ascending: false })
-    .limit(50);
+    .limit(500);
 
   // Documents (linked via user_id)
   const { data: documents } = resident.user_id
@@ -132,6 +232,58 @@ export default async function ResidentDetailPage(
   const isStaff = user.role === "admin" || user.role === "manager";
   const canEdit = user.role === "admin" || (user.role === "manager" && canAccessHouse(user, resident.house_id));
 
+  // Beds in resident's house for the Change Bed dialog
+  let bedOptions: BedOption[] = [];
+  if (canEdit && resident.status === "active") {
+    const activeBedIds = new Set(activeBeds.map((ba) => ba.bed_id));
+    const { data: houseBeds } = await supabase
+      .from("beds")
+      .select(
+        "id, label, is_active, room:rooms!inner(name, house_id), bed_assignments(id, end_date)"
+      )
+      .eq("room.house_id", resident.house_id)
+      .eq("is_active", true);
+    bedOptions = ((houseBeds ?? []) as unknown as {
+      id: string;
+      label: string;
+      room: { name: string } | null;
+      bed_assignments: { end_date: string | null }[];
+    }[])
+      .map((b) => ({
+        id: b.id,
+        label: b.label,
+        roomName: b.room?.name ?? "",
+        isOccupied: (b.bed_assignments ?? []).some((ba) => ba.end_date === null),
+        isCurrent: activeBedIds.has(b.id),
+      }))
+      .sort(
+        (a, b) =>
+          a.roomName.localeCompare(b.roomName) || a.label.localeCompare(b.label)
+      );
+  }
+
+  const currentBedLabel =
+    activeBeds.length > 0
+      ? activeBeds
+          .map(
+            (ba) =>
+              `${(ba.bed as { room: { name: string } })?.room?.name} — ${(ba.bed as { label: string })?.label}`
+          )
+          .join(", ")
+      : null;
+
+  // Outstanding balance = open/partial charges whose due date is today
+  // or earlier. Future-dated charges (e.g. an existing-tenant first
+  // rent scheduled for next month) are "upcoming", not outstanding.
+  const todayIsoStr = new Date().toISOString().split("T")[0];
+  const outstandingTotal = (residentOpenCharges ?? [])
+    .filter((c) => (c.due_date as string) <= todayIsoStr)
+    .reduce((s, c) => s + (Number(c.amount) - Number(c.paid_amount)), 0);
+  const upcomingCharges = (residentOpenCharges ?? []).filter(
+    (c) => (c.due_date as string) > todayIsoStr
+  );
+  const nextUpcoming = upcomingCharges[0] ?? null;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -155,6 +307,7 @@ export default async function ResidentDetailPage(
                 date_of_birth: resident.date_of_birth ?? null,
                 sobriety_date: resident.sobriety_date ?? null,
                 move_in_date: resident.move_in_date,
+                move_out_date: resident.move_out_date ?? null,
                 emergency_contact_name: resident.emergency_contact_name ?? null,
                 emergency_contact_phone: resident.emergency_contact_phone ?? null,
                 emergency_contact_relationship: resident.emergency_contact_relationship ?? null,
@@ -176,13 +329,54 @@ export default async function ResidentDetailPage(
         </div>
       </div>
 
+      {/* Outstanding balance — prominent at the top so staff see it
+          before digging into the Payments tab. Shown on every active
+          resident, including $0.00 cases so it's not visually jumpy. */}
+      {resident.status === "active" && (
+        <Card
+          className={
+            outstandingTotal > 0
+              ? "border-amber-200 bg-amber-50"
+              : "border-green-200 bg-green-50"
+          }
+        >
+          <CardContent className="py-4 flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                Outstanding Balance
+              </p>
+              <p
+                className={`text-2xl font-bold ${
+                  outstandingTotal > 0 ? "text-amber-900" : "text-green-900"
+                }`}
+              >
+                ${outstandingTotal.toFixed(2)}
+              </p>
+              {nextUpcoming && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Next charge: $
+                  {Number(nextUpcoming.amount).toFixed(2)} due{" "}
+                  {formatDateOnly(nextUpcoming.due_date as string)}
+                </p>
+              )}
+            </div>
+            <a
+              href="#payments"
+              className="text-xs underline text-muted-foreground hover:text-foreground"
+            >
+              View all charges →
+            </a>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Quick stats */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Room / Bed</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-2">
             {activeBeds.length > 0 ? (
               activeBeds.map((ba) => (
                 <p key={ba.id} className="text-sm">
@@ -191,7 +385,17 @@ export default async function ResidentDetailPage(
                 </p>
               ))
             ) : (
-              <p className="text-sm text-muted-foreground">Unassigned</p>
+              <p className="text-sm text-muted-foreground">
+                No specific bed assigned
+              </p>
+            )}
+            {canEdit && resident.status === "active" && (
+              <ChangeBedDialog
+                residentId={id}
+                houseId={resident.house_id}
+                beds={bedOptions}
+                currentBedLabel={currentBedLabel}
+              />
             )}
           </CardContent>
         </Card>
@@ -202,7 +406,7 @@ export default async function ResidentDetailPage(
           </CardHeader>
           <CardContent>
             <p className="text-sm">
-              {new Date(resident.move_in_date).toLocaleDateString()}
+              {formatDateOnly(resident.move_in_date)}
             </p>
           </CardContent>
         </Card>
@@ -218,8 +422,9 @@ export default async function ResidentDetailPage(
                   {getDaysSober(resident.sobriety_date)} days
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Since{" "}
-                  {new Date(resident.sobriety_date).toLocaleDateString()}
+                  {isSobrietyDateFuture(resident.sobriety_date)
+                    ? `Starts ${formatDateOnly(resident.sobriety_date)}`
+                    : `Since ${formatDateOnly(resident.sobriety_date)}`}
                 </p>
               </div>
             ) : (
@@ -277,6 +482,9 @@ export default async function ResidentDetailPage(
           <TabsTrigger value="leave">
             Leave ({leaveRequests?.length ?? 0})
           </TabsTrigger>
+          <TabsTrigger value="payments">
+            Payments ({(residentOpenCharges ?? []).length})
+          </TabsTrigger>
           {isStaff && (
             <TabsTrigger value="notes">
               Notes ({notes?.length ?? 0})
@@ -309,7 +517,7 @@ export default async function ResidentDetailPage(
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {rotation
-                            ? `${new Date(rotation.cycle_start_date).toLocaleDateString()} — ${new Date(rotation.cycle_end_date).toLocaleDateString()}`
+                            ? `${formatDateOnly(rotation.cycle_start_date)} — ${formatDateOnly(rotation.cycle_end_date)}`
                             : ""}
                           {total > 0 && ` · ${approved}/${total} signed off`}
                         </p>
@@ -351,7 +559,7 @@ export default async function ResidentDetailPage(
                         {inc.severity}
                       </Badge>
                       <span className="text-xs text-muted-foreground">
-                        {new Date(inc.occurred_at).toLocaleDateString()}
+                        {formatDateOnly(inc.occurred_at)}
                       </span>
                     </div>
                     <p className="text-sm mt-1">{inc.description}</p>
@@ -371,6 +579,88 @@ export default async function ResidentDetailPage(
           )}
         </TabsContent>
 
+        <TabsContent value="payments" className="mt-4">
+          <ResidentPaymentsPanel
+            openCharges={residentOpenCharges ?? []}
+            recentPayments={residentRecentPayments ?? []}
+            canVoid={user.role === "admin"}
+            terms={
+              activeCommitment
+                ? {
+                    commitment_id: activeCommitment.id as string,
+                    rent_amount: Number(activeCommitment.rent_amount ?? 0),
+                    admin_fee:
+                      activeCommitment.admin_fee !== null &&
+                      activeCommitment.admin_fee !== undefined
+                        ? Number(activeCommitment.admin_fee)
+                        : null,
+                    commitment_start_date:
+                      activeCommitment.commitment_start_date as string,
+                    pdf_storage_path:
+                      (activeCommitment.pdf_storage_path as string | null) ??
+                      null,
+                  }
+                : null
+            }
+            isAdmin={user.role === "admin"}
+            residentUserId={resident.user_id ?? null}
+            residentName={resident.full_name ?? ""}
+            residentId={resident.id as string}
+            houseId={(resident.house_id as string | null) ?? null}
+            canRecordPayment={canEdit}
+            pendingAmendment={
+              pendingAmendment
+                ? {
+                    id: pendingAmendment.id as string,
+                    rent_amount: Number(pendingAmendment.rent_amount ?? 0),
+                    admin_fee:
+                      pendingAmendment.admin_fee !== null &&
+                      pendingAmendment.admin_fee !== undefined
+                        ? Number(pendingAmendment.admin_fee)
+                        : null,
+                    effective_date:
+                      (pendingAmendment.effective_date as string | null) ??
+                      null,
+                    amendment_reason:
+                      (pendingAmendment.amendment_reason as string | null) ??
+                      null,
+                    created_at: pendingAmendment.created_at as string,
+                  }
+                : null
+            }
+            pendingInitialCommitment={
+              pendingInitialCommitment
+                ? {
+                    id: pendingInitialCommitment.id as string,
+                    paymentFrequency:
+                      ((pendingInitialCommitment.payment_frequency as
+                        | "weekly"
+                        | "monthly"
+                        | null) ?? "monthly"),
+                    rentAmount: Number(
+                      pendingInitialCommitment.rent_amount ?? 0
+                    ),
+                    adminFee: Number(
+                      pendingInitialCommitment.admin_fee ?? 0
+                    ),
+                    commitmentStartDate:
+                      (pendingInitialCommitment.commitment_start_date as string) ??
+                      "",
+                    commitmentTerm:
+                      (pendingInitialCommitment.commitment_term as string) ??
+                      "",
+                    rentDueDate:
+                      (pendingInitialCommitment.rent_due_date as
+                        | string
+                        | null) ?? null,
+                    notes:
+                      (pendingInitialCommitment.notes as string | null) ?? null,
+                  }
+                : null
+            }
+          />
+        </TabsContent>
+
         <TabsContent value="leave" className="mt-4">
           {leaveRequests && leaveRequests.length > 0 ? (
             <div className="space-y-2">
@@ -379,10 +669,8 @@ export default async function ResidentDetailPage(
                   <CardContent className="flex items-center justify-between py-3">
                     <div>
                       <p className="text-sm">
-                        {new Date(lr.departure_date).toLocaleDateString()} →{" "}
-                        {new Date(
-                          lr.expected_return_date
-                        ).toLocaleDateString()}
+                        {formatDateOnly(lr.departure_date)} →{" "}
+                        {formatDateOnly(lr.expected_return_date)}
                       </p>
                       {lr.reason && (
                         <p className="text-xs text-muted-foreground">
@@ -459,7 +747,7 @@ export default async function ResidentDetailPage(
                         </div>
                         <span className="text-xs text-muted-foreground whitespace-nowrap">
                           {r.end_date
-                            ? `Until ${new Date(r.end_date).toLocaleDateString()}`
+                            ? `Until ${formatDateOnly(r.end_date)}`
                             : "Indefinite"}
                         </span>
                       </div>
@@ -472,7 +760,7 @@ export default async function ResidentDetailPage(
                   <p className="text-sm text-muted-foreground">Date of Birth</p>
                   <p>
                     {resident.date_of_birth
-                      ? new Date(resident.date_of_birth).toLocaleDateString()
+                      ? formatDateOnly(resident.date_of_birth)
                       : "—"}
                   </p>
                 </div>
@@ -488,9 +776,7 @@ export default async function ResidentDetailPage(
                   <p className="text-sm text-muted-foreground">Move-out Date</p>
                   <p>
                     {resident.move_out_date
-                      ? new Date(
-                          resident.move_out_date
-                        ).toLocaleDateString()
+                      ? formatDateOnly(resident.move_out_date)
                       : "—"}
                   </p>
                 </div>
@@ -543,9 +829,9 @@ export default async function ResidentDetailPage(
                           / {(ba.bed as { label: string })?.label}
                         </span>
                         <span className="text-muted-foreground">
-                          {new Date(ba.start_date).toLocaleDateString()}
+                          {formatDateOnly(ba.start_date)}
                           {ba.end_date
-                            ? ` — ${new Date(ba.end_date).toLocaleDateString()}`
+                            ? ` — ${formatDateOnly(ba.end_date)}`
                             : " — Present"}
                         </span>
                       </div>

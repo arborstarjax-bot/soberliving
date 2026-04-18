@@ -8,6 +8,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { formatDateOnly } from "@/lib/timezone";
 
 interface Resident {
   id: string;
@@ -99,15 +100,12 @@ export function DisciplineBoard({
 
                 return (
                   <tr key={resident.id} className="border-b hover:bg-muted/30">
-                    <td className="py-2 px-3 font-medium whitespace-nowrap">
+                    <td className="py-2 px-3 font-medium whitespace-nowrap sticky left-0 z-10 bg-background">
                       {resident.full_name}
                     </td>
                     <td className="py-2 px-2 text-xs text-muted-foreground whitespace-nowrap">
                       {resident.move_in_date
-                        ? new Date(resident.move_in_date).toLocaleDateString(
-                            "en-US",
-                            { month: "short", day: "numeric" }
-                          )
+                        ? formatDateOnly(resident.move_in_date, { month: "short", day: "numeric" })
                         : "—"}
                     </td>
                     {Array.from({ length: columns }, (_, i) => {
@@ -123,7 +121,7 @@ export function DisciplineBoard({
                       const isWorkedOff = demerit.status === "worked_off";
                       const date = new Date(
                         demerit.created_at
-                      ).toLocaleDateString();
+                      ).toLocaleDateString("en-US", { timeZone: "America/New_York" });
 
                       return (
                         <td key={i} className="py-2 px-1 text-center">

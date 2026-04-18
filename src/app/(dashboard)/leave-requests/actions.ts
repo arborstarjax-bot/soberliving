@@ -1,22 +1,24 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
-import { sendNotification, sendNotificationToHouseManagers, sendNotificationToAdmins } from "@/lib/notifications";
+import { sendNotification, sendNotificationToHouseManagers, sendNotificationToAdmins, notifyHouseStaff } from "@/lib/notifications";
 import { z } from "zod";
 
 const createLeaveRequestSchema = z.object({
   resident_id: z.string().uuid(),
   covering_resident_id: z.string().uuid("You must select a covering resident from your house"),
-  departure_date: z.string().min(1, "Departure date is required"),
-  expected_return_date: z.string().min(1, "Expected return date is required"),
+  // Leaving / returning are the only date inputs the user fills out now.
+  // The date-only `departure_date` / `expected_return_date` columns on the
+  // DB are still populated, but we derive them from these datetimes so
+  // existing list views and activity descriptions keep rendering.
+  leaving_datetime: z.string().min(1, "Leaving date/time is required"),
+  returning_datetime: z.string().min(1, "Returning date/time is required"),
   reason: z.string().optional(),
   reason_for_pass: z.string().optional(),
-  leaving_datetime: z.string().optional(),
-  returning_datetime: z.string().optional(),
   transportation: z.string().optional(),
   companion: z.string().optional(),
   destination_address: z.string().optional(),
@@ -30,12 +32,10 @@ export async function createLeaveRequest(
   const parsed = createLeaveRequestSchema.safeParse({
     resident_id: formData.get("resident_id"),
     covering_resident_id: formData.get("covering_resident_id"),
-    departure_date: formData.get("departure_date"),
-    expected_return_date: formData.get("expected_return_date"),
+    leaving_datetime: formData.get("leaving_datetime"),
+    returning_datetime: formData.get("returning_datetime"),
     reason: formData.get("reason") || undefined,
     reason_for_pass: formData.get("reason_for_pass") || undefined,
-    leaving_datetime: formData.get("leaving_datetime") || undefined,
-    returning_datetime: formData.get("returning_datetime") || undefined,
     transportation: formData.get("transportation") || undefined,
     companion: formData.get("companion") || undefined,
     destination_address: formData.get("destination_address") || undefined,
@@ -85,18 +85,25 @@ export async function createLeaveRequest(
     return { error: "Not authorized" };
   }
 
+  // Derive the date-only columns from the datetimes so the rest of the
+  // app (list views, activity log, notifications) keeps working without
+  // schema changes. `datetime-local` inputs arrive as "YYYY-MM-DDTHH:MM"
+  // so slicing the first 10 chars gives the YYYY-MM-DD we want.
+  const departureDate = parsed.data.leaving_datetime.slice(0, 10);
+  const expectedReturnDate = parsed.data.returning_datetime.slice(0, 10);
+
   const { data, error } = await supabase
     .from("leave_requests")
     .insert({
       resident_id: parsed.data.resident_id,
       covering_resident_id: parsed.data.covering_resident_id,
       requested_by: user.id,
-      departure_date: parsed.data.departure_date,
-      expected_return_date: parsed.data.expected_return_date,
+      departure_date: departureDate,
+      expected_return_date: expectedReturnDate,
       reason: parsed.data.reason ?? null,
       reason_for_pass: parsed.data.reason_for_pass ?? null,
-      leaving_datetime: parsed.data.leaving_datetime ?? null,
-      returning_datetime: parsed.data.returning_datetime ?? null,
+      leaving_datetime: parsed.data.leaving_datetime,
+      returning_datetime: parsed.data.returning_datetime,
       transportation: parsed.data.transportation ?? null,
       companion: parsed.data.companion ?? null,
       destination_address: parsed.data.destination_address ?? null,
@@ -114,7 +121,7 @@ export async function createLeaveRequest(
     eventType: "leave_requested",
     entityType: "leave_request",
     entityId: data.id,
-    description: `Leave requested for ${resident.full_name}: ${parsed.data.departure_date} to ${parsed.data.expected_return_date}. Cover: ${coverResident.full_name}`,
+    description: `Leave requested for ${resident.full_name}: ${departureDate} to ${expectedReturnDate}. Cover: ${coverResident.full_name}`,
   });
 
   // Notify covering resident
@@ -123,12 +130,29 @@ export async function createLeaveRequest(
       userId: coverResident.user_id,
       type: "cover_request",
       title: "Chore Cover Request",
-      message: `${resident.full_name} wants you to cover their chores from ${parsed.data.departure_date} to ${parsed.data.expected_return_date}`,
+      message: `${resident.full_name} wants you to cover their chores from ${departureDate} to ${expectedReturnDate}`,
       actionUrl: "/leave-requests",
       entityType: "leave_request",
       entityId: data.id,
     });
   }
+
+  // Notify admins + managers of this house that a new leave request was
+  // submitted. Manager approval still requires the covering resident to
+  // accept first, but staff get visibility from the moment it's created.
+  // Skip the requesting user in case they're also staff.
+  await notifyHouseStaff(
+    resident.house_id,
+    {
+      type: "leave_requested",
+      title: "New Leave Request",
+      message: `${resident.full_name} requested leave from ${departureDate} to ${expectedReturnDate}.`,
+      actionUrl: "/leave-requests",
+      entityType: "leave_request",
+      entityId: data.id,
+    },
+    { excludeUserId: user.id }
+  );
 
   revalidatePath("/leave-requests");
   return {};
@@ -136,9 +160,12 @@ export async function createLeaveRequest(
 
 export async function approveCoverRequest(requestId: string) {
   const user = await requireAuth();
-  const supabase = await createClient();
+  // RLS on leave_requests only lets the requester or staff read/update
+  // rows — the covering resident is neither, so we use the admin client
+  // and do the permission check ourselves.
+  const adminClient = createAdminClient();
 
-  const { data: request } = await supabase
+  const { data: request } = await adminClient
     .from("leave_requests")
     .select("*, resident:residents!leave_requests_resident_id_fkey(full_name, house_id), covering_resident:residents!leave_requests_covering_resident_id_fkey(user_id, full_name)")
     .eq("id", requestId)
@@ -159,7 +186,7 @@ export async function approveCoverRequest(requestId: string) {
     return { error: "Not authorized for this house" };
   }
 
-  const { error } = await supabase
+  const { error } = await adminClient
     .from("leave_requests")
     .update({
       status: "pending_manager",
@@ -197,9 +224,12 @@ export async function approveCoverRequest(requestId: string) {
 
 export async function denyCoverRequest(requestId: string, note?: string) {
   const user = await requireAuth();
-  const supabase = await createClient();
+  // Mirror approveCoverRequest: RLS on leave_requests only permits the
+  // requester or staff to read/update rows — the covering resident is
+  // neither, so use the admin client and enforce permission in code.
+  const adminClient = createAdminClient();
 
-  const { data: request } = await supabase
+  const { data: request } = await adminClient
     .from("leave_requests")
     .select("*, resident:residents!leave_requests_resident_id_fkey(full_name, house_id, user_id), covering_resident:residents!leave_requests_covering_resident_id_fkey(user_id)")
     .eq("id", requestId)
@@ -220,7 +250,7 @@ export async function denyCoverRequest(requestId: string, note?: string) {
     return { error: "Not authorized for this house" };
   }
 
-  const { error } = await supabase
+  const { error } = await adminClient
     .from("leave_requests")
     .update({
       status: "rejected",
@@ -392,18 +422,33 @@ export async function approveAdminRequest(requestId: string) {
     .single();
 
   if (!request) return { error: "Request not found" };
-  if (request.status !== "pending_admin") return { error: "Request is not pending admin approval" };
+  // Admin trumps manager: allow final approval at either the manager or
+  // admin stage. If the admin is short-circuiting the manager step, we
+  // still stamp the manager_approved_at fields to the admin so the
+  // approval timeline reads sanely.
+  if (request.status !== "pending_admin" && request.status !== "pending_manager") {
+    return { error: "Request cannot be approved from its current status" };
+  }
+
+  const nowIso = new Date().toISOString();
+  const skippedManager = request.status === "pending_manager";
+
+  const updates: Record<string, unknown> = {
+    status: "approved",
+    admin_approved_at: nowIso,
+    admin_approved_by: user.id,
+    reviewed_by: user.id,
+    reviewed_at: nowIso,
+    updated_at: nowIso,
+  };
+  if (skippedManager) {
+    updates.house_manager_approved_at = nowIso;
+    updates.house_manager_approved_by = user.id;
+  }
 
   const { error } = await supabase
     .from("leave_requests")
-    .update({
-      status: "approved",
-      admin_approved_at: new Date().toISOString(),
-      admin_approved_by: user.id,
-      reviewed_by: user.id,
-      reviewed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
+    .update(updates)
     .eq("id", requestId);
 
   if (error) return { error: error.message };
@@ -417,7 +462,9 @@ export async function approveAdminRequest(requestId: string) {
     eventType: "leave_approved",
     entityType: "leave_request",
     entityId: requestId,
-    description: `Leave request final approval by ${user.full_name} for ${resident?.full_name}`,
+    description:
+      `Leave request final approval by admin ${user.full_name} for ${resident?.full_name}` +
+      (skippedManager ? " (skipped manager review)" : ""),
   });
 
   if (resident?.user_id) {
@@ -449,7 +496,11 @@ export async function denyAdminRequest(requestId: string, note?: string) {
     .single();
 
   if (!request) return { error: "Request not found" };
-  if (request.status !== "pending_admin") return { error: "Request is not pending admin approval" };
+  // Mirror the admin-trumps-manager approval path: admins can deny at
+  // either the manager or admin stage.
+  if (request.status !== "pending_admin" && request.status !== "pending_manager") {
+    return { error: "Request cannot be denied from its current status" };
+  }
 
   const resident = request.resident as unknown as { full_name: string; house_id: string; user_id: string | null } | null;
 

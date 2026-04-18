@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Check, X, ImageIcon } from "lucide-react";
+import { formatDateOnly } from "@/lib/timezone";
 
 interface Signoff {
   id: string;
@@ -57,7 +58,7 @@ function SignoffReviewCard({ signoff }: { signoff: Signoff }) {
           <p className="font-medium">{ra?.chore?.name}</p>
           <p className="text-xs text-muted-foreground">
             {ra?.resident?.full_name} ·{" "}
-            {new Date(signoff.sign_off_date).toLocaleDateString()} ·{" "}
+            {formatDateOnly(signoff.sign_off_date)} ·{" "}
             <span className="capitalize">{signoff.day_of_week}</span> (Week{" "}
             {signoff.week_number})
           </p>

@@ -76,3 +76,47 @@ export async function sendNotificationToAdmins(
     }
   }
 }
+
+/**
+ * Fan a single notification out to every staff member who needs to know
+ * about a house-scoped event: all admins + all active managers of the
+ * given house. The set is deduplicated, so an admin who also happens to
+ * be a manager of that house only receives one copy.
+ *
+ * Optionally pass `excludeUserId` to skip the actor who triggered the
+ * event (avoids sending someone a notification about their own action).
+ * Pass `houseId = null` when no house is associated (e.g. an intake
+ * submission where the applicant has not yet picked a house) — only
+ * admins will be notified in that case.
+ */
+export async function notifyHouseStaff(
+  houseId: string | null,
+  params: Omit<SendNotificationParams, "userId">,
+  options?: { excludeUserId?: string | null }
+) {
+  const adminClient = createAdminClient();
+
+  const [adminsRes, managersRes] = await Promise.all([
+    adminClient.from("user_roles").select("user_id").eq("role", "admin"),
+    houseId
+      ? adminClient
+          .from("manager_house_assignments")
+          .select("user_id")
+          .eq("house_id", houseId)
+          .is("unassigned_at", null)
+      : Promise.resolve({ data: [] as { user_id: string }[] }),
+  ]);
+
+  const recipients = new Set<string>();
+  for (const a of adminsRes.data ?? []) {
+    recipients.add((a as { user_id: string }).user_id);
+  }
+  for (const m of (managersRes as { data: { user_id: string }[] | null }).data ?? []) {
+    recipients.add(m.user_id);
+  }
+  if (options?.excludeUserId) recipients.delete(options.excludeUserId);
+
+  for (const userId of recipients) {
+    await sendNotification({ ...params, userId });
+  }
+}
