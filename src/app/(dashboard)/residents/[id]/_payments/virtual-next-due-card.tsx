@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DollarSign, Calendar } from "lucide-react";
 import { RecordUpcomingRentDialog } from "@/app/(dashboard)/payments/record-upcoming-rent-dialog";
+import { dayOfMonthLocal } from "@/lib/local-date";
 import type { PaymentTerms } from "./types";
 import { formatMoney } from "./helpers";
 
@@ -27,8 +28,11 @@ export function VirtualNextDueCard({
   residentName: string;
   houseId: string;
 }) {
-  const start = new Date(terms.commitment_start_date);
-  const dayOfMonth = start.getDate();
+  // Pull day-of-month via dayOfMonthLocal — `new Date("2026-04-15")`
+  // parses as UTC midnight, which is the previous calendar day in US
+  // timezones, so `.getDate()` on a Postgres date-only string drifts.
+  // Matches the pattern used by the sibling PaymentTermsCard.
+  const dayOfMonth = dayOfMonthLocal(terms.commitment_start_date);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   // Start with this month's due day; if already past, roll forward
