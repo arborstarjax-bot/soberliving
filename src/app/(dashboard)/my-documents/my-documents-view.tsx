@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FileText, Download, Loader2 } from "lucide-react";
+import { FileText, Download, Eye, Loader2 } from "lucide-react";
 import { getDocumentUrl } from "@/app/(intake)/actions";
 
 interface DocumentRecord {
@@ -26,18 +26,41 @@ function formatBytes(bytes: number | null) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+type DocAction = "view" | "download";
+
 export function MyDocumentsView({ groups }: Props) {
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<
+    { id: string; action: DocAction } | null
+  >(null);
   const [isPending, startTransition] = useTransition();
 
-  function handleDownload(doc: DocumentRecord) {
-    setDownloadingId(doc.id);
+  function handleOpen(doc: DocumentRecord, action: DocAction) {
+    setPendingAction({ id: doc.id, action });
     startTransition(async () => {
       const result = await getDocumentUrl(doc.storage_path);
-      if (result.url) window.open(result.url, "_blank");
-      setDownloadingId(null);
+      if (result.url) {
+        if (action === "view") {
+          window.open(result.url, "_blank", "noopener");
+        } else {
+          // Force a file-save. `window.open` with a Supabase signed URL
+          // would just preview the PDF in the browser tab, so we route
+          // through a hidden anchor with the `download` attribute.
+          const a = document.createElement("a");
+          a.href = result.url;
+          a.download = doc.name || "document";
+          a.rel = "noopener";
+          a.target = "_blank";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        }
+      }
+      setPendingAction(null);
     });
   }
+
+  const busy = (id: string, action: DocAction) =>
+    isPending && pendingAction?.id === id && pendingAction.action === action;
 
   return (
     <div className="space-y-4">
@@ -57,23 +80,42 @@ export function MyDocumentsView({ groups }: Props) {
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{doc.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {new Date(doc.created_at).toLocaleDateString()} •{" "}
+                      {new Date(doc.created_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })} •{" "}
                       {formatBytes(doc.file_size)}
                     </p>
                   </div>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDownload(doc)}
-                  disabled={isPending && downloadingId === doc.id}
-                >
-                  {isPending && downloadingId === doc.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4" />
-                  )}
-                </Button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                    onClick={() => handleOpen(doc, "view")}
+                    disabled={busy(doc.id, "view")}
+                    aria-label={`View ${doc.name}`}
+                  >
+                    {busy(doc.id, "view") ? (
+                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Eye className="mr-1 h-3.5 w-3.5" />
+                    )}
+                    View
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    onClick={() => handleOpen(doc, "download")}
+                    disabled={busy(doc.id, "download")}
+                    aria-label={`Download ${doc.name}`}
+                  >
+                    {busy(doc.id, "download") ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
               </div>
             ))}
           </CardContent>

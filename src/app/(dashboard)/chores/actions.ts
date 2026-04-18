@@ -15,7 +15,7 @@ import {
   assignRotationChoreSchema,
 } from "@/lib/validations";
 import { addDays, format } from "date-fns";
-import { getHouseToday, getHouseYesterday } from "@/lib/timezone";
+import { getHouseToday, getHouseYesterday, DEFAULT_TIMEZONE } from "@/lib/timezone";
 import { sendNotification, sendNotificationToHouseManagers } from "@/lib/notifications";
 
 // --- Chore Templates ---
@@ -502,7 +502,7 @@ export async function assignRotationChore(
     .eq("id", rotation.house_id)
     .single();
   const todayStr = getHouseToday(
-    houseRow?.timezone ?? "America/Los_Angeles"
+    houseRow?.timezone ?? DEFAULT_TIMEZONE
   );
 
   // Check if this chore is already assigned in this rotation
@@ -757,7 +757,7 @@ export async function rotateSchedule(rotationId: string) {
     .eq("id", rotation.house_id)
     .single();
   const rotateTodayStr = getHouseToday(
-    rotateHouseRow?.timezone ?? "America/Los_Angeles"
+    rotateHouseRow?.timezone ?? DEFAULT_TIMEZONE
   );
 
   // Get current assignments with their chore and resident info
@@ -949,7 +949,7 @@ export async function markSignoffComplete(signoffId: string, photoUrl?: string) 
     .select("timezone")
     .eq("id", houseId)
     .single();
-  const tz = houseRow?.timezone ?? "America/Los_Angeles";
+  const tz = houseRow?.timezone ?? DEFAULT_TIMEZONE;
   const todayLocal = getHouseToday(tz);
   const yesterdayLocal = getHouseYesterday(tz);
 

@@ -61,7 +61,7 @@ function avgOf<T>(items: T[], read: (x: T) => number): number | null {
 }
 
 function fmtDate(s: string | null): string {
-  return s ? new Date(s).toLocaleDateString() : "—";
+  return s ? new Date(s).toLocaleDateString("en-US", { timeZone: "America/New_York" }) : "—";
 }
 
 export function StateOfHouseView({
@@ -264,13 +264,39 @@ export function StateOfHouseView({
             )}
           </div>
         </div>
-        <NamedDateList
-          title={`New residents in period (${data.census.newResidents.length})`}
+      </ExpandableSection>
+
+      {/* New Residents — dedicated section with count KPI + expandable list of
+          move-ins during the selected period. Mirrors the Occupancy & Census
+          card styling so the two read as a pair. */}
+      <ExpandableSection
+        title="New Residents"
+        description="Residents who moved in during the selected period. Expand to see names, move-in dates, and jump to their profile."
+        summary={
+          <div className="grid gap-3 sm:grid-cols-1">
+            <Stat
+              label="New move-ins"
+              value={data.census.newResidents.length}
+              sub={
+                data.census.newResidents.length === 0
+                  ? "None in this period"
+                  : `${data.census.newResidents.length} ${
+                      data.census.newResidents.length === 1
+                        ? "resident"
+                        : "residents"
+                    }`
+              }
+            />
+          </div>
+        }
+      >
+        <NamedResidentList
           items={data.census.newResidents.map((r) => ({
             id: r.id,
             name: r.full_name,
             date: r.move_in_date,
           }))}
+          emptyText="No new residents in this period."
         />
       </ExpandableSection>
 
@@ -635,26 +661,6 @@ export function StateOfHouseView({
 
 // ─── Layout primitives ─────────────────────────────────────────────
 
-function SectionCard({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">{title}</CardTitle>
-        {description && <CardDescription>{description}</CardDescription>}
-      </CardHeader>
-      <CardContent className="space-y-4">{children}</CardContent>
-    </Card>
-  );
-}
-
 function ExpandableSection({
   title,
   description,
@@ -749,34 +755,35 @@ function Stat({
   );
 }
 
-function NamedDateList({
-  title,
+function NamedResidentList({
   items,
+  emptyText,
 }: {
-  title: string;
   items: { id: string; name: string; date: string | null }[];
+  emptyText: string;
 }) {
+  if (items.length === 0) {
+    return <p className="text-sm text-muted-foreground">{emptyText}</p>;
+  }
   return (
-    <div className="space-y-2">
-      <h4 className="text-sm font-medium">{title}</h4>
-      {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">None</p>
-      ) : (
-        <ul className="space-y-1.5">
-          {items.map((it) => (
-            <li
-              key={it.id}
-              className="flex items-center justify-between rounded-md border bg-muted/20 px-3 py-2 text-sm"
-            >
-              <span className="font-medium">{it.name}</span>
-              <span className="text-xs text-muted-foreground whitespace-nowrap">
-                {fmtDate(it.date)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <ul className="space-y-1.5">
+      {items.map((it) => (
+        <li
+          key={it.id}
+          className="flex items-center justify-between gap-3 rounded-md border bg-muted/20 px-3 py-2 text-sm"
+        >
+          <Link
+            href={`/residents/${it.id}`}
+            className="font-medium hover:underline truncate"
+          >
+            {it.name}
+          </Link>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">
+            Moved in {fmtDate(it.date)}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

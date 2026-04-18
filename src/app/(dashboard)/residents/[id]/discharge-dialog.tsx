@@ -95,7 +95,7 @@ export function DischargeDialog({ residentId, status }: Props) {
             </span>
           </label>
           <div className="text-xs text-muted-foreground">
-            Discharge date: <span className="font-medium">{new Date().toLocaleDateString()}</span> (auto-stamped)
+            Discharge date: <span className="font-medium">{new Date().toLocaleDateString("en-US", { timeZone: "America/New_York" })}</span> (auto-stamped)
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>

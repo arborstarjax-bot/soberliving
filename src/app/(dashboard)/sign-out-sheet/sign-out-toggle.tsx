@@ -75,7 +75,7 @@ export function SignOutToggle({ residentId, residentName, openSignOut }: Props) 
             </p>
             <p className="mt-1 flex items-center gap-1.5 text-xs text-white/80">
               <Clock className="h-3 w-3 shrink-0" />
-              Since {new Date(openSignOut.time_out).toLocaleString(undefined, {
+              Since {new Date(openSignOut.time_out).toLocaleString(undefined, { timeZone: "America/New_York",
                 weekday: "short",
                 hour: "numeric",
                 minute: "2-digit",

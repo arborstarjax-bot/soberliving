@@ -355,7 +355,7 @@ export async function generateIntakePdf(
       color: rgb(0.6, 0.6, 0.6),
     });
     pages[i].drawText(
-      `Generated ${new Date().toLocaleDateString()} — Jax Sober Living`,
+      `Generated ${new Date().toLocaleDateString("en-US", { timeZone: "America/New_York" })} — Jax Sober Living`,
       {
         x: MARGIN,
         y: 20,

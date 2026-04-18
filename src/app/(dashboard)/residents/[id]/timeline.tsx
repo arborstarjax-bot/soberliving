@@ -43,7 +43,7 @@ export function ResidentTimeline({ activity }: Props) {
             <div className="flex-1 min-w-0">
               <p className="text-sm">{entry.description}</p>
               <p className="text-xs text-muted-foreground">
-                {new Date(entry.created_at).toLocaleString()}
+                {new Date(entry.created_at).toLocaleString("en-US", { timeZone: "America/New_York" })}
               </p>
             </div>
           </div>

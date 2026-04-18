@@ -55,7 +55,7 @@ function deriveRentDueDate(
   if (!y || !m || !d) return "";
   const dt = new Date(y, m - 1, d);
   if (frequency === "weekly") {
-    const weekday = dt.toLocaleDateString("en-US", { weekday: "long" });
+    const weekday = dt.toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "long" });
     return `Every ${weekday}`;
   }
   const ordinal = (n: number) => {

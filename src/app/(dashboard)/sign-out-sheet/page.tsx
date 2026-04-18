@@ -110,7 +110,7 @@ export default async function SignOutSheetPage() {
                     </p>
                     <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
                       <Clock className="h-3 w-3 shrink-0" />
-                      Out since {new Date(r.time_out).toLocaleString(undefined, {
+                      Out since {new Date(r.time_out).toLocaleString(undefined, { timeZone: "America/New_York",
                         month: "short",
                         day: "numeric",
                         hour: "numeric",
@@ -164,7 +164,7 @@ export default async function SignOutSheetPage() {
                     {r.destination}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    Out {new Date(r.time_out).toLocaleString(undefined, {
+                    Out {new Date(r.time_out).toLocaleString(undefined, { timeZone: "America/New_York",
                       month: "short",
                       day: "numeric",
                       hour: "numeric",
@@ -173,7 +173,7 @@ export default async function SignOutSheetPage() {
                     {r.time_in && (
                       <>
                         {" → In "}
-                        {new Date(r.time_in).toLocaleString(undefined, {
+                        {new Date(r.time_in).toLocaleString(undefined, { timeZone: "America/New_York",
                           month: "short",
                           day: "numeric",
                           hour: "numeric",

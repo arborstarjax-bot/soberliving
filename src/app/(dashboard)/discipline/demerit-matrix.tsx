@@ -242,7 +242,7 @@ export function DemeritMatrix({ houses, residents, demerits, userRole }: Props) 
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
-                Issued: {new Date(editingDemerit.created_at).toLocaleDateString()}
+                Issued: {new Date(editingDemerit.created_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
               </p>
 
               {isStaff ? (

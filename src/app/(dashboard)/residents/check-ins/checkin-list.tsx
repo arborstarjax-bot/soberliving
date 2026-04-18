@@ -72,7 +72,7 @@ export function CheckInList({ batches }: CheckInListProps) {
                   </CardTitle>
                   <p className="text-sm text-muted-foreground mt-1">
                     Sent by {batch.createdBy} on{" "}
-                    {new Date(batch.createdAt).toLocaleDateString("en-US", {
+                    {new Date(batch.createdAt).toLocaleDateString("en-US", { timeZone: "America/New_York",
                       month: "short",
                       day: "numeric",
                       year: "numeric",
@@ -134,7 +134,7 @@ function ResponseRow({
         <div className="flex items-center gap-2">
           {isCompleted && response.completedAt && (
             <span className="text-xs text-muted-foreground">
-              {new Date(response.completedAt).toLocaleDateString("en-US", {
+              {new Date(response.completedAt).toLocaleDateString("en-US", { timeZone: "America/New_York",
                 month: "short",
                 day: "numeric",
               })}

@@ -178,7 +178,7 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
               {managerNames.length > 0 ? managerNames.join(", ") : "—"}
             </dd>
             <dt className="font-medium text-foreground/70">Created</dt>
-            <dd>{new Date(house.created_at).toLocaleDateString()}</dd>
+            <dd>{new Date(house.created_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}</dd>
           </dl>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -263,7 +263,7 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
                         <p className="font-medium">{r.full_name}</p>
                         <p className="text-xs text-muted-foreground">
                           Moved in:{" "}
-                          {new Date(r.move_in_date).toLocaleDateString()}
+                          {new Date(r.move_in_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -326,7 +326,7 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
                   <div className="flex-1">
                     <p>{entry.description}</p>
                     <p className="text-xs text-muted-foreground">
-                      {new Date(entry.created_at).toLocaleString()}
+                      {new Date(entry.created_at).toLocaleString("en-US", { timeZone: "America/New_York" })}
                     </p>
                   </div>
                 </div>

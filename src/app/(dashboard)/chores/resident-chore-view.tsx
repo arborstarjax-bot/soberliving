@@ -111,11 +111,11 @@ export function ResidentChoreView({ rotations, userResidentId, forcePhoto }: Pro
                     <p className="text-sm text-muted-foreground">
                       {new Date(
                         rotation.cycle_start_date
-                      ).toLocaleDateString()}{" "}
+                      ).toLocaleDateString("en-US", { timeZone: "America/New_York" })}{" "}
                       —{" "}
                       {new Date(
                         rotation.cycle_end_date
-                      ).toLocaleDateString()}
+                      ).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                     </p>
                   </div>
                   <Badge variant="outline">

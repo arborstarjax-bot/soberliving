@@ -228,7 +228,7 @@ export function DemeritManager({
                                 </p>
                               )}
                               <p className="text-xs text-muted-foreground mt-1">
-                                {new Date(d.created_at).toLocaleDateString()}
+                                {new Date(d.created_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                               </p>
                             </>
                           )}
@@ -351,9 +351,9 @@ export function DemeritManager({
                             </p>
                           )}
                           <p className="text-xs text-muted-foreground mt-1">
-                            {new Date(d.created_at).toLocaleDateString()}
+                            {new Date(d.created_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                             {d.worked_off_at &&
-                              ` → ${new Date(d.worked_off_at).toLocaleDateString()}`}
+                              ` → ${new Date(d.worked_off_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`}
                           </p>
                         </div>
                         {userRole === "admin" && (

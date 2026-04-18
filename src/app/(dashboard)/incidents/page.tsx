@@ -94,7 +94,7 @@ export default async function IncidentsPage({ searchParams }: IncidentsPageProps
                     </span>
                   </div>
                   <span className="text-xs text-muted-foreground">
-                    {new Date(inc.occurred_at).toLocaleDateString()}
+                    {new Date(inc.occurred_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                   </span>
                 </div>
                 <p className="text-sm mt-1">{inc.description}</p>

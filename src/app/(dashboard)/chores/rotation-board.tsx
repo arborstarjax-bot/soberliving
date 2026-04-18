@@ -82,8 +82,8 @@ export function RotationBoard({
           <div>
             <CardTitle>{houseName}</CardTitle>
             <p className="text-sm text-muted-foreground">
-              {new Date(rotation.cycle_start_date).toLocaleDateString()} —{" "}
-              {new Date(rotation.cycle_end_date).toLocaleDateString()}
+              {new Date(rotation.cycle_start_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} —{" "}
+              {new Date(rotation.cycle_end_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
             </p>
           </div>
           <div className="flex items-center gap-2">

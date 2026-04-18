@@ -154,8 +154,8 @@ export default async function LeaveRequestsPage() {
                         <div>
                           <p className="font-medium">{resident?.full_name}</p>
                           <p className="text-sm text-muted-foreground">
-                            {new Date(lr.departure_date).toLocaleDateString()} →{" "}
-                            {new Date(lr.expected_return_date).toLocaleDateString()}
+                            {new Date(lr.departure_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} →{" "}
+                            {new Date(lr.expected_return_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                           </p>
                           {lr.reason_for_pass && (
                             <p className="text-xs text-muted-foreground mt-1">
@@ -227,8 +227,8 @@ export default async function LeaveRequestsPage() {
                       <div>
                         <p className="font-medium">{resident?.full_name}</p>
                         <p className="text-sm text-muted-foreground">
-                          {new Date(lr.departure_date).toLocaleDateString()} →{" "}
-                          {new Date(lr.expected_return_date).toLocaleDateString()}
+                          {new Date(lr.departure_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} →{" "}
+                          {new Date(lr.expected_return_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                         </p>
                       </div>
                       <LeaveReviewActions
@@ -260,8 +260,8 @@ export default async function LeaveRequestsPage() {
                       <div>
                         <p className="font-medium">{resident?.full_name}</p>
                         <p className="text-sm text-muted-foreground">
-                          {new Date(lr.departure_date).toLocaleDateString()} →{" "}
-                          {new Date(lr.expected_return_date).toLocaleDateString()}
+                          {new Date(lr.departure_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} →{" "}
+                          {new Date(lr.expected_return_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
                         </p>
                         {lr.denial_note && (
                           <p className="text-xs text-destructive mt-1">

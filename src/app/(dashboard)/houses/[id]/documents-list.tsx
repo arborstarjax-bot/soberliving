@@ -91,7 +91,7 @@ export function DocumentsList({
                       </p>
                     )}
                     <p className="text-xs text-muted-foreground mt-1">
-                      {new Date(doc.created_at).toLocaleDateString()} ·{" "}
+                      {new Date(doc.created_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })} ·{" "}
                       {formatSize(doc.size_bytes)}
                       {doc.uploader_name && <> · {doc.uploader_name}</>}
                     </p>

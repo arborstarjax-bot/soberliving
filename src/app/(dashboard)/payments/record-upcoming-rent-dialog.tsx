@@ -98,7 +98,7 @@ export function RecordUpcomingRentDialog({
             <DialogTitle>Pay Upcoming Rent</DialogTitle>
             <DialogDescription>
               {residentName} · Rent due{" "}
-              {new Date(nextDueDate).toLocaleDateString()} ·{" "}
+              {new Date(nextDueDate).toLocaleDateString("en-US", { timeZone: "America/New_York" })} ·{" "}
               {formatMoney(rentAmount)} billed
             </DialogDescription>
           </DialogHeader>
