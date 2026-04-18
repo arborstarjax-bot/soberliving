@@ -18,6 +18,12 @@ export default async function CheckInLayout({
     if (!user.commitment_signed || user.has_pending_commitment) {
       redirect("/sign-commitment");
     }
+    // Blockers are a higher-priority gate than check-ins — same model
+    // as the dashboard layout. Keeps the resident on /acknowledge
+    // until every active blocker targeted at them has been signed.
+    if (user.pending_blocker_id) {
+      redirect(`/acknowledge/${user.pending_blocker_id}`);
+    }
   }
 
   return (

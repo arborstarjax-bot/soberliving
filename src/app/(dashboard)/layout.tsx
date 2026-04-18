@@ -33,6 +33,15 @@ export default async function DashboardLayout({
     redirect("/sign-commitment");
   }
 
+  // Redirect residents with an outstanding blocker they haven't
+  // acknowledged yet. Blockers are admin/manager-authored messages
+  // that require a signed ack before the resident can proceed —
+  // same gating model as /sign-commitment. pending_blocker_id is
+  // FIFO (oldest-first) so multi-blocker scenarios resolve in order.
+  if (user.role === "resident" && user.pending_blocker_id) {
+    redirect(`/acknowledge/${user.pending_blocker_id}`);
+  }
+
   // Redirect ANY user who has a pending check-in (blocking task).
   // This covers admins/managers who are also residents.
   {

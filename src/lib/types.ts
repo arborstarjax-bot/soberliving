@@ -257,4 +257,37 @@ export interface SessionUser {
   // after they signed. Layouts use this to force residents into
   // /sign-commitment regardless of their commitment_signed flag.
   has_pending_commitment: boolean;
+  // ID of the oldest active blocker targeted at this resident that
+  // they haven't acknowledged yet, or null. Layouts use this to
+  // force residents into /acknowledge/[id] before they can do
+  // anything else. FIFO order so multiple pending blockers are
+  // resolved oldest-first.
+  pending_blocker_id: string | null;
+}
+
+// --- Blockers ---
+
+export type BlockerTargetType = "all" | "house" | "residents";
+
+export interface Blocker {
+  id: string;
+  title: string;
+  body: string;
+  attachment_paths: string[];
+  target_type: BlockerTargetType;
+  target_house_ids: string[];
+  target_user_ids: string[];
+  save_to_docs: boolean;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+}
+
+export interface BlockerAcknowledgment {
+  blocker_id: string;
+  user_id: string;
+  acknowledged_at: string;
+  signature: string;
+  document_id: string | null;
 }
