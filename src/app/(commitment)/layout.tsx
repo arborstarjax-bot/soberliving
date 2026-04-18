@@ -13,8 +13,18 @@ export default async function CommitmentLayout({
     redirect("/intake");
   }
 
-  // If already signed, go to dashboard
-  if (user.role === "resident" && user.commitment_signed) {
+  // If already signed AND there's no pending amendment awaiting this
+  // resident's signature, bounce back to the dashboard. The extra
+  // has_pending_commitment guard keeps residents on /sign-commitment
+  // when an admin has proposed an amendment after the initial
+  // commitment was signed (commitment_signed stays true in that case,
+  // so without this check the dashboard layout would loop them back
+  // here and this layout would bounce them to /dashboard immediately).
+  if (
+    user.role === "resident" &&
+    user.commitment_signed &&
+    !user.has_pending_commitment
+  ) {
     redirect("/dashboard");
   }
 

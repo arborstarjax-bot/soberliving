@@ -22,6 +22,17 @@ export default async function DashboardLayout({
     redirect("/sign-commitment");
   }
 
+  // Redirect residents who have a pending amendment awaiting
+  // their signature. commitment_signed stays true on the user row
+  // after the original commitment is signed, so without this check
+  // a resident whose admin just proposed a rent-change amendment
+  // could keep using the app and never see the updated agreement.
+  // requireAuth computes has_pending_commitment via a live query
+  // against house_commitments, so this is always source-of-truth.
+  if (user.role === "resident" && user.has_pending_commitment) {
+    redirect("/sign-commitment");
+  }
+
   // Redirect ANY user who has a pending check-in (blocking task).
   // This covers admins/managers who are also residents.
   {
