@@ -15,7 +15,12 @@ import { SupplyList, type SupplyItem } from "./supply-list";
 import { DocumentsList, type HouseDocument } from "./documents-list";
 import { StateOfHouseView } from "./state-of-house";
 import { loadStateOfHouseData, resolveRange } from "./state-of-house-data";
-import { formatDateOnly } from "@/lib/timezone";
+import {
+  SafetyList,
+  type SafetyAssessmentRow,
+} from "./safety/safety-list";
+import type { SafetyChecklistResponses } from "@/lib/safety-checklist";
+import { formatDateOnly, getHouseFirstOfMonth } from "@/lib/timezone";
 
 export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) {
   const { id } = await props.params;
@@ -38,6 +43,7 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
     { data: activity },
     { data: supplies },
     { data: documents },
+    { data: safetyAssessmentsRaw },
   ] = await Promise.all([
     supabase.from("houses").select("*").eq("id", id).single(),
     supabase
@@ -78,6 +84,14 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
       )
       .eq("house_id", id)
       .order("created_at", { ascending: false }),
+    supabase
+      .from("safety_assessments")
+      .select(
+        "id, assessment_date, person_completing_name, created_at, document_id, checklist, completer:users!completed_by(full_name)"
+      )
+      .eq("house_id", id)
+      .order("assessment_date", { ascending: false })
+      .limit(50),
   ]);
 
   if (!house) redirect("/houses");
@@ -166,6 +180,62 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
     .map((ma) => (ma.users as unknown as { full_name: string } | null)?.full_name)
     .filter((n): n is string => Boolean(n));
 
+  // --- Safety assessments ---
+  // Shape the raw join into the row type the list component expects,
+  // pre-sign every linked document URL so the View PDF button is a
+  // real anchor (same pattern as house documents above), and decide
+  // whether the house is "up to date" for the current calendar month.
+  const safetyRawTyped = (safetyAssessmentsRaw ?? []) as Array<{
+    id: string;
+    assessment_date: string;
+    person_completing_name: string;
+    created_at: string;
+    document_id: string | null;
+    checklist: SafetyChecklistResponses | null;
+    completer:
+      | { full_name: string }
+      | { full_name: string }[]
+      | null;
+  }>;
+  const safetyAssessments: SafetyAssessmentRow[] = safetyRawTyped.map((r) => {
+    const completer = Array.isArray(r.completer)
+      ? r.completer[0] ?? null
+      : r.completer;
+    return {
+      id: r.id,
+      assessment_date: r.assessment_date,
+      person_completing_name: r.person_completing_name,
+      created_at: r.created_at,
+      document_id: r.document_id,
+      checklist: (r.checklist ?? {}) as SafetyChecklistResponses,
+      completed_by_name: completer?.full_name ?? null,
+    };
+  });
+
+  const safetyDocumentIds = safetyAssessments
+    .map((a) => a.document_id)
+    .filter((id): id is string => Boolean(id));
+  const safetyDocumentUrls: Record<string, string> = {};
+  if (safetyDocumentIds.length > 0) {
+    const { data: safetyDocs } = await adminClient
+      .from("house_documents")
+      .select("id, file_path")
+      .in("id", safetyDocumentIds);
+    await Promise.all(
+      (safetyDocs ?? []).map(async (d) => {
+        const { data } = await adminClient.storage
+          .from("house-documents")
+          .createSignedUrl(d.file_path as string, 3600);
+        if (data?.signedUrl) safetyDocumentUrls[d.id as string] = data.signedUrl;
+      })
+    );
+  }
+
+  const firstOfMonth = getHouseFirstOfMonth(houseTimezone);
+  const latestAssessmentThisMonth = safetyAssessments.some(
+    (a) => a.assessment_date >= firstOfMonth
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -239,6 +309,13 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
             render={<Link href={`/houses/${id}?tab=documents`} />}
           >
             Documents ({houseDocuments.length})
+          </TabsTrigger>
+          <TabsTrigger
+            value="safety"
+            nativeButton={false}
+            render={<Link href={`/houses/${id}?tab=safety`} />}
+          >
+            Safety ({safetyAssessments.length})
           </TabsTrigger>
           <TabsTrigger
             value="state"
@@ -318,6 +395,16 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
             documents={houseDocuments}
             canManage={canManage}
             signedUrls={houseDocumentUrls}
+          />
+        </TabsContent>
+
+        <TabsContent value="safety" className="mt-4">
+          <SafetyList
+            houseId={id}
+            canManage={canManage}
+            assessments={safetyAssessments}
+            documentUrls={safetyDocumentUrls}
+            latestThisMonth={latestAssessmentThisMonth}
           />
         </TabsContent>
 

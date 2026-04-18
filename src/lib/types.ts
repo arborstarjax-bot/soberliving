@@ -298,6 +298,24 @@ export type GrievanceType = "grievance" | "problem";
 
 export type GrievanceStatus = "open" | "in_progress" | "resolved";
 
+// --- Safety Assessments ---
+
+export interface SafetyAssessment {
+  id: string;
+  house_id: string;
+  // See src/lib/safety-checklist.ts for the shape of the checklist
+  // payload — { [sectionKey]: { [itemKey]: boolean } }.
+  checklist: Record<string, Record<string, boolean>>;
+  person_completing_name: string;
+  completed_by: string | null;
+  signature: string;
+  assessment_date: string;
+  notes: string | null;
+  document_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Grievance {
   id: string;
   // NULL when anonymous — see supabase/migrations/.._add_grievances.sql
