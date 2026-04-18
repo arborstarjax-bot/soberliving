@@ -2,7 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import type { SessionUser, UserRole } from "@/lib/types";
 
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
@@ -61,9 +61,18 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   // ever signed) and amendments proposed after they signed. Layouts
   // use this to force residents into /sign-commitment even when
   // commitment_signed is already true.
+  //
+  // Uses the admin (service-role) client deliberately. Every other
+  // reader of house_commitments in the app does the same
+  // (sign-commitment page, proposeAmendment, intake-review, residents
+  // profile, etc.) because the table has no resident-scoped SELECT
+  // RLS policy. If we used the RLS-bound client here the query would
+  // silently return null for residents and the redirect would be a
+  // no-op — the original intent of the PR #47 fix.
   let hasPendingCommitment = false;
   if (isResident) {
-    const { data: pending } = await supabase
+    const admin = createAdminClient();
+    const { data: pending } = await admin
       .from("house_commitments")
       .select("id")
       .eq("user_id", profile.id)
