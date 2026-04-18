@@ -79,6 +79,7 @@ export const ACTIVITY_EVENT_TO_CATEGORY: Record<string, string> = {
   bed_created: "Houses",
   bed_updated: "Houses",
   bed_deleted: "Houses",
+  safety_assessment_completed: "Houses",
 };
 
 // The canonical order of category tabs shown in the UI.
