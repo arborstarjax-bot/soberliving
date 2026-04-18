@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 /**
@@ -18,12 +18,17 @@ import { useRouter } from "next/navigation";
  * current route from the server without a full page reload.
  *
  * Use sparingly — one instance per page that wants this behavior,
- * mounted once. A ref guards against double-fires in React 19 strict
- * mode.
+ * mounted once. A `didRefresh` ref guards against double-fires
+ * under React 19 strict mode (dev mounts effects twice), which
+ * would otherwise trigger two redundant full-route re-fetches on
+ * every page load.
  */
 export function RefreshOnMount() {
   const router = useRouter();
+  const didRefresh = useRef(false);
   useEffect(() => {
+    if (didRefresh.current) return;
+    didRefresh.current = true;
     router.refresh();
     // Intentionally empty deps — refresh exactly once per mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
