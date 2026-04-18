@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ALL_DAYS, DAY_LABELS } from "@/lib/validations";
 import { Camera } from "lucide-react";
-import { formatDateOnly, getHouseToday } from "@/lib/timezone";
+import { formatDateOnly, getHouseDayOfWeek, getHouseToday } from "@/lib/timezone";
 
 interface Props {
   rotations: Array<{
@@ -52,7 +52,8 @@ function getCurrentWeekNumber(cycleStartDate: string): number {
 }
 
 function getTodayDayOfWeek(timezone?: string): string {
-  const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  // Fall back to the app timezone (Eastern) — not browser-local —
+  // so `todayDay` and the Eastern-pinned `todayDate` always agree.
   if (timezone) {
     const formatter = new Intl.DateTimeFormat("en-US", {
       timeZone: timezone,
@@ -60,7 +61,7 @@ function getTodayDayOfWeek(timezone?: string): string {
     });
     return formatter.format(new Date()).toLowerCase();
   }
-  return days[new Date().getDay()];
+  return getHouseDayOfWeek();
 }
 
 function getTodayDate(timezone?: string): string {
