@@ -126,9 +126,14 @@ export default async function AdminPage() {
   //   - active:            resident row with move_in_date in last 30d.
   //   - pending_signature: commitment created, waiting on resident sig.
   //   - pending_review:    user finished intake form, not yet reviewed.
+  // We also fetch user_id so we can dedupe against the
+  // pending_signature bucket below: a resident row can be activated
+  // (status='active', move_in_date set) while the commitment is still
+  // `pending_resident_signature`. In that case the resident should
+  // render as "Pending resident signature", not "Complete".
   let newIntakesActiveQuery = supabase
     .from("residents")
-    .select("id, full_name, move_in_date, house:houses(name)")
+    .select("id, user_id, full_name, move_in_date, house:houses(name)")
     .eq("status", "active")
     .gte("move_in_date", thirtyDaysAgoIso)
     .order("move_in_date", { ascending: false });
@@ -251,23 +256,11 @@ export default async function AdminPage() {
 
   type NewIntakeActiveRow = {
     id: string;
+    user_id: string | null;
     full_name: string;
     move_in_date: string;
     house: { name: string } | { name: string }[] | null;
   };
-  const newIntakesActive: NewIntakeItem[] = (
-    (newIntakesActiveRaw as unknown as NewIntakeActiveRow[] | null) ?? []
-  ).map((r) => {
-    const house = Array.isArray(r.house) ? r.house[0] : r.house;
-    return {
-      kind: "active",
-      id: r.id,
-      full_name: r.full_name,
-      dated: r.move_in_date,
-      house_name: house?.name ?? null,
-      status_label: "Complete",
-    };
-  });
 
   type PendingSignatureRow = {
     id: string;
@@ -291,6 +284,29 @@ export default async function AdminPage() {
         dated: iso(r.created_at),
         house_name: house?.name ?? null,
         status_label: "Pending resident signature",
+      };
+    });
+
+  // Build the active bucket _after_ pending_signature so we can
+  // exclude residents whose commitment is still awaiting signature —
+  // otherwise they'd render twice, once as "Pending resident
+  // signature" and once (incorrectly) as "Complete".
+  const pendingSigUserIds = new Set(
+    newIntakesPendingSig.map((r) => r.id)
+  );
+  const newIntakesActive: NewIntakeItem[] = (
+    (newIntakesActiveRaw as unknown as NewIntakeActiveRow[] | null) ?? []
+  )
+    .filter((r) => !r.user_id || !pendingSigUserIds.has(r.user_id))
+    .map((r) => {
+      const house = Array.isArray(r.house) ? r.house[0] : r.house;
+      return {
+        kind: "active" as const,
+        id: r.id,
+        full_name: r.full_name,
+        dated: r.move_in_date,
+        house_name: house?.name ?? null,
+        status_label: "Complete",
       };
     });
 
