@@ -105,7 +105,7 @@ export async function submitSafetyAssessment(
     return { error: docError?.message ?? "Failed to save document" };
   }
 
-  const { error: assessmentError } = await admin
+  const { data: assessment, error: assessmentError } = await admin
     .from("safety_assessments")
     .insert({
       house_id: input.houseId,
@@ -116,11 +116,13 @@ export async function submitSafetyAssessment(
       assessment_date: input.assessmentDate,
       notes: input.notes?.trim() ? input.notes.trim() : null,
       document_id: doc.id,
-    });
-  if (assessmentError) {
+    })
+    .select("id")
+    .single();
+  if (assessmentError || !assessment) {
     await admin.from("house_documents").delete().eq("id", doc.id);
     await admin.storage.from(HOUSE_DOCS_BUCKET).remove([objectPath]);
-    return { error: assessmentError.message };
+    return { error: assessmentError?.message ?? "Failed to save assessment" };
   }
 
   await logActivity({
@@ -128,7 +130,7 @@ export async function submitSafetyAssessment(
     actorId: user.id,
     eventType: "safety_assessment_completed",
     entityType: "safety_assessment",
-    entityId: doc.id,
+    entityId: assessment.id as string,
     description: `${user.full_name} completed a safety assessment`,
   });
 
