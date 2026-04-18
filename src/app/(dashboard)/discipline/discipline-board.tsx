@@ -8,6 +8,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { formatDateOnly } from "@/lib/timezone";
 
 interface Resident {
   id: string;
@@ -104,10 +105,7 @@ export function DisciplineBoard({
                     </td>
                     <td className="py-2 px-2 text-xs text-muted-foreground whitespace-nowrap">
                       {resident.move_in_date
-                        ? new Date(resident.move_in_date).toLocaleDateString(
-                            "en-US",
-                            { timeZone: "America/New_York", month: "short", day: "numeric" }
-                          )
+                        ? formatDateOnly(resident.move_in_date, { month: "short", day: "numeric" })
                         : "—"}
                     </td>
                     {Array.from({ length: columns }, (_, i) => {

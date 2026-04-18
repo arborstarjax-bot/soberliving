@@ -24,6 +24,7 @@ import { RecordChargePaymentDialog } from "./record-charge-payment-dialog";
 import { DownloadReceiptButton } from "./download-receipt-button";
 import { DeletePaymentDialog } from "./delete-payment-dialog";
 import { todayLocalIso, daysUntilLocal } from "@/lib/local-date";
+import { formatDateOnly, formatInAppTz } from "@/lib/timezone";
 
 interface OpenCharge {
   id: string;
@@ -69,8 +70,11 @@ function formatMoney(n: number): string {
 }
 
 function formatDate(iso: string) {
-  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
-  return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString("en-US", { timeZone: "America/New_York",
+  // Used for date-only columns (due_date). For date-only strings,
+  // rendering in UTC lines up with the stored calendar day —
+  // `new Date(y, m-1, d)` would otherwise pick up the server's local
+  // timezone (UTC on prod, then shifted to ET = previous day).
+  return formatDateOnly(iso, {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -226,7 +230,11 @@ export function PaymentsByResident({
                       {s.lastPayment && (
                         <p className="text-xs text-muted-foreground">
                           Last paid: {formatMoney(s.lastPayment.amount)} ·{" "}
-                          {formatDate(s.lastPayment.paid_at.slice(0, 10))}
+                          {formatInAppTz(s.lastPayment.paid_at, {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
                         </p>
                       )}
                     </div>
@@ -382,7 +390,11 @@ export function PaymentsByResident({
                               )}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {formatDate(r.paid_at.slice(0, 10))}
+                              {formatInAppTz(r.paid_at, {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                              })}
                               {r.receipt_number && ` · ${r.receipt_number}`}
                             </p>
                           </div>

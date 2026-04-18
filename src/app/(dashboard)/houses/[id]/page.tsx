@@ -15,6 +15,7 @@ import { SupplyList, type SupplyItem } from "./supply-list";
 import { DocumentsList, type HouseDocument } from "./documents-list";
 import { StateOfHouseView } from "./state-of-house";
 import { loadStateOfHouseData, resolveRange } from "./state-of-house-data";
+import { formatDateOnly } from "@/lib/timezone";
 
 export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) {
   const { id } = await props.params;
@@ -263,7 +264,7 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
                         <p className="font-medium">{r.full_name}</p>
                         <p className="text-xs text-muted-foreground">
                           Moved in:{" "}
-                          {new Date(r.move_in_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+                          {formatDateOnly(r.move_in_date)}
                         </p>
                       </div>
                       <div className="flex items-center gap-2">

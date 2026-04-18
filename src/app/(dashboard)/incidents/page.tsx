@@ -7,6 +7,7 @@ import { AlertTriangle } from "lucide-react";
 import { CreateIncidentDialog } from "./create-incident-dialog";
 import { Pagination } from "@/components/pagination";
 import { getPageParams, buildPaginationMeta } from "@/lib/pagination";
+import { formatDateOnly } from "@/lib/timezone";
 
 interface IncidentsPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -94,7 +95,7 @@ export default async function IncidentsPage({ searchParams }: IncidentsPageProps
                     </span>
                   </div>
                   <span className="text-xs text-muted-foreground">
-                    {new Date(inc.occurred_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+                    {formatDateOnly(inc.occurred_at)}
                   </span>
                 </div>
                 <p className="text-sm mt-1">{inc.description}</p>

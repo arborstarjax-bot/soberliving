@@ -25,6 +25,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { DollarSign } from "lucide-react";
+import { formatDateOnly } from "@/lib/timezone";
 
 interface Props {
   commitmentId: string;
@@ -98,7 +99,7 @@ export function RecordUpcomingRentDialog({
             <DialogTitle>Pay Upcoming Rent</DialogTitle>
             <DialogDescription>
               {residentName} · Rent due{" "}
-              {new Date(nextDueDate).toLocaleDateString("en-US", { timeZone: "America/New_York" })} ·{" "}
+              {formatDateOnly(nextDueDate)} ·{" "}
               {formatMoney(rentAmount)} billed
             </DialogDescription>
           </DialogHeader>

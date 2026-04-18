@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ALL_DAYS, DAY_LABELS } from "@/lib/validations";
 import { X, RefreshCw, Check, XCircle, Pencil } from "lucide-react";
+import { formatDateOnly } from "@/lib/timezone";
 
 interface RotationAssignment {
   id: string;
@@ -82,8 +83,8 @@ export function RotationBoard({
           <div>
             <CardTitle>{houseName}</CardTitle>
             <p className="text-sm text-muted-foreground">
-              {new Date(rotation.cycle_start_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} —{" "}
-              {new Date(rotation.cycle_end_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+              {formatDateOnly(rotation.cycle_start_date)} —{" "}
+              {formatDateOnly(rotation.cycle_end_date)}
             </p>
           </div>
           <div className="flex items-center gap-2">

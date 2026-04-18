@@ -9,6 +9,7 @@ import { ReopenButton } from "./reopen-button";
 import { ApplicationReview } from "./application-review";
 import { EditPendingCommitmentDialog } from "./edit-pending-commitment-dialog";
 import { ResendCommitmentButton } from "./resend-commitment-button";
+import { formatDateOnly } from "@/lib/timezone";
 
 type Tab = "pending" | "approved" | "denied";
 
@@ -214,7 +215,7 @@ export default async function IntakeReviewPage({
                         {user.email}
                         {house ? ` • ${house.name}` : ""}
                         {commit?.commitment_start_date
-                          ? ` • Starts ${new Date(commit.commitment_start_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
+                          ? ` • Starts ${formatDateOnly(commit.commitment_start_date)}`
                           : ""}
                       </p>
                     </div>

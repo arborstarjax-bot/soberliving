@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { formatDateOnly, formatInAppTz } from "@/lib/timezone";
 
 // Server-side receipt PDF generator. Produces a single-page letter
 // with the facility + house header, resident name, receipt number,
@@ -20,9 +21,21 @@ function formatCurrency(amount: number) {
 
 function formatDate(iso?: string | null) {
   if (!iso) return "—";
+  // This helper is called with both date-only strings (period_start,
+  // period_end, dueDate — all Postgres `date` columns) and full
+  // timestamptz values (paidAt). For date-only values we render the
+  // stored calendar day; for timestamps we render the Eastern-time
+  // day the event happened.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    return formatDateOnly(iso, {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+  }
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("en-US", { timeZone: "America/New_York",
+  return formatInAppTz(d, {
     month: "long",
     day: "numeric",
     year: "numeric",

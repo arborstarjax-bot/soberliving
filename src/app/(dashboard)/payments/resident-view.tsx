@@ -10,6 +10,7 @@ import {
   TabsTrigger,
   TabsContent,
 } from "@/components/ui/tabs";
+import { formatDateOnly } from "@/lib/timezone";
 import {
   Calendar,
   DollarSign,
@@ -291,7 +292,7 @@ function PaymentTermsCard({ terms }: { terms: PaymentTerms }) {
           <div>
             <p className="text-xs text-muted-foreground">Effective</p>
             <p className="font-semibold">
-              {new Date(terms.commitment_start_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+              {formatDateOnly(terms.commitment_start_date)}
             </p>
           </div>
         </div>
@@ -362,7 +363,7 @@ function NextDueCard({ charge }: { charge: OpenCharge }) {
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Calendar className="h-3.5 w-3.5" />
-          {new Date(charge.due_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+          {formatDateOnly(charge.due_date)}
           {pastDue && (
             <span className="flex items-center gap-1 text-destructive font-medium">
               <AlertCircle className="h-3.5 w-3.5" />
@@ -396,7 +397,7 @@ function OpenChargeRow({ charge }: { charge: OpenCharge }) {
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            Due {new Date(charge.due_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+            Due {formatDateOnly(charge.due_date)}
             {pastDue && ` · ${Math.abs(days)}d late`}
           </p>
         </div>

@@ -10,6 +10,7 @@ import {
   getDaysSober,
   isSobrietyDateFuture,
 } from "@/lib/milestones";
+import { formatDateOnly } from "@/lib/timezone";
 import { ResidentTimeline } from "./timeline";
 import { ResidentNotes } from "./notes";
 import { ForcePhotoToggle } from "./force-photo-toggle";
@@ -355,9 +356,7 @@ export default async function ResidentDetailPage(
                 <p className="text-xs text-muted-foreground mt-1">
                   Next charge: $
                   {Number(nextUpcoming.amount).toFixed(2)} due{" "}
-                  {new Date(
-                    nextUpcoming.due_date as string
-                  ).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+                  {formatDateOnly(nextUpcoming.due_date as string)}
                 </p>
               )}
             </div>
@@ -407,7 +406,7 @@ export default async function ResidentDetailPage(
           </CardHeader>
           <CardContent>
             <p className="text-sm">
-              {new Date(resident.move_in_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+              {formatDateOnly(resident.move_in_date)}
             </p>
           </CardContent>
         </Card>
@@ -424,8 +423,8 @@ export default async function ResidentDetailPage(
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {isSobrietyDateFuture(resident.sobriety_date)
-                    ? `Starts ${new Date(resident.sobriety_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
-                    : `Since ${new Date(resident.sobriety_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`}
+                    ? `Starts ${formatDateOnly(resident.sobriety_date)}`
+                    : `Since ${formatDateOnly(resident.sobriety_date)}`}
                 </p>
               </div>
             ) : (
@@ -518,7 +517,7 @@ export default async function ResidentDetailPage(
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {rotation
-                            ? `${new Date(rotation.cycle_start_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} — ${new Date(rotation.cycle_end_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
+                            ? `${formatDateOnly(rotation.cycle_start_date)} — ${formatDateOnly(rotation.cycle_end_date)}`
                             : ""}
                           {total > 0 && ` · ${approved}/${total} signed off`}
                         </p>
@@ -560,7 +559,7 @@ export default async function ResidentDetailPage(
                         {inc.severity}
                       </Badge>
                       <span className="text-xs text-muted-foreground">
-                        {new Date(inc.occurred_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+                        {formatDateOnly(inc.occurred_at)}
                       </span>
                     </div>
                     <p className="text-sm mt-1">{inc.description}</p>
@@ -670,10 +669,8 @@ export default async function ResidentDetailPage(
                   <CardContent className="flex items-center justify-between py-3">
                     <div>
                       <p className="text-sm">
-                        {new Date(lr.departure_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} →{" "}
-                        {new Date(
-                          lr.expected_return_date
-                        ).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+                        {formatDateOnly(lr.departure_date)} →{" "}
+                        {formatDateOnly(lr.expected_return_date)}
                       </p>
                       {lr.reason && (
                         <p className="text-xs text-muted-foreground">
@@ -750,7 +747,7 @@ export default async function ResidentDetailPage(
                         </div>
                         <span className="text-xs text-muted-foreground whitespace-nowrap">
                           {r.end_date
-                            ? `Until ${new Date(r.end_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
+                            ? `Until ${formatDateOnly(r.end_date)}`
                             : "Indefinite"}
                         </span>
                       </div>
@@ -763,7 +760,7 @@ export default async function ResidentDetailPage(
                   <p className="text-sm text-muted-foreground">Date of Birth</p>
                   <p>
                     {resident.date_of_birth
-                      ? new Date(resident.date_of_birth).toLocaleDateString("en-US", { timeZone: "America/New_York" })
+                      ? formatDateOnly(resident.date_of_birth)
                       : "—"}
                   </p>
                 </div>
@@ -779,9 +776,7 @@ export default async function ResidentDetailPage(
                   <p className="text-sm text-muted-foreground">Move-out Date</p>
                   <p>
                     {resident.move_out_date
-                      ? new Date(
-                          resident.move_out_date
-                        ).toLocaleDateString("en-US", { timeZone: "America/New_York" })
+                      ? formatDateOnly(resident.move_out_date)
                       : "—"}
                   </p>
                 </div>
@@ -834,9 +829,9 @@ export default async function ResidentDetailPage(
                           / {(ba.bed as { label: string })?.label}
                         </span>
                         <span className="text-muted-foreground">
-                          {new Date(ba.start_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+                          {formatDateOnly(ba.start_date)}
                           {ba.end_date
-                            ? ` — ${new Date(ba.end_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
+                            ? ` — ${formatDateOnly(ba.end_date)}`
                             : " — Present"}
                         </span>
                       </div>

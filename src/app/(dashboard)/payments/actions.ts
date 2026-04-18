@@ -611,10 +611,16 @@ export async function proposeAmendment(
       rent_due_date: (() => {
         const [y, m, d] = effectiveDate.split("-").map(Number);
         if (!y || !m || !d) return active.rent_due_date;
-        const dt = new Date(y, m - 1, d);
+        // Weekday label for a date-only value. Construct the Date at
+        // UTC midnight and format in UTC so the weekday matches the
+        // stored calendar day regardless of server or browser timezone
+        // — `new Date(y, m-1, d)` on a UTC server gives UTC midnight,
+        // which when read with `timeZone: "America/New_York"` flips
+        // back 4 hours to the previous day's name.
+        const dt = new Date(Date.UTC(y, m - 1, d));
         const freq = active.payment_frequency as string | null;
         if (freq === "weekly") {
-          const weekday = dt.toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "long" });
+          const weekday = dt.toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long" });
           return `Every ${weekday}`;
         }
         const ordinal = (n: number) => {

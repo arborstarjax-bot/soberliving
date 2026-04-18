@@ -53,9 +53,12 @@ function deriveRentDueDate(
   if (!startDate) return "";
   const [y, m, d] = startDate.split("-").map(Number);
   if (!y || !m || !d) return "";
-  const dt = new Date(y, m - 1, d);
+  // Construct at UTC midnight and read weekday in UTC so the day
+  // name lines up with the stored calendar day no matter which
+  // timezone the caller runs in.
+  const dt = new Date(Date.UTC(y, m - 1, d));
   if (frequency === "weekly") {
-    const weekday = dt.toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "long" });
+    const weekday = dt.toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long" });
     return `Every ${weekday}`;
   }
   const ordinal = (n: number) => {

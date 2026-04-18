@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CreateLeaveRequestDialog } from "./create-leave-request-dialog";
 import { LeaveReviewActions } from "./leave-review-actions";
+import { formatDateOnly } from "@/lib/timezone";
 
 function statusLabel(status: string) {
   switch (status) {
@@ -154,8 +155,8 @@ export default async function LeaveRequestsPage() {
                         <div>
                           <p className="font-medium">{resident?.full_name}</p>
                           <p className="text-sm text-muted-foreground">
-                            {new Date(lr.departure_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} →{" "}
-                            {new Date(lr.expected_return_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+                            {formatDateOnly(lr.departure_date)} →{" "}
+                            {formatDateOnly(lr.expected_return_date)}
                           </p>
                           {lr.reason_for_pass && (
                             <p className="text-xs text-muted-foreground mt-1">
@@ -227,8 +228,8 @@ export default async function LeaveRequestsPage() {
                       <div>
                         <p className="font-medium">{resident?.full_name}</p>
                         <p className="text-sm text-muted-foreground">
-                          {new Date(lr.departure_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} →{" "}
-                          {new Date(lr.expected_return_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+                          {formatDateOnly(lr.departure_date)} →{" "}
+                          {formatDateOnly(lr.expected_return_date)}
                         </p>
                       </div>
                       <LeaveReviewActions
@@ -260,8 +261,8 @@ export default async function LeaveRequestsPage() {
                       <div>
                         <p className="font-medium">{resident?.full_name}</p>
                         <p className="text-sm text-muted-foreground">
-                          {new Date(lr.departure_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} →{" "}
-                          {new Date(lr.expected_return_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+                          {formatDateOnly(lr.departure_date)} →{" "}
+                          {formatDateOnly(lr.expected_return_date)}
                         </p>
                         {lr.denial_note && (
                           <p className="text-xs text-destructive mt-1">

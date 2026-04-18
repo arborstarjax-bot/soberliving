@@ -17,6 +17,7 @@ import {
   sweepOpenChargesForActiveCommitments,
   openAllChargesForCommitment,
 } from "@/lib/payments/charges";
+import { formatDateOnly } from "@/lib/timezone";
 import { ResidentPaymentsView } from "./resident-view";
 import { PaymentsByResident } from "./payments-by-resident";
 
@@ -28,9 +29,12 @@ function formatCurrency(amount: number) {
 }
 
 function formatDueDate(iso: string) {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
-  return dt.toLocaleDateString("en-US", { timeZone: "America/New_York",
+  // `iso` is a date-only string from Postgres `date` columns
+  // (e.g. payment_charges.due_date). `formatDateOnly` renders the
+  // stored calendar day regardless of server/browser timezone —
+  // `new Date("2026-04-18")` would otherwise parse as UTC midnight
+  // and display as April 17 in Eastern time.
+  return formatDateOnly(iso, {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -664,8 +668,8 @@ function PaymentLedgerList({
                       {payment.period_start && payment.period_end && (
                         <span>
                           · Period:{" "}
-                          {new Date(payment.period_start).toLocaleDateString("en-US", { timeZone: "America/New_York" })} –{" "}
-                          {new Date(payment.period_end).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+                          {formatDateOnly(payment.period_start)} –{" "}
+                          {formatDateOnly(payment.period_end)}
                         </span>
                       )}
                     </div>
