@@ -15,6 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Plus, Camera } from "lucide-react";
+import { getHouseToday } from "@/lib/timezone";
 
 interface Props {
   houses: { id: string; name: string }[];
@@ -123,7 +124,7 @@ export function CreateIncidentDialog({ houses, residents }: Props) {
               name="occurred_at"
               type="date"
               required
-              defaultValue={new Date().toISOString().split("T")[0]}
+              defaultValue={getHouseToday()}
             />
           </div>
           <div className="space-y-2">

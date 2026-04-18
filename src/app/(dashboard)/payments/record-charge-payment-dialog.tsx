@@ -20,7 +20,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { formatDateOnly } from "@/lib/timezone";
+import { formatDateOnly, getHouseToday } from "@/lib/timezone";
 import { DollarSign } from "lucide-react";
 
 interface Props {
@@ -103,7 +103,7 @@ export function RecordChargePaymentDialog({
   const isPartial =
     Number.isFinite(amountNum) && amountNum > 0 && amountNum < balance;
 
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = getHouseToday();
 
   // Past-due charges that are being partially paid need a note
   // explaining the shortfall (for our internal records). Paying a

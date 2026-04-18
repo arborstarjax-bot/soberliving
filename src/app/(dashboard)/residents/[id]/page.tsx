@@ -10,7 +10,7 @@ import {
   getDaysSober,
   isSobrietyDateFuture,
 } from "@/lib/milestones";
-import { formatDateOnly } from "@/lib/timezone";
+import { formatDateOnly, getHouseToday } from "@/lib/timezone";
 import { ResidentTimeline } from "./timeline";
 import { ResidentNotes } from "./notes";
 import { ForcePhotoToggle } from "./force-photo-toggle";
@@ -275,7 +275,7 @@ export default async function ResidentDetailPage(
   // Outstanding balance = open/partial charges whose due date is today
   // or earlier. Future-dated charges (e.g. an existing-tenant first
   // rent scheduled for next month) are "upcoming", not outstanding.
-  const todayIsoStr = new Date().toISOString().split("T")[0];
+  const todayIsoStr = getHouseToday();
   const outstandingTotal = (residentOpenCharges ?? [])
     .filter((c) => (c.due_date as string) <= todayIsoStr)
     .reduce((s, c) => s + (Number(c.amount) - Number(c.paid_amount)), 0);

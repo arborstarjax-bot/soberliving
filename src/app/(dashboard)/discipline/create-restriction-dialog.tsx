@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ShieldAlert } from "lucide-react";
+import { getHouseToday } from "@/lib/timezone";
 
 const RESTRICTION_TYPES = [
   { value: "no_leave", label: "No Leave" },
@@ -120,7 +121,7 @@ export function CreateRestrictionDialog({ houses, residents }: Props) {
                 name="start_date"
                 type="date"
                 required
-                defaultValue={new Date().toISOString().split("T")[0]}
+                defaultValue={getHouseToday()}
               />
             </div>
             <div className="space-y-2">

@@ -1,4 +1,3 @@
-/* eslint-disable no-restricted-globals */
 // Minimal service worker for the Sober Living PWA.
 //
 // What this does:

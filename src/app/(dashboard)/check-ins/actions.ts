@@ -5,6 +5,7 @@ import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
+import { getHouseToday } from "@/lib/timezone";
 
 /**
  * Send a check-in to one or more houses.
@@ -128,7 +129,7 @@ export async function submitCheckIn(
 
   // Upload PDF to Supabase Storage
   const pdfBuffer = Buffer.from(pdfBase64, "base64");
-  const dateStr = new Date().toISOString().split("T")[0];
+  const dateStr = getHouseToday();
   const fileName = `${user.id}/check-in-${dateStr}-${Date.now()}.pdf`;
 
   const { error: uploadError } = await adminClient.storage

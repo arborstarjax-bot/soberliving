@@ -7,6 +7,7 @@ import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { sendNotification, sendNotificationToHouseManagers, sendNotificationToAdmins, notifyHouseStaff } from "@/lib/notifications";
 import { z } from "zod";
+import { getHouseToday } from "@/lib/timezone";
 
 const createLeaveRequestSchema = z.object({
   resident_id: z.string().uuid(),
@@ -572,7 +573,7 @@ export async function markLeaveReturned(requestId: string) {
     .from("leave_requests")
     .update({
       status: "returned",
-      actual_return_date: new Date().toISOString().split("T")[0],
+      actual_return_date: getHouseToday(),
       updated_at: new Date().toISOString(),
     })
     .eq("id", requestId);

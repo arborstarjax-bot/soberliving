@@ -12,6 +12,7 @@ import {
   createNoteSchema,
 } from "@/lib/validations";
 import { sendNotification } from "@/lib/notifications";
+import { getHouseToday } from "@/lib/timezone";
 
 // --- Residents ---
 
@@ -161,7 +162,7 @@ export async function dischargeResident(
     return { error: "Not authorized" };
   }
 
-  const dischargeDate = new Date().toISOString().split("T")[0];
+  const dischargeDate = getHouseToday();
 
   // End all active bed assignments
   await supabase
@@ -246,7 +247,7 @@ export async function deleteResident(residentId: string) {
   // End all active bed assignments
   await supabase
     .from("bed_assignments")
-    .update({ end_date: new Date().toISOString().split("T")[0] })
+    .update({ end_date: getHouseToday() })
     .eq("resident_id", residentId)
     .is("end_date", null);
 
@@ -356,7 +357,7 @@ export async function assignBed(
     .insert({
       resident_id: residentId,
       bed_id: bedId,
-      start_date: new Date().toISOString().split("T")[0],
+      start_date: getHouseToday(),
       assigned_by: user.id,
     })
     .select("id")
@@ -452,7 +453,7 @@ export async function changeResidentBed(
     }
   }
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = getHouseToday();
 
   // Vacate any active beds for this resident.
   const { error: vacateError } = await supabase
@@ -554,7 +555,7 @@ export async function vacateBed(assignmentId: string) {
 
   const { error } = await supabase
     .from("bed_assignments")
-    .update({ end_date: new Date().toISOString().split("T")[0] })
+    .update({ end_date: getHouseToday() })
     .eq("id", assignmentId);
 
   if (error) return { error: error.message };

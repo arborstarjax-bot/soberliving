@@ -5,6 +5,7 @@ import { getDaysSober } from "@/lib/milestones";
 import { CreateUserDialog } from "../users/create-user-dialog";
 import { ResidentsTabs } from "./residents-tabs";
 import { getCheckInBatches } from "../check-ins/actions";
+import { getHouseToday } from "@/lib/timezone";
 
 export default async function ResidentsPage() {
   const user = await requireAuth();
@@ -256,7 +257,7 @@ export default async function ResidentsPage() {
             adminFee: Number(commitment.admin_fee ?? 0),
             commitmentStartDate:
               (commitment.commitment_start_date as string | null) ??
-              new Date().toISOString().split("T")[0],
+              getHouseToday(),
             commitmentTerm:
               (commitment.commitment_term as string | null) ?? "181 days",
             notes: (commitment.notes as string | null) ?? null,

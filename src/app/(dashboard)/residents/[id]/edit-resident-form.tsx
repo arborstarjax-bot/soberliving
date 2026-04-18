@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Pencil } from "lucide-react";
 import { updateResident } from "../actions";
 import { changeUserRole, assignManagerToHouses } from "../../users/actions";
+import { getHouseToday } from "@/lib/timezone";
 
 interface EditResidentFormProps {
   residentId: string;
@@ -136,7 +137,7 @@ export function EditResidentForm({ residentId, resident, userId, currentRole, is
             name="sobriety_date"
             type="date"
             defaultValue={resident.sobriety_date ?? ""}
-            max={new Date().toISOString().slice(0, 10)}
+            max={getHouseToday()}
           />
         </div>
         <div className="space-y-1.5">

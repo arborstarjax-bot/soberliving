@@ -13,6 +13,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { RotateCcw } from "lucide-react";
+import { getHouseToday } from "@/lib/timezone";
 
 interface Props {
   houses: { id: string; name: string }[];
@@ -22,13 +23,19 @@ export function StartRotationDialog({ houses }: Props) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState(createRotation, undefined);
 
-  // Default to next Monday
+  // Default to next Monday. Seed from today-in-app-tz so we don't
+  // drift around the UTC midnight boundary (8 PM Eastern).
   const getNextMonday = () => {
-    const d = new Date();
-    const day = d.getDay();
-    const diff = day === 0 ? 1 : 8 - day; // days until next Monday
-    d.setDate(d.getDate() + diff);
-    return d.toISOString().split("T")[0];
+    const [y, m, d0] = getHouseToday().split("-").map(Number);
+    // Noon anchor avoids DST edge cases on setDate.
+    const dt = new Date(y, m - 1, d0, 12, 0, 0, 0);
+    const day = dt.getDay();
+    const diff = day === 0 ? 1 : 8 - day;
+    dt.setDate(dt.getDate() + diff);
+    const yy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getDate()).padStart(2, "0");
+    return `${yy}-${mm}-${dd}`;
   };
 
   return (

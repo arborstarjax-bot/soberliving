@@ -9,7 +9,7 @@ import { ReopenButton } from "./reopen-button";
 import { ApplicationReview } from "./application-review";
 import { EditPendingCommitmentDialog } from "./edit-pending-commitment-dialog";
 import { ResendCommitmentButton } from "./resend-commitment-button";
-import { formatDateOnly } from "@/lib/timezone";
+import { formatDateOnly, getHouseToday } from "@/lib/timezone";
 
 type Tab = "pending" | "approved" | "denied";
 
@@ -242,7 +242,7 @@ export default async function IntakeReviewPage({
                                   adminFee: Number(commit.admin_fee ?? 0),
                                   commitmentStartDate:
                                     (commit.commitment_start_date as string) ??
-                                    new Date().toISOString().split("T")[0],
+                                    getHouseToday(),
                                   commitmentTerm:
                                     (commit.commitment_term as string) ??
                                     "181 days",

@@ -25,7 +25,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { DollarSign } from "lucide-react";
-import { formatDateOnly } from "@/lib/timezone";
+import { formatDateOnly, getHouseToday } from "@/lib/timezone";
 
 interface Props {
   commitmentId: string;
@@ -76,7 +76,7 @@ export function RecordUpcomingRentDialog({
   const isPartial =
     Number.isFinite(amountNum) && amountNum > 0 && amountNum < rentAmount;
 
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = getHouseToday();
 
   return (
     <>

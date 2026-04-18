@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { setSobrietyDate } from "./actions";
+import { getHouseToday } from "@/lib/timezone";
 
 interface SobrietyDateSetterProps {
   currentDate: string | null;
@@ -51,7 +52,7 @@ export function SobrietyDateSetter({ currentDate }: SobrietyDateSetterProps) {
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          max={new Date().toISOString().split("T")[0]}
+          max={getHouseToday()}
           className="w-40"
         />
         <Button size="sm" onClick={handleSubmit} disabled={isPending}>

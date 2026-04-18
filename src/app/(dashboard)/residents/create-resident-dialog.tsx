@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Plus } from "lucide-react";
+import { getHouseToday } from "@/lib/timezone";
 
 interface Props {
   houses: { id: string; name: string }[];
@@ -78,7 +79,7 @@ export function CreateResidentDialog({ houses }: Props) {
                 name="move_in_date"
                 type="date"
                 required
-                defaultValue={new Date().toISOString().split("T")[0]}
+                defaultValue={getHouseToday()}
               />
             </div>
           </div>
@@ -89,7 +90,7 @@ export function CreateResidentDialog({ houses }: Props) {
               id="sobriety_date"
               name="sobriety_date"
               type="date"
-              max={new Date().toISOString().slice(0, 10)}
+              max={getHouseToday()}
             />
           </div>
 

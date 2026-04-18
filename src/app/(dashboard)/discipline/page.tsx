@@ -8,6 +8,7 @@ import { CreateWarningDialog } from "./create-warning-dialog";
 import { WarningsList } from "./warnings-list";
 import { CleanupBackfilledDemeritsButton } from "./cleanup-backfilled-demerits-button";
 import { CreateIncidentDialog } from "../incidents/create-incident-dialog";
+import { getHouseToday } from "@/lib/timezone";
 
 export default async function DisciplinePage() {
   const user = await requireAuth();
@@ -50,7 +51,7 @@ export default async function DisciplinePage() {
   // past-their-end-date rows and past-restrictions would miss the
   // ones we just flipped. Keep that serialized, but then fan out the
   // rest of the page's queries in parallel.
-  const today = new Date().toISOString().split("T")[0];
+  const today = getHouseToday();
   let expireQuery = adminClient
     .from("restrictions")
     .update({ is_active: false, updated_at: new Date().toISOString() })
