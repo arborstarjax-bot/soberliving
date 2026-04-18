@@ -2,9 +2,10 @@
 
 import { useState, useTransition } from "react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -12,10 +13,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { FileText, Trash2, Upload, ExternalLink } from "lucide-react";
+import { FileText, Trash2, Upload, ExternalLink, Download } from "lucide-react";
 import {
   uploadHouseDocument,
-  getHouseDocumentUrl,
   deleteHouseDocument,
 } from "./document-actions";
 
@@ -34,6 +34,10 @@ interface DocumentsListProps {
   houseId: string;
   documents: HouseDocument[];
   canManage: boolean;
+  // Pre-signed URLs (doc id -> URL). Generated server-side so Open /
+  // Download can be native anchor taps on mobile \u2014 `window.open`
+  // after an async server action is blocked on iOS Safari.
+  signedUrls: Record<string, string>;
 }
 
 function formatSize(bytes: number | null): string {
@@ -47,19 +51,9 @@ export function DocumentsList({
   houseId,
   documents,
   canManage,
+  signedUrls,
 }: DocumentsListProps) {
   const [isPending, startTransition] = useTransition();
-
-  async function handleView(id: string) {
-    const result = await getHouseDocumentUrl(id);
-    if ("error" in result && result.error) {
-      alert(result.error);
-      return;
-    }
-    if ("url" in result && result.url) {
-      window.open(result.url, "_blank", "noopener");
-    }
-  }
 
   return (
     <div className="space-y-4">
@@ -78,60 +72,82 @@ export function DocumentsList({
         </Card>
       ) : (
         <div className="space-y-2">
-          {documents.map((doc) => (
-            <Card key={doc.id}>
-              <CardContent className="flex items-center justify-between py-3 gap-3">
-                <div className="flex items-start gap-3 min-w-0">
-                  <FileText className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
-                  <div className="min-w-0">
-                    <p className="font-medium text-sm truncate">{doc.name}</p>
-                    {doc.description && (
-                      <p className="text-xs text-muted-foreground truncate">
-                        {doc.description}
+          {documents.map((doc) => {
+            const url = signedUrls[doc.id];
+            return (
+              <Card key={doc.id}>
+                <CardContent className="flex items-center justify-between py-3 gap-3">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <FileText className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm truncate">{doc.name}</p>
+                      {doc.description && (
+                        <p className="text-xs text-muted-foreground truncate">
+                          {doc.description}
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {new Date(doc.created_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })} ·{" "}
+                        {formatSize(doc.size_bytes)}
+                        {doc.uploader_name && <> · {doc.uploader_name}</>}
                       </p>
-                    )}
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {new Date(doc.created_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })} ·{" "}
-                      {formatSize(doc.size_bytes)}
-                      {doc.uploader_name && <> · {doc.uploader_name}</>}
-                    </p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8"
-                    onClick={() => handleView(doc.id)}
-                  >
-                    <ExternalLink className="mr-1 h-3.5 w-3.5" />
-                    Open
-                  </Button>
-                  {canManage && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0 text-destructive"
-                      disabled={isPending}
-                      onClick={() => {
-                        if (
-                          typeof window !== "undefined" &&
-                          !window.confirm(`Delete "${doc.name}"?`)
-                        )
-                          return;
-                        startTransition(async () => {
-                          const result = await deleteHouseDocument(doc.id);
-                          if (result?.error) alert(result.error);
-                        });
-                      }}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <a
+                      href={url ?? "#"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-disabled={!url}
+                      className={cn(
+                        buttonVariants({ variant: "outline", size: "sm" }),
+                        "h-8",
+                        !url && "pointer-events-none opacity-50"
+                      )}
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                      <ExternalLink className="mr-1 h-3.5 w-3.5" />
+                      Open
+                    </a>
+                    <a
+                      href={url ?? "#"}
+                      download={doc.name || "document"}
+                      rel="noopener noreferrer"
+                      aria-label={`Download ${doc.name}`}
+                      aria-disabled={!url}
+                      className={cn(
+                        buttonVariants({ variant: "ghost", size: "sm" }),
+                        "h-8 w-8 p-0",
+                        !url && "pointer-events-none opacity-50"
+                      )}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                    </a>
+                    {canManage && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-destructive"
+                        disabled={isPending}
+                        onClick={() => {
+                          if (
+                            typeof window !== "undefined" &&
+                            !window.confirm(`Delete "${doc.name}"?`)
+                          )
+                            return;
+                          startTransition(async () => {
+                            const result = await deleteHouseDocument(doc.id);
+                            if (result?.error) alert(result.error);
+                          });
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>
