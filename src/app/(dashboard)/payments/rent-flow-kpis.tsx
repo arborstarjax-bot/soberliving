@@ -31,7 +31,16 @@ interface PaymentRow {
 }
 
 interface Props {
-  charges: ChargeRow[];
+  // All charges (any status) whose due_date falls in the current
+  // month. Used for the Expected This Month tile, which needs to
+  // count billed charges regardless of whether they've been paid.
+  monthCharges: ChargeRow[];
+  // All currently-open/partial charges across all time. Used for the
+  // Past Due and Due Next 7 Days tiles so unpaid charges from prior
+  // months (e.g. an unpaid February charge still showing in April)
+  // and charges due in the first days of next month aren't silently
+  // dropped.
+  openCharges: ChargeRow[];
   payments: PaymentRow[];
   todayIso: string; // YYYY-MM-DD in Eastern
   monthStartIso: string; // YYYY-MM-01 in Eastern
@@ -48,7 +57,8 @@ function formatCurrency(n: number): string {
 }
 
 export function RentFlowKpis({
-  charges,
+  monthCharges,
+  openCharges,
   payments,
   todayIso,
   monthStartIso,
@@ -70,7 +80,7 @@ export function RentFlowKpis({
   // Expected this month: every rent/admin_fee charge whose due_date
   // falls in the month. Includes paid ones — expected is the full
   // amount we expected to bill, not just what's still open.
-  const expectedChargesThisMonth = charges.filter(
+  const expectedChargesThisMonth = monthCharges.filter(
     (c) =>
       c.due_date >= monthStartIso &&
       c.due_date <= monthEndIso &&
@@ -82,8 +92,9 @@ export function RentFlowKpis({
   );
 
   // Past due: open/partial charges whose due_date is strictly before
-  // today. We report both the money owed and the count of charges.
-  const pastDueCharges = charges.filter(
+  // today. Uses the full openCharges set — an unpaid charge from
+  // two months ago still counts as past due today.
+  const pastDueCharges = openCharges.filter(
     (c) =>
       (c.status === "open" || c.status === "partial") && c.due_date < todayIso
   );
@@ -94,7 +105,9 @@ export function RentFlowKpis({
 
   // Due next 7 days: open charges due on or after today AND ≤ today+7.
   // Partial already paid charges count at their remaining balance.
-  const dueSoonCharges = charges.filter(
+  // Uses openCharges so a charge due on the 3rd of next month still
+  // lights up this tile when viewed on the 28th.
+  const dueSoonCharges = openCharges.filter(
     (c) =>
       (c.status === "open" || c.status === "partial") &&
       c.due_date >= todayIso &&
