@@ -9,10 +9,7 @@ import {
 } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { CreatePaymentDialog } from "./create-payment-dialog";
-import {
-  sweepOpenChargesForActiveCommitments,
-  openAllChargesForCommitment,
-} from "@/lib/payments/charges";
+import { openAllChargesForCommitment } from "@/lib/payments/charges";
 import { ResidentPaymentsView } from "./resident-view";
 import { PaymentsByResident } from "./payments-by-resident";
 import { RentStructureCard } from "./rent-structure-card";
@@ -89,16 +86,13 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
   // searchParams is reserved for future filters (e.g. ?house=xxx).
   await searchParams;
 
-  // Lazy "cron": on every staff page load, backfill missing charges
-  // up to today. Idempotent via the (resident, due_date, charge_type)
-  // unique index.
-  if (isStaff) {
-    try {
-      await sweepOpenChargesForActiveCommitments(houseFilter ?? null);
-    } catch (e) {
-      console.error("Charge sweep failed", e);
-    }
-  }
+  // Charge sweep used to run here on every staff page load as a
+  // "lazy cron". That's now handled by the actual daily cron at
+  // /api/cron/sweep-charges (see vercel.json). Residents still get
+  // a targeted per-commitment backfill below since their view is
+  // cheap and the cron can fire mid-day. Staff /payments is the
+  // hottest authenticated page in the app — moving the sweep off
+  // this request path is the main runtime win here.
 
   const { todayIso, monthStartIso, monthEndIso, weekAheadIso } =
     computeDateBounds();
