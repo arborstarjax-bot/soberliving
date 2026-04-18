@@ -1,8 +1,8 @@
-import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getPageParams, buildPaginationMeta } from "@/lib/pagination";
 import { NotificationList } from "./notification-list";
+import { RefreshOnMount } from "@/components/refresh-on-mount";
 import {
   NOTIFICATION_CATEGORIES,
   notificationTypesForCategory,
@@ -39,23 +39,17 @@ export default async function NotificationsPage({ searchParams }: PageProps) {
   // in sync with the badge. Per-row "Mark as read" and the header
   // "Mark all read" button become no-ops after this pass but we
   // leave them in place for explicit undo / clean-up flows.
-  const { data: clearedRows } = await supabase
+  // Router cache invalidation happens via `<RefreshOnMount />` below —
+  // revalidatePath is forbidden inside a page's render in Next.js 16
+  // ("Server Functions and Route Handlers" only). router.refresh on
+  // mount drops the cached layout on the client and re-fetches this
+  // route, which causes the sidebar's unread badge to re-render with
+  // the new zero count.
+  await supabase
     .from("notifications")
     .update({ is_read: true })
     .eq("user_id", user.id)
-    .eq("is_read", false)
-    .select("id");
-
-  // Invalidate the cached dashboard layout so the sidebar's unread
-  // badge re-computes on the next navigation. Without this the
-  // Next.js Router Cache keeps serving the stale badge count (the
-  // layout isn't re-rendered on client-side navigation unless we
-  // explicitly tell it to) — David saw the badge disappear while
-  // on this page but pop right back after navigating away.
-  // Only bother when we actually flipped rows.
-  if (clearedRows && clearedRows.length > 0) {
-    revalidatePath("/", "layout");
-  }
+    .eq("is_read", false);
 
   // Unread count is always a full-dataset metric — it shouldn't change
   // as you page through. Keep it cheap with head-only count. After
@@ -186,6 +180,7 @@ export default async function NotificationsPage({ searchParams }: PageProps) {
 
   return (
     <div className="space-y-6">
+      <RefreshOnMount />
       <div>
         <h1 className="text-2xl font-bold">Notifications</h1>
         <p className="text-muted-foreground">

@@ -1,4 +1,3 @@
-import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
@@ -6,6 +5,7 @@ import { BulletinFeed } from "./bulletin-feed";
 import { NewPostForm } from "./new-post-form";
 import { Pagination } from "@/components/pagination";
 import { getPageParams, buildPaginationMeta } from "@/lib/pagination";
+import { RefreshOnMount } from "@/components/refresh-on-mount";
 
 /** Parse photo_url field — handles both legacy single URL and new JSON array format */
 function parsePhotoUrls(raw: string | null): string[] {
@@ -36,19 +36,13 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
   // Bump this user's last_seen_bulletin_at so the sidebar unread
   // badge clears on the next layout render. Counterpart to the
   // unreadBulletinCount query in (dashboard)/layout.tsx — "viewing
-  // the bulletin board" is the read event.
+  // the bulletin board" is the read event. `<RefreshOnMount />`
+  // below invalidates the router cache client-side so the sidebar
+  // re-renders with the fresh count.
   await supabase
     .from("users")
     .update({ last_seen_bulletin_at: new Date().toISOString() })
     .eq("id", user.id);
-
-  // Invalidate the cached dashboard layout so the sidebar badge
-  // re-computes on the next navigation. Without this the Next.js
-  // Router Cache keeps the stale count around — the layout doesn't
-  // re-render on client-side navigation unless we explicitly tell
-  // it to. David saw the badge disappear while on this page but
-  // pop back after navigating away.
-  revalidatePath("/", "layout");
 
   // Determine which houses the user can post to
   let postableHouses: { id: string; name: string }[] = [];
@@ -217,6 +211,7 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
 
   return (
     <div className="space-y-6">
+      <RefreshOnMount />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Bulletin Board</h1>
