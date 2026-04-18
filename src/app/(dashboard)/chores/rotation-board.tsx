@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ALL_DAYS, DAY_LABELS } from "@/lib/validations";
 import { X, RefreshCw, Check, XCircle, Pencil } from "lucide-react";
-import { formatDateOnly } from "@/lib/timezone";
+import { formatDateOnly, getHouseDayOfWeek } from "@/lib/timezone";
 
 interface RotationAssignment {
   id: string;
@@ -50,9 +50,13 @@ function getCurrentWeekNumber(cycleStartDate: string): number {
   return Math.max(1, weekNum);
 }
 
+// Pulls today's weekday from the app timezone (Eastern) so it lines
+// up with `sign_off_date` columns (which are also in app TZ). Using
+// browser-local `new Date().getDay()` causes the "today" highlight
+// to fall on the wrong column for users whose browser TZ differs
+// from the house's TZ around the midnight boundary.
 function getTodayDayOfWeek(): string {
-  const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-  return days[new Date().getDay()];
+  return getHouseDayOfWeek();
 }
 
 export function RotationBoard({

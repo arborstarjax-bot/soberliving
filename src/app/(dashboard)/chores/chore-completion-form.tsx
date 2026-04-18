@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Camera, Check, Upload } from "lucide-react";
 import { completeChore, uploadChorePhoto } from "./actions";
-import { getHouseToday } from "@/lib/timezone";
+import { getHouseDayOfWeek, getHouseToday } from "@/lib/timezone";
 
 interface ChoreForCompletion {
   id: string;
@@ -34,16 +34,13 @@ export function ChoreCompletionForm({
   const [activeChoreId, setActiveChoreId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Both date + weekday must come from the house's timezone so they
+  // never disagree. Previously `today` was Eastern but `dayOfWeek`
+  // was browser-local — for a Pacific user at 9pm the date advanced
+  // to the next Eastern day while the weekday stayed on the current
+  // browser day, filtering out chores scheduled for the Eastern day.
   const today = getHouseToday();
-  const dayOfWeek = [
-    "sunday",
-    "monday",
-    "tuesday",
-    "wednesday",
-    "thursday",
-    "friday",
-    "saturday",
-  ][new Date().getDay()];
+  const dayOfWeek = getHouseDayOfWeek();
 
   // Filter chores scheduled for today
   const todaysChores = chores.filter(
