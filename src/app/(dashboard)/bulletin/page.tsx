@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
@@ -40,6 +41,14 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
     .from("users")
     .update({ last_seen_bulletin_at: new Date().toISOString() })
     .eq("id", user.id);
+
+  // Invalidate the cached dashboard layout so the sidebar badge
+  // re-computes on the next navigation. Without this the Next.js
+  // Router Cache keeps the stale count around — the layout doesn't
+  // re-render on client-side navigation unless we explicitly tell
+  // it to. David saw the badge disappear while on this page but
+  // pop back after navigating away.
+  revalidatePath("/", "layout");
 
   // Determine which houses the user can post to
   let postableHouses: { id: string; name: string }[] = [];

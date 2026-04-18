@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getPageParams, buildPaginationMeta } from "@/lib/pagination";
@@ -38,11 +39,23 @@ export default async function NotificationsPage({ searchParams }: PageProps) {
   // in sync with the badge. Per-row "Mark as read" and the header
   // "Mark all read" button become no-ops after this pass but we
   // leave them in place for explicit undo / clean-up flows.
-  await supabase
+  const { data: clearedRows } = await supabase
     .from("notifications")
     .update({ is_read: true })
     .eq("user_id", user.id)
-    .eq("is_read", false);
+    .eq("is_read", false)
+    .select("id");
+
+  // Invalidate the cached dashboard layout so the sidebar's unread
+  // badge re-computes on the next navigation. Without this the
+  // Next.js Router Cache keeps serving the stale badge count (the
+  // layout isn't re-rendered on client-side navigation unless we
+  // explicitly tell it to) — David saw the badge disappear while
+  // on this page but pop right back after navigating away.
+  // Only bother when we actually flipped rows.
+  if (clearedRows && clearedRows.length > 0) {
+    revalidatePath("/", "layout");
+  }
 
   // Unread count is always a full-dataset metric — it shouldn't change
   // as you page through. Keep it cheap with head-only count. After
