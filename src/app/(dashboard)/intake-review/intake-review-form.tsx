@@ -539,11 +539,17 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
           </p>
         </div>
 
-        {/* Existing-tenant flow: skip the move-in charge entirely and
-            anchor the first rent charge on a future date. Useful when
-            adding an already-living-here resident into the system. */}
-        <div className="rounded-md border border-blue-200 bg-blue-50 p-3 space-y-3">
-          <label className="flex items-start gap-2 text-sm">
+        {/* Two explicit top-level checkboxes that staff actually use:
+            whether the resident is already paid up on rent (skip the
+            initial rent charge, anchor billing to a future date) and
+            whether the admin fee has already been collected or
+            waived. Each is independently toggleable now so e.g. a new
+            resident whose admin fee was waived by the owner can still
+            pay rent at move-in. The "existing tenant" language is
+            preserved in the help copy for continuity but the checkbox
+            is labeled around the concrete action for staff. */}
+        <div className="space-y-2">
+          <label className="flex items-start gap-2 text-sm rounded-md border p-3">
             <input
               type="checkbox"
               className="mt-0.5 h-4 w-4"
@@ -552,40 +558,53 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
             />
             <span>
               <span className="font-medium">
-                Existing tenant — already caught up on rent
+                Rent paid up already for this cycle
               </span>
               <span className="block text-xs text-muted-foreground">
-                Skip the move-in charge. The first rent charge will open
-                on the date you select below.
+                Tick this for residents already living in the house who
+                are caught up on rent. No move-in rent charge is opened;
+                the next rent cycle starts on the date you pick below.
               </span>
+              {isExistingTenant && (
+                <span className="mt-3 block space-y-2">
+                  <Label className="text-xs">Next Rent Due Date *</Label>
+                  <Input
+                    type="date"
+                    value={nextRentDueDate}
+                    onChange={(e) => setNextRentDueDate(e.target.value)}
+                    min={new Date().toISOString().split("T")[0]}
+                    className="max-w-xs"
+                  />
+                  <span className="block text-xs text-muted-foreground">
+                    Rent cycles continue {paymentFrequency} from this date.
+                  </span>
+                </span>
+              )}
             </span>
           </label>
 
-          {isExistingTenant && (
-            <div className="pl-6 space-y-3">
-              <div className="space-y-2">
-                <Label>Next Rent Due Date *</Label>
-                <Input
-                  type="date"
-                  value={nextRentDueDate}
-                  onChange={(e) => setNextRentDueDate(e.target.value)}
-                  min={new Date().toISOString().split("T")[0]}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Rent cycles continue monthly from this date.
-                </p>
-              </div>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4"
-                  checked={skipAdminFee}
-                  onChange={(e) => setSkipAdminFee(e.target.checked)}
-                />
-                <span>Admin fee already collected — skip admin fee charge</span>
-              </label>
-            </div>
-          )}
+          <label className="flex items-start gap-2 text-sm rounded-md border p-3">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4"
+              checked={skipAdminFee}
+              onChange={(e) => setSkipAdminFee(e.target.checked)}
+              disabled={!isExistingTenant}
+            />
+            <span>
+              <span className="font-medium">
+                Admin fee already paid / waived
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                Skip the $
+                {Number.isFinite(parsedAdminFee)
+                  ? parsedAdminFee.toFixed(0)
+                  : "200"}{" "}
+                admin fee charge. Only applies when the resident is being
+                activated as already paid up on rent.
+              </span>
+            </span>
+          </label>
         </div>
 
         {!isExistingTenant && (

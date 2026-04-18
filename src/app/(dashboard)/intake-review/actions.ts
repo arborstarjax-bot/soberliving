@@ -7,8 +7,9 @@ import { logActivity } from "@/lib/activity";
 import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 import {
   openAllChargesForCommitment,
-  addMonthsClamped,
+  normalizePaymentFrequency,
   parseIsoDate,
+  periodEndFor,
   toIsoDate,
 } from "@/lib/payments/charges";
 import { generateReceiptPdf } from "@/lib/payments/receipt-pdf";
@@ -252,33 +253,30 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     }
   }
 
-  // ── Move-in payment ─────────────────────────────────────────────
-  // When the admin collects a payment at move-in we:
-  //   1. Open the admin_fee + first-cycle rent charges early (before
-  //      the resident signs) so there's a real charge row to apply to.
-  //   2. Allocate admin-fee-first, remainder to rent.
-  //   3. Record ONE payments row, generate receipt PDF, link it.
-  // `openAllChargesForCommitment` is idempotent via upsert, so when
-  // the resident signs later and `markIntakeComplete` re-opens
-  // charges, duplicates are harmlessly ignored.
-  if (data.moveInPayment) {
-    const mi = data.moveInPayment;
+  // ── Pre-open initial charges ────────────────────────────────────
+  // Open the admin-fee + first-cycle rent charges NOW, regardless of
+  // whether move-in money was collected and regardless of whether the
+  // resident has signed their commitment yet. Previously this only
+  // happened when a move-in payment was collected, which meant new
+  // residents checked in with "No payment collected at move-in" had
+  // zero open charges until they signed — and if they never signed,
+  // they'd never show up in Outstanding. Now Outstanding is correct
+  // the moment intake is saved.
+  //
+  // Existing-tenant activations: the billing_anchor_date + the
+  // openRentChargesForCommitment sweep handle them. We skip pre-open
+  // here because (a) there's no first-cycle rent charge owed yet —
+  // the anchor is always in the future — and (b) admin fee is
+  // skipped via skip_initial_admin_fee. Everything else catches up on
+  // the next /payments page load.
+  const frequency = normalizePaymentFrequency(data.paymentFrequency);
+  const rentPeriodStart = data.commitmentStartDate;
+  const rentPeriodEnd = toIsoDate(
+    periodEndFor(parseIsoDate(data.commitmentStartDate), frequency)
+  );
 
-    // Open charges early — the helpers gate on status=active, so we
-    // inline the insert directly. Idempotent via unique index, but
-    // because `ignoreDuplicates: true` means "first insert wins", we
-    // MUST write the same shape `openRentChargesForCommitment` would,
-    // including period_start / period_end. Otherwise when
-    // markIntakeComplete later calls openAllChargesForCommitment it
-    // sees the row already exists and skips it, and the rent charge
-    // is permanently stuck with NULL period fields (breaking the
-    // payments UI's "Period" line and the receipt PDF).
-    const rentPeriodStart = data.commitmentStartDate;
-    const rentPeriodEnd = toIsoDate(
-      addMonthsClamped(parseIsoDate(data.commitmentStartDate), 1)
-    );
-
-    const chargeRows: Array<{
+  if (!data.existingTenant) {
+    const initialCharges: Array<{
       resident_id: string;
       house_id: string;
       commitment_id: string;
@@ -290,7 +288,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     }> = [];
 
     if (data.adminFee > 0) {
-      chargeRows.push({
+      initialCharges.push({
         resident_id: residentId,
         house_id: data.houseId,
         commitment_id: commitmentId,
@@ -299,7 +297,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
         due_date: data.commitmentStartDate,
       });
     }
-    chargeRows.push({
+    initialCharges.push({
       resident_id: residentId,
       house_id: data.houseId,
       commitment_id: commitmentId,
@@ -310,12 +308,27 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
       period_end: rentPeriodEnd,
     });
 
-    if (chargeRows.length > 0) {
-      await adminClient.from("payment_charges").upsert(chargeRows, {
+    const { error: preOpenErr } = await adminClient
+      .from("payment_charges")
+      .upsert(initialCharges, {
         onConflict: "resident_id,due_date,charge_type",
         ignoreDuplicates: true,
       });
+    if (preOpenErr) {
+      console.error("Failed to pre-open initial charges at intake", preOpenErr);
     }
+  }
+
+  // ── Move-in payment ─────────────────────────────────────────────
+  // When the admin collects a payment at move-in we:
+  //   1. (Charges already pre-opened above.)
+  //   2. Allocate admin-fee-first, remainder to rent.
+  //   3. Record ONE payments row, generate receipt PDF, link it.
+  // `openAllChargesForCommitment` is idempotent via upsert, so when
+  // the resident signs later and `markIntakeComplete` re-opens
+  // charges, duplicates are harmlessly ignored.
+  if (data.moveInPayment) {
+    const mi = data.moveInPayment;
 
     // Re-read the freshly opened charges to get their IDs.
     const { data: openCharges } = await adminClient

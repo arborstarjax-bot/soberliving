@@ -1,14 +1,23 @@
-// Charge scheduling helpers. Rent is monthly, on the same calendar
-// day each month as the commitment_start_date. No proration, no late
-// fees — a missed month is just an open charge in the past until it
-// gets paid.
-//
-// `addMonthsClamped(start, n)` handles the edge case where the start
-// day is 29 / 30 / 31 and the target month is shorter (Feb 31 → Feb
-// 28/29). The day is clamped down so we never skip a month or roll
-// over into the next one.
+// Charge scheduling helpers. Rent is either monthly or weekly,
+// driven by the commitment's `payment_frequency`:
+//   - monthly → same calendar day each month as commitment_start_date.
+//                `addMonthsClamped` handles 29/30/31 → shorter month
+//                by clamping down (Feb 31 → Feb 28/29) so we never
+//                skip a month or roll over.
+//   - weekly  → same weekday every 7 days starting at
+//                commitment_start_date. Simple +7 day step.
+// No proration, no late fees — a missed cycle is just an open charge
+// in the past until it gets paid.
 
 import { createAdminClient } from "@/lib/supabase/server";
+
+export type PaymentFrequency = "weekly" | "monthly";
+
+export function normalizePaymentFrequency(
+  v: string | null | undefined
+): PaymentFrequency {
+  return v === "weekly" ? "weekly" : "monthly";
+}
 
 export function addMonthsClamped(start: Date, months: number): Date {
   const y = start.getFullYear();
@@ -22,6 +31,32 @@ export function addMonthsClamped(start: Date, months: number): Date {
   ).getDate();
   target.setDate(Math.min(d, lastDayOfTargetMonth));
   return target;
+}
+
+// Step forward `cycles` rent cycles from `start`. For monthly
+// commitments that's the same clamp-day logic as addMonthsClamped.
+// For weekly, it's just start + 7*cycles days.
+export function addCycles(
+  start: Date,
+  cycles: number,
+  frequency: PaymentFrequency
+): Date {
+  if (frequency === "weekly") {
+    const d = new Date(start);
+    d.setDate(d.getDate() + 7 * cycles);
+    return d;
+  }
+  return addMonthsClamped(start, cycles);
+}
+
+// Period end of a rent charge — i.e. the start of the NEXT cycle.
+// `period_start = due_date` by convention, so period_end is just one
+// cycle after due_date.
+export function periodEndFor(
+  due: Date,
+  frequency: PaymentFrequency
+): Date {
+  return addCycles(due, 1, frequency);
 }
 
 export function toIsoDate(d: Date): string {
@@ -40,19 +75,31 @@ export function parseIsoDate(s: string): Date {
   return new Date(y, (m ?? 1) - 1, d ?? 1);
 }
 
-// Given a commitment start date and a list of existing rent charges,
-// compute the next due_date to open. Returns null if the resident is
-// already current (there's an open charge covering today or later).
+// Given a commitment start date + the list of due_dates that already
+// exist for this commitment's rent charges, compute the next due_date
+// to open. Cadence is driven by `frequency` so weekly commitments
+// step by 7 days and monthly commitments step by one month (clamped).
 export function nextDueDate(
   commitmentStart: Date,
-  existingDueDates: Date[]
+  existingDueDates: Date[],
+  frequency: PaymentFrequency = "monthly"
 ): Date {
   if (existingDueDates.length === 0) return commitmentStart;
   const max = existingDueDates.reduce(
     (a, b) => (a.getTime() > b.getTime() ? a : b),
     existingDueDates[0]
   );
-  // Next cycle = one month after the most recent due.
+  // For weekly cadence the cycle count is derived from day-diff /7.
+  // For monthly it's (yearDiff*12 + monthDiff) which ignores the day
+  // component — anchor clamping is then re-applied by addMonthsClamped.
+  if (frequency === "weekly") {
+    const MS = 24 * 60 * 60 * 1000;
+    const dayDiff = Math.round(
+      (max.getTime() - commitmentStart.getTime()) / MS
+    );
+    const cycles = Math.floor(dayDiff / 7);
+    return addCycles(commitmentStart, cycles + 1, "weekly");
+  }
   const diffMonths =
     (max.getFullYear() - commitmentStart.getFullYear()) * 12 +
     (max.getMonth() - commitmentStart.getMonth());
@@ -68,6 +115,7 @@ interface CommitmentRow {
   commitment_start_date: string;
   status: string;
   created_at: string;
+  payment_frequency?: string | null;
   // Existing-tenant activation support. When set, rent cycles anchor
   // to this date instead of commitment_start_date, and the startup
   // admin-fee charge is suppressed. Both are optional — legacy
@@ -93,13 +141,15 @@ export async function openRentChargesForCommitment(
   const { data: commitment } = await supabase
     .from("house_commitments")
     .select(
-      "id, resident_id, house_id, rent_amount, admin_fee, commitment_start_date, status, created_at, billing_anchor_date, skip_initial_admin_fee"
+      "id, resident_id, house_id, rent_amount, admin_fee, commitment_start_date, status, created_at, payment_frequency, billing_anchor_date, skip_initial_admin_fee"
     )
     .eq("id", commitmentId)
     .single<CommitmentRow>();
 
   if (!commitment || commitment.status !== "active") return 0;
   if (!commitment.resident_id) return 0;
+
+  const frequency = normalizePaymentFrequency(commitment.payment_frequency);
 
   // When a commitment has an explicit billing_anchor_date (existing-
   // tenant activation), use it as both the rent-cycle anchor AND the
@@ -181,17 +231,25 @@ export async function openRentChargesForCommitment(
 
   // Strategy: open every rent cycle whose due_date is on or before
   // today AND on or after the system cutoff (commitment.created_at).
-  // We never pre-open future cycles — the next month's row will be
+  // We never pre-open future cycles — the next cycle's row will be
   // opened when the calendar actually reaches its due day. The Next
   // Rent card computes the upcoming due virtually from the commitment
   // terms, so residents still see when their next payment lands.
+  //
+  // Safety cap is 1040 which covers ~20 years of weekly cycles or 87
+  // years of monthly — we'll break via the today-cutoff long before
+  // that in practice.
   let openedCount = 0;
   let safety = 0;
-  while (safety++ < 240) {
-    const due = nextDueDate(start, [
-      ...existingDates,
-      ...rows.map((r) => parseIsoDate(r.due_date)),
-    ]);
+  while (safety++ < 1040) {
+    const due = nextDueDate(
+      start,
+      [
+        ...existingDates,
+        ...rows.map((r) => parseIsoDate(r.due_date)),
+      ],
+      frequency
+    );
     // Stop opening once we've caught up to today. No future rows.
     if (due.getTime() > today.getTime()) break;
     // Skip anything before the system cutoff — don't backfill charges
@@ -203,7 +261,7 @@ export async function openRentChargesForCommitment(
       continue;
     }
     const periodStart = toIsoDate(due);
-    const periodEnd = toIsoDate(addMonthsClamped(due, 1));
+    const periodEnd = toIsoDate(periodEndFor(due, frequency));
     rows.push({
       resident_id: commitment.resident_id,
       house_id: commitment.house_id,
@@ -239,7 +297,7 @@ export async function openStartupChargesForCommitment(
   const { data: commitment } = await supabase
     .from("house_commitments")
     .select(
-      "id, resident_id, house_id, rent_amount, admin_fee, commitment_start_date, status, created_at, billing_anchor_date, skip_initial_admin_fee"
+      "id, resident_id, house_id, rent_amount, admin_fee, commitment_start_date, status, created_at, payment_frequency, billing_anchor_date, skip_initial_admin_fee"
     )
     .eq("id", commitmentId)
     .single<CommitmentRow>();
@@ -308,13 +366,15 @@ export async function materializeNextRentCharge(commitmentId: string): Promise<{
   const { data: commitment } = await supabase
     .from("house_commitments")
     .select(
-      "id, resident_id, house_id, rent_amount, admin_fee, commitment_start_date, status, created_at, billing_anchor_date, skip_initial_admin_fee"
+      "id, resident_id, house_id, rent_amount, admin_fee, commitment_start_date, status, created_at, payment_frequency, billing_anchor_date, skip_initial_admin_fee"
     )
     .eq("id", commitmentId)
     .single<CommitmentRow>();
 
   if (!commitment || commitment.status !== "active") return null;
   if (!commitment.resident_id) return null;
+
+  const frequency = normalizePaymentFrequency(commitment.payment_frequency);
 
   // Existing-tenant activations carry a `billing_anchor_date` that
   // overrides `commitment_start_date` as the rent-cycle anchor. Honor
@@ -359,9 +419,9 @@ export async function materializeNextRentCharge(commitmentId: string): Promise<{
     parseIsoDate(r.due_date as unknown as string)
   );
 
-  const due = nextDueDate(start, existingDates);
+  const due = nextDueDate(start, existingDates, frequency);
   const periodStart = toIsoDate(due);
-  const periodEnd = toIsoDate(addMonthsClamped(due, 1));
+  const periodEnd = toIsoDate(periodEndFor(due, frequency));
   const dueIso = toIsoDate(due);
 
   // Insert with onConflict do-nothing in case two admins click Pay

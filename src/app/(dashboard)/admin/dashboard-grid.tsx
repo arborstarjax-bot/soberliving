@@ -54,9 +54,38 @@ export interface OnOvernightItem {
 }
 
 export interface NewIntakeItem {
+  // `kind` distinguishes the three intake-stage buckets so the card
+  // can render the right status label and link somewhere useful:
+  //   - pending_review  → user finished the intake form, not yet
+  //                       reviewed by admin. href → /intake-review
+  //   - pending_signature → commitment written by admin, waiting on
+  //                       the resident's signature. No direct link
+  //                       because only the resident can sign.
+  //   - active          → commitment signed / resident on roster.
+  //                       href → /residents/:id
+  kind: "pending_review" | "pending_signature" | "active";
+  // The id is the target for the row's link — either the user id
+  // (pending_review) or the resident id (active). Pending-signature
+  // rows still use user id for consistency but don't link anywhere.
   id: string;
   full_name: string;
-  move_in_date: string;
+  // ISO YYYY-MM-DD date. For active residents this is move_in_date,
+  // otherwise it's the date the user's intake was submitted.
+  dated: string;
+  house_name: string | null;
+  status_label: string;
+}
+
+export interface HouseItem {
+  id: string;
+  name: string;
+  address: string | null;
+  resident_count: number;
+}
+
+export interface ActiveResidentItem {
+  id: string;
+  full_name: string;
   house_name: string | null;
 }
 
@@ -69,8 +98,8 @@ export interface MissedChoreItem {
 }
 
 interface Props {
-  houseCount: number;
-  activeResidentCount: number;
+  houses: HouseItem[];
+  activeResidents: ActiveResidentItem[];
   signedOut: SignedOutItem[];
   onOvernight: OnOvernightItem[];
   newIntakes: NewIntakeItem[];
@@ -78,8 +107,8 @@ interface Props {
 }
 
 export function DashboardGrid({
-  houseCount,
-  activeResidentCount,
+  houses,
+  activeResidents,
   signedOut,
   onOvernight,
   newIntakes,
@@ -87,18 +116,69 @@ export function DashboardGrid({
 }: Props) {
   return (
     <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-      <NavCard
+      <ExpandCard
         label="Houses"
-        value={houseCount}
-        href="/houses"
+        value={houses.length}
         icon={<Home className="h-5 w-5" />}
-      />
-      <NavCard
+        href="/houses"
+        hrefLabel="Manage houses"
+        emptyText="No active houses."
+      >
+        <ul className="divide-y">
+          {houses.map((h) => (
+            <li
+              key={h.id}
+              className="flex items-center justify-between gap-3 py-2"
+            >
+              <div className="min-w-0">
+                <Link
+                  href={`/houses/${h.id}`}
+                  className="text-sm font-medium hover:underline truncate block"
+                >
+                  {h.name}
+                </Link>
+                {h.address && (
+                  <p className="text-xs text-muted-foreground truncate">
+                    {h.address}
+                  </p>
+                )}
+              </div>
+              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                {h.resident_count} resident{h.resident_count === 1 ? "" : "s"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </ExpandCard>
+      <ExpandCard
         label="Active Residents"
-        value={activeResidentCount}
-        href="/residents"
+        value={activeResidents.length}
         icon={<Users className="h-5 w-5" />}
-      />
+        href="/residents"
+        hrefLabel="View all residents"
+        emptyText="No active residents."
+      >
+        <ul className="divide-y">
+          {activeResidents.map((r) => (
+            <li
+              key={r.id}
+              className="flex items-center justify-between gap-3 py-2"
+            >
+              <Link
+                href={`/residents/${r.id}`}
+                className="text-sm font-medium hover:underline truncate min-w-0"
+              >
+                {r.full_name}
+              </Link>
+              {r.house_name && (
+                <span className="shrink-0 text-xs text-muted-foreground truncate max-w-[50%]">
+                  {r.house_name}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </ExpandCard>
       <ExpandCard
         label="Signed Out"
         value={signedOut.length}
@@ -173,34 +253,52 @@ export function DashboardGrid({
         label="New Intakes"
         value={newIntakes.length}
         icon={<UserPlus className="h-5 w-5" />}
-        href="/residents"
-        hrefLabel="View all residents"
-        emptyText="No new move-ins in the last 30 days."
+        href="/intake-review"
+        hrefLabel="View intake review"
+        emptyText="No intakes in progress or the last 30 days."
       >
         <ul className="divide-y">
-          {newIntakes.map((r) => (
-            <li
-              key={r.id}
-              className="flex items-center justify-between gap-3 py-2"
-            >
-              <div className="min-w-0">
-                <Link
-                  href={`/residents/${r.id}`}
-                  className="text-sm font-medium hover:underline truncate block"
-                >
-                  {r.full_name}
-                </Link>
-                {r.house_name && (
-                  <p className="text-xs text-muted-foreground truncate">
-                    {r.house_name}
-                  </p>
-                )}
-              </div>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {formatDateOnly(r.move_in_date, { month: "short", day: "numeric" })}
-              </span>
-            </li>
-          ))}
+          {newIntakes.map((r) => {
+            // Rows link only for rows with a useful target — active
+            // residents go to their detail page, pending_review goes
+            // to the intake review screen. Pending signature rows
+            // render as plain text (only the resident can act).
+            const nameLinkHref =
+              r.kind === "active"
+                ? `/residents/${r.id}`
+                : r.kind === "pending_review"
+                ? "/intake-review"
+                : null;
+            return (
+              <li
+                key={`${r.kind}-${r.id}`}
+                className="flex items-start justify-between gap-3 py-2"
+              >
+                <div className="min-w-0">
+                  {nameLinkHref ? (
+                    <Link
+                      href={nameLinkHref}
+                      className="text-sm font-medium hover:underline truncate block"
+                    >
+                      {r.full_name} — {r.status_label}
+                    </Link>
+                  ) : (
+                    <p className="text-sm font-medium truncate">
+                      {r.full_name} — {r.status_label}
+                    </p>
+                  )}
+                  {r.house_name && (
+                    <p className="text-xs text-muted-foreground truncate">
+                      {r.house_name}
+                    </p>
+                  )}
+                </div>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {formatDateOnly(r.dated, { month: "short", day: "numeric" })}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       </ExpandCard>
       <ExpandCard
@@ -237,34 +335,6 @@ export function DashboardGrid({
 }
 
 // ─── Primitives ─────────────────────────────
-
-function NavCard({
-  label,
-  value,
-  href,
-  icon,
-}: {
-  label: string;
-  value: number;
-  href: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <Link href={href} className="block">
-      <Card className="transition-colors hover:bg-muted/50">
-        <CardHeader className="flex-row items-center justify-between gap-2 pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            {label}
-          </CardTitle>
-          <span className="text-muted-foreground">{icon}</span>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <p className="text-3xl font-bold tabular-nums">{value}</p>
-        </CardContent>
-      </Card>
-    </Link>
-  );
-}
 
 function ExpandCard({
   label,

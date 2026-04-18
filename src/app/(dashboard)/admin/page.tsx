@@ -8,6 +8,8 @@ import { UserPlus } from "lucide-react";
 import { SignOutToggle } from "../sign-out-sheet/sign-out-toggle";
 import {
   DashboardGrid,
+  type ActiveResidentItem,
+  type HouseItem,
   type MissedChoreItem,
   type NewIntakeItem,
   type OnOvernightItem,
@@ -76,20 +78,22 @@ export default async function AdminPage() {
   const weekStartIso = isoWeekStart(todayIso);
   const thirtyDaysAgoIso = isoDaysAgo(todayIso, 30);
 
-  // Count queries (run with head:true + count:exact to skip the row
-  // payload). House scope goes through `.in("id", filter)` or
-  // `.in("house_id", filter)` depending on the table.
-  let housesCountQuery = supabase
+  // Houses + Active Residents were count-only NavCards; now they're
+  // expandable lists like the rest. Fetch the actual rows so the
+  // card can display who/what is behind the number.
+  let housesListQuery = supabase
     .from("houses")
-    .select("id", { count: "exact", head: true })
-    .eq("is_active", true);
-  if (houseFilter) housesCountQuery = housesCountQuery.in("id", houseFilter);
+    .select("id, name, address")
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+  if (houseFilter) housesListQuery = housesListQuery.in("id", houseFilter);
 
-  let residentsCountQuery = supabase
+  let residentsListQuery = supabase
     .from("residents")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "active");
-  if (houseFilter) residentsCountQuery = residentsCountQuery.in("house_id", houseFilter);
+    .select("id, full_name, house_id, house:houses(name)")
+    .eq("status", "active")
+    .order("full_name", { ascending: true });
+  if (houseFilter) residentsListQuery = residentsListQuery.in("house_id", houseFilter);
 
   // Signed Out: open sign_out_sheet rows. Filter by house at the query
   // layer (sign_out_sheet has its own house_id column).
@@ -116,14 +120,31 @@ export default async function AdminPage() {
     .is("actual_return_date", null)
     .order("departure_date", { ascending: true });
 
-  // New Intakes: residents with move_in_date >= 30d ago.
-  let newIntakesQuery = supabase
+  // New Intakes: combined view of three buckets so the dashboard
+  // shows the full intake pipeline (not just residents who are
+  // already activated):
+  //   - active:            resident row with move_in_date in last 30d.
+  //   - pending_signature: commitment created, waiting on resident sig.
+  //   - pending_review:    user finished intake form, not yet reviewed.
+  let newIntakesActiveQuery = supabase
     .from("residents")
     .select("id, full_name, move_in_date, house:houses(name)")
     .eq("status", "active")
     .gte("move_in_date", thirtyDaysAgoIso)
     .order("move_in_date", { ascending: false });
-  if (houseFilter) newIntakesQuery = newIntakesQuery.in("house_id", houseFilter);
+  if (houseFilter)
+    newIntakesActiveQuery = newIntakesActiveQuery.in("house_id", houseFilter);
+
+  let pendingSignatureQuery = supabase
+    .from("house_commitments")
+    .select(
+      "id, user_id, created_at, house:houses(name), user:users(full_name)"
+    )
+    .eq("status", "pending_resident_signature")
+    .is("parent_commitment_id", null)
+    .order("created_at", { ascending: false });
+  if (houseFilter)
+    pendingSignatureQuery = pendingSignatureQuery.in("house_id", houseFilter);
 
   // Missed Chores this week: chore_signoffs with status='missed' and
   // sign_off_date >= Monday of this week. We eager-load the
@@ -149,19 +170,21 @@ export default async function AdminPage() {
     .maybeSingle();
 
   const [
-    { count: houseCount },
-    { count: activeResidentCount },
+    { data: housesRaw },
+    { data: residentsRaw },
     { data: signedOutRaw },
     { data: onOvernightRaw },
-    { data: newIntakesRaw },
+    { data: newIntakesActiveRaw },
+    { data: pendingSignatureRaw },
     { data: missedChoresRaw },
     { data: myResidentRec },
   ] = await Promise.all([
-    housesCountQuery,
-    residentsCountQuery,
+    housesListQuery,
+    residentsListQuery,
     signedOutQuery,
     leaveQueryBase,
-    newIntakesQuery,
+    newIntakesActiveQuery,
+    pendingSignatureQuery,
     missedChoresQuery,
     meResidentQuery,
   ]);
@@ -226,20 +249,48 @@ export default async function AdminPage() {
       };
     });
 
-  type NewIntakeRow = {
+  type NewIntakeActiveRow = {
     id: string;
     full_name: string;
     move_in_date: string;
     house: { name: string } | { name: string }[] | null;
   };
-  const newIntakes: NewIntakeItem[] = ((newIntakesRaw as unknown as NewIntakeRow[] | null) ?? [])
+  const newIntakesActive: NewIntakeItem[] = (
+    (newIntakesActiveRaw as unknown as NewIntakeActiveRow[] | null) ?? []
+  ).map((r) => {
+    const house = Array.isArray(r.house) ? r.house[0] : r.house;
+    return {
+      kind: "active",
+      id: r.id,
+      full_name: r.full_name,
+      dated: r.move_in_date,
+      house_name: house?.name ?? null,
+      status_label: "Complete",
+    };
+  });
+
+  type PendingSignatureRow = {
+    id: string;
+    user_id: string;
+    created_at: string;
+    house: { name: string } | { name: string }[] | null;
+    user: { full_name: string } | { full_name: string }[] | null;
+  };
+  const iso = (d: string) => d.slice(0, 10);
+  const newIntakesPendingSig: NewIntakeItem[] = (
+    (pendingSignatureRaw as unknown as PendingSignatureRow[] | null) ?? []
+  )
+    .filter((r) => r.user)
     .map((r) => {
       const house = Array.isArray(r.house) ? r.house[0] : r.house;
+      const u = Array.isArray(r.user) ? r.user![0] : r.user!;
       return {
-        id: r.id,
-        full_name: r.full_name,
-        move_in_date: r.move_in_date,
+        kind: "pending_signature" as const,
+        id: r.user_id,
+        full_name: u.full_name,
+        dated: iso(r.created_at),
         house_name: house?.name ?? null,
+        status_label: "Pending resident signature",
       };
     });
 
@@ -278,27 +329,97 @@ export default async function AdminPage() {
 
   // Pending intake applications (admin only). Intake-completed users
   // who haven't been reviewed yet bump a banner at the top of the
-  // page; otherwise they can sit unnoticed.
+  // page; otherwise they can sit unnoticed. They also render as the
+  // "pending_review" rows inside the New Intakes card so staff can
+  // see names + the date each form was submitted at a glance.
   let pendingIntakeCount = 0;
+  let newIntakesPendingReview: NewIntakeItem[] = [];
   if (isAdmin) {
     const adminClient = createAdminClient();
-    const [{ data: intakeUsers }, { data: commitments }] = await Promise.all([
-      adminClient
-        .from("users")
-        .select("id")
-        .eq("intake_completed", true)
-        .eq("commitment_signed", false)
-        .eq("is_active", true)
-        .neq("account_status", "rejected"),
-      adminClient.from("house_commitments").select("user_id"),
-    ]);
+    const [{ data: intakeUsers }, { data: commitments }, { data: forms }] =
+      await Promise.all([
+        adminClient
+          .from("users")
+          .select("id, full_name, created_at")
+          .eq("intake_completed", true)
+          .eq("commitment_signed", false)
+          .eq("is_active", true)
+          .neq("account_status", "rejected"),
+        adminClient.from("house_commitments").select("user_id"),
+        adminClient
+          .from("intake_forms")
+          .select("user_id, updated_at")
+          .eq("status", "completed"),
+      ]);
     const reviewedUserIds = new Set(
       (commitments ?? []).map((c) => c.user_id as string)
     );
-    pendingIntakeCount = (intakeUsers ?? []).filter(
-      (u) => !reviewedUserIds.has(u.id as string)
-    ).length;
+    const formDateByUser = new Map<string, string>();
+    for (const f of forms ?? []) {
+      const fRow = f as { user_id: string; updated_at: string };
+      formDateByUser.set(fRow.user_id, fRow.updated_at);
+    }
+    const pendingReviewUsers = (intakeUsers ?? []).filter(
+      (u) => !reviewedUserIds.has((u as { id: string }).id)
+    );
+    pendingIntakeCount = pendingReviewUsers.length;
+    newIntakesPendingReview = pendingReviewUsers.map((u) => {
+      const row = u as { id: string; full_name: string; created_at: string };
+      const submitted = formDateByUser.get(row.id) ?? row.created_at;
+      return {
+        kind: "pending_review" as const,
+        id: row.id,
+        full_name: row.full_name,
+        dated: iso(submitted),
+        // House isn't assigned until admin reviews, so leave blank.
+        house_name: null,
+        status_label: "Awaiting staff review",
+      };
+    });
   }
+
+  // Merge the three intake buckets. Order: pending_review first (most
+  // actionable), then pending_signature, then complete/active.
+  const newIntakes: NewIntakeItem[] = [
+    ...newIntakesPendingReview,
+    ...newIntakesPendingSig,
+    ...newIntakesActive,
+  ];
+
+  type HouseRow = { id: string; name: string; address: string | null };
+  const houseRows = (housesRaw as unknown as HouseRow[] | null) ?? [];
+
+  type ResidentListRow = {
+    id: string;
+    full_name: string;
+    house_id: string | null;
+    house: { name: string } | { name: string }[] | null;
+  };
+  const residentRows =
+    (residentsRaw as unknown as ResidentListRow[] | null) ?? [];
+
+  const activeResidents: ActiveResidentItem[] = residentRows.map((r) => {
+    const house = Array.isArray(r.house) ? r.house[0] : r.house;
+    return {
+      id: r.id,
+      full_name: r.full_name,
+      house_name: house?.name ?? null,
+    };
+  });
+
+  // Resident count per house for the Houses card. Uses the same
+  // already-fetched residents list so we don't pay for an extra trip.
+  const residentsPerHouse = new Map<string, number>();
+  for (const r of residentRows) {
+    if (!r.house_id) continue;
+    residentsPerHouse.set(r.house_id, (residentsPerHouse.get(r.house_id) ?? 0) + 1);
+  }
+  const houses: HouseItem[] = houseRows.map((h) => ({
+    id: h.id,
+    name: h.name,
+    address: h.address ?? null,
+    resident_count: residentsPerHouse.get(h.id) ?? 0,
+  }));
 
   // Staff-as-resident sign-out toggle, same as the admin page had
   // before. If the logged-in staff member is also an active resident
@@ -369,8 +490,8 @@ export default async function AdminPage() {
       </div>
 
       <DashboardGrid
-        houseCount={houseCount ?? 0}
-        activeResidentCount={activeResidentCount ?? 0}
+        houses={houses}
+        activeResidents={activeResidents}
         signedOut={signedOut}
         onOvernight={onOvernight}
         newIntakes={newIntakes}
