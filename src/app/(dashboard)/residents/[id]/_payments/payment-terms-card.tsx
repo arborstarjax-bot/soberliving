@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ClipboardList, FileText } from "lucide-react";
+import { CheckCircle2, ClipboardList, FileText } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { dayOfMonthLocal } from "@/lib/local-date";
 import { getDocumentUrl } from "@/app/(intake)/actions";
@@ -19,12 +19,23 @@ export function PaymentTermsCard({
   residentUserId,
   residentName,
   pendingAmendment,
+  isUpToDate,
+  nextCycleDate,
 }: {
   terms: PaymentTerms;
   isAdmin: boolean;
   residentUserId: string | null;
   residentName: string;
   pendingAmendment: PendingAmendment | null;
+  // True when the resident has zero open charges — their balance
+  // is clear through the next billing cycle. Used by the "Up to
+  // date" badge; the badge is hidden when an amendment is pending
+  // because the tracking picture changes as soon as it's signed.
+  isUpToDate: boolean;
+  // ISO date (YYYY-MM-DD) of the next billing cycle. Rendered
+  // inside the up-to-date pill so staff can see at a glance when
+  // the next charge will open.
+  nextCycleDate: string | null;
 }) {
   const [downloading, setDownloading] = useState(false);
   const router = useRouter();
@@ -78,6 +89,21 @@ export function PaymentTermsCard({
             From Commitment
           </Badge>
         </div>
+        {isUpToDate && !pendingAmendment && (
+          <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 px-3 py-2">
+            <CheckCircle2 className="h-4 w-4 text-green-700" />
+            <div className="space-y-0.5">
+              <p className="text-xs font-semibold text-green-900">
+                Up to date
+              </p>
+              <p className="text-[11px] text-green-800">
+                {nextCycleDate
+                  ? `No open charges. Next ${isWeekly ? "weekly" : "monthly"} rent cycle opens ${formatDate(nextCycleDate)}.`
+                  : `No open charges. Balance is clear through the next ${isWeekly ? "weekly" : "monthly"} cycle.`}
+              </p>
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div>
             <p className="text-xs text-muted-foreground">
@@ -127,7 +153,6 @@ export function PaymentTermsCard({
               userId={residentUserId}
               residentName={residentName}
               currentRent={terms.rent_amount}
-              currentAdminFee={terms.admin_fee}
               currentPaymentFrequency={terms.payment_frequency}
               effectiveDateDefault={effectiveDefault}
             />

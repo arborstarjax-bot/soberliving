@@ -531,7 +531,6 @@ export async function proposeAmendment(
 
   const userId = String(formData.get("user_id") ?? "");
   const newRent = Number(formData.get("rent_amount"));
-  const newAdminFee = Number(formData.get("admin_fee") ?? 0);
   const effectiveDate = String(formData.get("effective_date") ?? "");
   const reason = String(formData.get("reason") ?? "").trim();
   const rawFrequency = String(formData.get("payment_frequency") ?? "");
@@ -543,9 +542,6 @@ export async function proposeAmendment(
   if (!userId) return { error: "Resident is required" };
   if (!Number.isFinite(newRent) || newRent < 0) {
     return { error: "Rent must be a non-negative number" };
-  }
-  if (!Number.isFinite(newAdminFee) || newAdminFee < 0) {
-    return { error: "Admin fee must be non-negative" };
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
     return { error: "Effective date is required" };
@@ -612,7 +608,14 @@ export async function proposeAmendment(
       // one — keeps old callers safe.
       payment_frequency: newFrequency ?? active.payment_frequency,
       rent_amount: newRent,
-      admin_fee: newAdminFee,
+      // Admin fee is a one-time move-in fee — it was already collected
+      // (or opened) against the original commitment. We carry the
+      // amount through on the amendment row for audit/display only
+      // and set skip_initial_admin_fee so openStartupChargesForCommitment
+      // doesn't open a second admin_fee charge when the amendment is
+      // signed.
+      admin_fee: active.admin_fee,
+      skip_initial_admin_fee: true,
       // New rent schedule anchors on the effective date — future
       // rent charges opened against this commitment will use it as
       // their cycle day. Also re-derive the human-readable rent_due_date
@@ -684,7 +687,6 @@ export async function proposeAmendment(
     metadata: {
       parent_commitment_id: active.id,
       new_rent: newRent,
-      new_admin_fee: newAdminFee,
       new_payment_frequency: newFrequency ?? active.payment_frequency,
       effective_date: effectiveDate,
       reason,
@@ -717,9 +719,25 @@ export async function cancelPendingAmendment(
 
   const { error } = await admin
     .from("house_commitments")
-    .update({ status: "cancelled" })
+    .update({ status: "cancelled", updated_at: new Date().toISOString() })
     .eq("id", commitmentId);
   if (error) return { error: error.message };
+
+  // Tell the resident the amendment was withdrawn so they don't keep
+  // hunting for a non-existent /sign-commitment redirect. Also clears
+  // any stale "Signature Required" notification they already had.
+  if (row.user_id) {
+    await sendNotification({
+      userId: row.user_id as string,
+      type: "commitment_amendment",
+      title: "Payment-terms amendment withdrawn",
+      message:
+        "The proposed payment-terms amendment was cancelled by staff. Your current terms remain in effect.",
+      actionUrl: "/dashboard",
+      entityType: "house_commitment",
+      entityId: commitmentId,
+    });
+  }
 
   await logActivity({
     houseId: row.house_id as string,
@@ -732,5 +750,7 @@ export async function cancelPendingAmendment(
 
   revalidatePath("/payments");
   revalidatePath(`/residents/${row.resident_id}`);
+  revalidatePath("/sign-commitment");
+  revalidatePath("/dashboard");
   return {};
 }
