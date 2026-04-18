@@ -8,10 +8,13 @@ import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 import {
   openAllChargesForCommitment,
   normalizePaymentFrequency,
-  parseIsoDate,
-  periodEndFor,
-  toIsoDate,
 } from "@/lib/payments/charges";
+import {
+  allocateMoveInPayment,
+  buildInitialCharges,
+  buildMoveInNote,
+  normalizeSobrietyDate,
+} from "@/lib/payments/intake-activation";
 import { generateReceiptPdf } from "@/lib/payments/receipt-pdf";
 import { z } from "zod";
 import { getHouseToday } from "@/lib/timezone";
@@ -131,17 +134,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     // submitted and we don't want to block activation on a bad value
     // in a legacy form — admin can set the correct date later from
     // the resident detail page.
-    sobriety_date: (() => {
-      const v = (fd.sobriety_date as string) || null;
-      if (!v) return null;
-      const entered = new Date(v);
-      const endOfToday = new Date();
-      endOfToday.setHours(23, 59, 59, 999);
-      if (isNaN(entered.getTime()) || entered.getTime() > endOfToday.getTime()) {
-        return null;
-      }
-      return v;
-    })(),
+    sobriety_date: normalizeSobrietyDate(fd.sobriety_date as string | null, new Date()),
     move_in_date: data.commitmentStartDate,
     status: "active" as const,
     updated_at: new Date().toISOString(),
@@ -271,44 +264,18 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
   // skipped via skip_initial_admin_fee. Everything else catches up on
   // the next /payments page load.
   const frequency = normalizePaymentFrequency(data.paymentFrequency);
-  const rentPeriodStart = data.commitmentStartDate;
-  const rentPeriodEnd = toIsoDate(
-    periodEndFor(parseIsoDate(data.commitmentStartDate), frequency)
-  );
+  const initialCharges = buildInitialCharges({
+    residentId,
+    houseId: data.houseId,
+    commitmentId,
+    commitmentStartDate: data.commitmentStartDate,
+    rentAmount: data.rentAmount,
+    adminFee: data.adminFee,
+    frequency,
+    existingTenant: data.existingTenant ?? false,
+  });
 
-  if (!data.existingTenant) {
-    const initialCharges: Array<{
-      resident_id: string;
-      house_id: string;
-      commitment_id: string;
-      charge_type: string;
-      amount: number;
-      due_date: string;
-      period_start?: string;
-      period_end?: string;
-    }> = [];
-
-    if (data.adminFee > 0) {
-      initialCharges.push({
-        resident_id: residentId,
-        house_id: data.houseId,
-        commitment_id: commitmentId,
-        charge_type: "admin_fee",
-        amount: data.adminFee,
-        due_date: data.commitmentStartDate,
-      });
-    }
-    initialCharges.push({
-      resident_id: residentId,
-      house_id: data.houseId,
-      commitment_id: commitmentId,
-      charge_type: "rent",
-      amount: data.rentAmount,
-      due_date: data.commitmentStartDate,
-      period_start: rentPeriodStart,
-      period_end: rentPeriodEnd,
-    });
-
+  if (initialCharges.length > 0) {
     const { error: preOpenErr } = await adminClient
       .from("payment_charges")
       .upsert(initialCharges, {
@@ -340,34 +307,25 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
       .eq("due_date", data.commitmentStartDate)
       .in("charge_type", ["admin_fee", "rent"]);
 
-    const adminFeeCharge = (openCharges ?? []).find(
+    const adminFeeRow = (openCharges ?? []).find(
       (c) => (c.charge_type as string) === "admin_fee"
     );
-    const rentCharge = (openCharges ?? []).find(
+    const rentRow = (openCharges ?? []).find(
       (c) => (c.charge_type as string) === "rent"
     );
 
-    // Allocate: admin fee first, then rent.
-    let remaining = mi.amount;
-    const allocations: Array<{ chargeId: string; applied: number; chargeType: string }> = [];
+    // Allocate: admin fee first, then rent. Pure function owns the math.
+    const allocations = allocateMoveInPayment({
+      amount: mi.amount,
+      adminFeeCharge: adminFeeRow
+        ? { id: adminFeeRow.id as string, amount: Number(adminFeeRow.amount) }
+        : null,
+      rentCharge: rentRow
+        ? { id: rentRow.id as string, amount: Number(rentRow.amount) }
+        : null,
+    });
 
-    if (adminFeeCharge && remaining > 0) {
-      const apply = Math.min(remaining, Number(adminFeeCharge.amount));
-      allocations.push({ chargeId: adminFeeCharge.id as string, applied: apply, chargeType: "admin_fee" });
-      remaining -= apply;
-    }
-    if (rentCharge && remaining > 0) {
-      const apply = Math.min(remaining, Number(rentCharge.amount));
-      allocations.push({ chargeId: rentCharge.id as string, applied: apply, chargeType: "rent" });
-      remaining -= apply;
-    }
-
-    // Build the note with allocation breakdown for the receipt.
-    const breakdownParts = allocations.map(
-      (a) => `${a.chargeType === "admin_fee" ? "Admin Fee" : "Rent"}: $${a.applied.toFixed(2)}`
-    );
-    const autoNote = `Move-in payment (${breakdownParts.join(" / ")})`;
-    const fullNote = mi.note ? `${autoNote}\n${mi.note}` : autoNote;
+    const fullNote = buildMoveInNote(allocations, mi.note);
 
     // Allocate a receipt number.
     let receiptNumber: string | null = null;
