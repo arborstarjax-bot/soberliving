@@ -212,15 +212,6 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
   return (
     <div className="space-y-6">
       <RefreshOnMount />
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Bulletin Board</h1>
-          <p className="text-muted-foreground">
-            Announcements and messages for residents and staff
-          </p>
-        </div>
-      </div>
-
       <NewPostForm
         houses={postableHouses}
         userRole={user.role}

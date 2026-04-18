@@ -3,6 +3,7 @@ import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { findPendingBlockerForUser } from "@/lib/blockers";
 import type { SessionUser, UserRole } from "@/lib/types";
 
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
@@ -70,6 +71,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   // silently return null for residents and the redirect would be a
   // no-op — the original intent of the PR #47 fix.
   let hasPendingCommitment = false;
+  let pendingBlockerId: string | null = null;
   if (isResident) {
     const admin = createAdminClient();
     const { data: pending } = await admin
@@ -80,6 +82,13 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
       .limit(1)
       .maybeSingle();
     hasPendingCommitment = !!pending;
+
+    // Gate residents into /acknowledge/[id] if any active blocker is
+    // targeted at them and not yet signed. Only evaluated for residents
+    // — admins/managers can't be the target of a blocker. Resolution
+    // is FIFO: the oldest pending id is returned first, so multi-blocker
+    // scenarios step through one at a time.
+    pendingBlockerId = await findPendingBlockerForUser(profile.id, admin);
   }
 
   return {
@@ -92,6 +101,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     is_resident: isResident,
     commitment_signed: commitmentSigned,
     has_pending_commitment: hasPendingCommitment,
+    pending_blocker_id: pendingBlockerId,
   };
 });
 
