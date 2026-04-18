@@ -291,3 +291,28 @@ export interface BlockerAcknowledgment {
   signature: string;
   document_id: string | null;
 }
+
+// --- Grievances ---
+
+export type GrievanceType = "grievance" | "problem";
+
+export type GrievanceStatus = "open" | "in_progress" | "resolved";
+
+export interface Grievance {
+  id: string;
+  // NULL when anonymous — see supabase/migrations/.._add_grievances.sql
+  // for the check constraint that enforces the invariant.
+  user_id: string | null;
+  house_id: string | null;
+  submitted_anonymously: boolean;
+  report_type: GrievanceType;
+  subject: string;
+  description: string;
+  attachment_paths: string[];
+  status: GrievanceStatus;
+  internal_notes: string | null;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
