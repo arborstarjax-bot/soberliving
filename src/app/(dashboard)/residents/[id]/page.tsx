@@ -82,7 +82,7 @@ export default async function ResidentDetailPage(
   const { data: activeCommitment } = await supabase
     .from("house_commitments")
     .select(
-      "id, rent_amount, admin_fee, commitment_start_date, status, pdf_storage_path"
+      "id, rent_amount, admin_fee, payment_frequency, commitment_start_date, status, pdf_storage_path"
     )
     .eq("resident_id", id)
     .eq("status", "active")
@@ -594,6 +594,11 @@ export default async function ResidentDetailPage(
                       activeCommitment.admin_fee !== undefined
                         ? Number(activeCommitment.admin_fee)
                         : null,
+                    payment_frequency:
+                      ((activeCommitment.payment_frequency as
+                        | "weekly"
+                        | "monthly"
+                        | null) ?? "monthly"),
                     commitment_start_date:
                       activeCommitment.commitment_start_date as string,
                     pdf_storage_path:

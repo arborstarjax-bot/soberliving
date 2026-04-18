@@ -106,6 +106,7 @@ export function PaymentTermsCard({
               residentName={residentName}
               currentRent={terms.rent_amount}
               currentAdminFee={terms.admin_fee}
+              currentPaymentFrequency={terms.payment_frequency}
               effectiveDateDefault={effectiveDefault}
             />
           )}
