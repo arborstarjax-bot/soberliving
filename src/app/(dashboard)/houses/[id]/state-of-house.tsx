@@ -14,6 +14,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { StateOfHouseData } from "./state-of-house-data";
+import { formatDateOnly, formatInAppTz } from "@/lib/timezone";
 
 interface StateOfHouseProps {
   houseId: string;
@@ -61,7 +62,15 @@ function avgOf<T>(items: T[], read: (x: T) => number): number | null {
 }
 
 function fmtDate(s: string | null): string {
-  return s ? new Date(s).toLocaleDateString("en-US", { timeZone: "America/New_York" }) : "—";
+  if (!s) return "—";
+  // Called with a mix of Postgres `date` columns (move_out_date,
+  // occurred_at, start_date, end_date, move_in_date) and
+  // `timestamptz` columns (createdAt). Date-only strings render the
+  // stored calendar day; timestamps render the Eastern-time day.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return formatDateOnly(s);
+  }
+  return formatInAppTz(s);
 }
 
 export function StateOfHouseView({

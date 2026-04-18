@@ -43,6 +43,54 @@ export function formatInAppTz(
 }
 
 /**
+ * Formats a date-only value (PostgreSQL `date` columns come back as
+ * "YYYY-MM-DD") for display. Date-only strings have no timezone — they
+ * represent a calendar day, not an instant. `new Date("2026-04-18")`
+ * parses as UTC midnight, which when rendered in Eastern becomes 8 PM
+ * the previous day, so dates like `move_in_date`, `sobriety_date`,
+ * `due_date`, etc. would silently display one day earlier if they went
+ * through `formatInAppTz` or a raw `toLocaleDateString("en-US",
+ * { timeZone: "America/New_York" })`.
+ *
+ * This helper parses the date-only components out of the string (or
+ * uses `Date.UTC` for a proper Date) and formats them in UTC so the
+ * rendered day is exactly the stored day, regardless of server or
+ * browser timezone.
+ *
+ * Accepts either a "YYYY-MM-DD" string (optionally with a time suffix,
+ * in which case only the date portion is used) or a Date object whose
+ * UTC year/month/day components represent the intended calendar day.
+ */
+export function formatDateOnly(
+  value: Date | string | null | undefined,
+  options: Intl.DateTimeFormatOptions = {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }
+): string {
+  if (value === null || value === undefined) return "";
+  let y: number;
+  let m: number;
+  let d: number;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return "";
+    y = value.getUTCFullYear();
+    m = value.getUTCMonth() + 1;
+    d = value.getUTCDate();
+  } else {
+    if (typeof value !== "string" || value.length < 10) return "";
+    const [ys, ms, ds] = value.slice(0, 10).split("-").map(Number);
+    if (!ys || !ms || !ds) return "";
+    y = ys;
+    m = ms;
+    d = ds;
+  }
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.toLocaleDateString("en-US", { ...options, timeZone: "UTC" });
+}
+
+/**
  * Returns today's date string (YYYY-MM-DD) in the given IANA timezone.
  */
 export function getHouseToday(timezone: string = DEFAULT_TIMEZONE): string {

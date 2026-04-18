@@ -9,6 +9,7 @@ import {
   issueChoreWarning,
   issueChoreDemerit,
 } from "../discipline/warning-actions";
+import { formatDateOnly } from "@/lib/timezone";
 
 interface MissedSignoff {
   id: string;
@@ -86,7 +87,7 @@ export function MissedChoresList({ signoffs, canAct = false }: Props) {
                 <p className="font-medium truncate">{ra?.chore?.name}</p>
                 <p className="text-xs text-muted-foreground">
                   {ra?.resident?.full_name} ·{" "}
-                  {new Date(s.sign_off_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} ·{" "}
+                  {formatDateOnly(s.sign_off_date)} ·{" "}
                   <span className="capitalize">{s.day_of_week}</span> (Week{" "}
                   {s.week_number})
                 </p>

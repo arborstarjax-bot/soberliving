@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SignaturePad } from "@/components/signature-pad";
 import { signCommitment } from "./actions";
+import { formatDateOnly } from "@/lib/timezone";
 
 interface CommitmentSigningFormProps {
   commitmentId: string;
@@ -229,7 +230,7 @@ export function CommitmentSigningForm({
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  Effective {new Date(commitmentStartDate).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+                  Effective {formatDateOnly(commitmentStartDate)}
                 </p>
               </div>
             </div>
@@ -253,7 +254,7 @@ export function CommitmentSigningForm({
             </div>
             <div className="p-3 rounded-lg bg-muted">
               <p className="text-muted-foreground text-xs">Start Date</p>
-              <p className="font-medium">{new Date(commitmentStartDate).toLocaleDateString("en-US", { timeZone: "America/New_York" })}</p>
+              <p className="font-medium">{formatDateOnly(commitmentStartDate)}</p>
               <p className="text-muted-foreground text-xs mt-1">Term: {commitmentTerm}</p>
             </div>
             <div className="p-3 rounded-lg bg-muted">
@@ -294,7 +295,7 @@ export function CommitmentSigningForm({
             </li>
             <li>
               <strong>COMMITMENT:</strong> Resident commits to a minimum stay of {commitmentTerm} from
-              the start date of {new Date(commitmentStartDate).toLocaleDateString("en-US", { timeZone: "America/New_York" })}.
+              the start date of {formatDateOnly(commitmentStartDate)}.
             </li>
             <li>
               <strong>EARLY MOVE-OUT:</strong> Resident must provide at least 48 hours written

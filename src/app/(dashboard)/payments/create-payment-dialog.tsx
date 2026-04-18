@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Plus } from "lucide-react";
+import { formatDateOnly } from "@/lib/timezone";
 
 // Record Payment dialog. When an open charge exists for the selected
 // resident, it's preselected and the amount / period / due date are
@@ -45,9 +46,14 @@ function formatCurrency(amount: number) {
 }
 
 function formatMonthDay(iso: string) {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(y, (m ?? 1) - 1, d ?? 1);
-  return dt.toLocaleDateString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", year: "numeric" });
+  // Date-only string from a `date` column — use formatDateOnly so
+  // the rendered day matches the stored calendar day regardless of
+  // server/browser timezone.
+  return formatDateOnly(iso, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 export function CreatePaymentDialog({ houses, residents, openCharges }: Props) {

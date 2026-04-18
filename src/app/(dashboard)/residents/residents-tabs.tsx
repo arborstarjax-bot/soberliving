@@ -15,6 +15,7 @@ import { ResendCommitmentButton } from "../intake-review/resend-commitment-butto
 import { ResendInviteButton } from "../users/resend-invite-button";
 import { SendCheckInDialog } from "./check-ins/send-checkin-dialog";
 import { CheckInList } from "./check-ins/checkin-list";
+import { formatDateOnly } from "@/lib/timezone";
 
 interface Resident {
   id: string;
@@ -274,7 +275,7 @@ export function ResidentsTabs({
               </div>
               <p className="text-xs text-muted-foreground">
                 {p.house_name}
-                {p.move_in_date && ` · Moved in ${new Date(p.move_in_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`}
+                {p.move_in_date && ` · Moved in ${formatDateOnly(p.move_in_date)}`}
                 {p.staffRole === "manager" && p.assigned_house_names.length > 0 && (
                   ` · Houses: ${p.assigned_house_names.join(", ")}`
                 )}

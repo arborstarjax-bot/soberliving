@@ -20,6 +20,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { formatDateOnly } from "@/lib/timezone";
 import { DollarSign } from "lucide-react";
 
 interface Props {
@@ -129,7 +130,7 @@ export function RecordChargePaymentDialog({
             <DialogTitle>Record Payment</DialogTitle>
             <DialogDescription>
               {residentName} · {chargeTypeLabel(charge.charge_type)} due{" "}
-              {new Date(charge.due_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} ·{" "}
+              {formatDateOnly(charge.due_date)} ·{" "}
               {formatMoney(balance)} open
             </DialogDescription>
           </DialogHeader>

@@ -16,6 +16,7 @@ import {
 import { DownloadReceiptButton } from "@/app/(dashboard)/payments/download-receipt-button";
 import { getDocumentUrl } from "@/app/(intake)/actions";
 import { daysUntilLocal, dayOfMonthLocal } from "@/lib/local-date";
+import { formatDateOnly, formatInAppTz } from "@/lib/timezone";
 import { EditTermsDialog } from "@/app/(dashboard)/payments/edit-terms-dialog";
 import { cancelPendingAmendment } from "@/app/(dashboard)/payments/actions";
 import { EditPendingCommitmentDialog } from "@/app/(dashboard)/intake-review/edit-pending-commitment-dialog";
@@ -139,7 +140,17 @@ function paymentLabel(type: string | null, method: string | null): string {
 }
 
 function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString("en-US", { timeZone: "America/New_York" });
+  // This helper is called with a mix of date-only strings
+  // (charge.due_date, terms.commitment_start_date, effective_date,
+  // commitmentStartDate — all Postgres `date` columns) and full
+  // timestamps (payment.paid_at — `timestamptz`). Route each to the
+  // right formatter so date-only values render their stored calendar
+  // day without timezone drift, while timestamps show the Eastern-time
+  // day they actually occurred on.
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return formatDateOnly(value);
+  }
+  return formatInAppTz(value);
 }
 
 function ordinal(n: number): string {

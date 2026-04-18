@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { ShieldAlert, AlertTriangle } from "lucide-react";
 import { LiftRestrictionButton, DeleteRestrictionButton } from "./lift-restriction-button";
 import { EditRestrictionDialog } from "./edit-restriction-dialog";
+import { formatDateOnly } from "@/lib/timezone";
 
 const RESTRICTION_TYPE_LABELS: Record<string, string> = {
   no_leave: "No Leave",
@@ -164,9 +165,9 @@ export function DisciplineTabs({
                               <p className="text-sm text-muted-foreground italic">Note: {r.notes}</p>
                             )}
                             <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                              <span>From: {new Date(r.start_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}</span>
+                              <span>From: {formatDateOnly(r.start_date)}</span>
                               {r.end_date ? (
-                                <span>Until: {new Date(r.end_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}</span>
+                                <span>Until: {formatDateOnly(r.end_date)}</span>
                               ) : (
                                 <span>Indefinite</span>
                               )}
@@ -225,7 +226,7 @@ export function DisciplineTabs({
                           <div className="flex items-center gap-2">
                             <span className="text-xs text-muted-foreground">
                               {r.end_date
-                                ? `Expired ${new Date(r.end_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
+                                ? `Expired ${formatDateOnly(r.end_date)}`
                                 : `Lifted ${new Date(r.updated_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`}
                             </span>
                             {isStaff && <DeleteRestrictionButton restrictionId={r.id} />}
@@ -281,7 +282,7 @@ export function DisciplineTabs({
                           </span>
                         </div>
                         <span className="text-xs text-muted-foreground">
-                          {new Date(inc.occurred_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+                          {formatDateOnly(inc.occurred_at)}
                         </span>
                       </div>
                       <p className="text-sm mt-1">{inc.description}</p>

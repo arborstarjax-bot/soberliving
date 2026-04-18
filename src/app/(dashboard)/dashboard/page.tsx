@@ -2,7 +2,7 @@ import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { getDaysSober, isSobrietyDateFuture } from "@/lib/milestones";
-import { getHouseToday, DEFAULT_TIMEZONE } from "@/lib/timezone";
+import { getHouseToday, DEFAULT_TIMEZONE, formatDateOnly } from "@/lib/timezone";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Home, Users, ClipboardCheck, AlertTriangle, CalendarClock, Bed, Activity, DollarSign, ListChecks } from "lucide-react";
@@ -460,8 +460,8 @@ async function ResidentDashboard({ userId }: { userId: string }) {
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {isSobrietyDateFuture(resident.sobriety_date)
-                    ? `Starts ${new Date(resident.sobriety_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`
-                    : `Since ${new Date(resident.sobriety_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}`}
+                    ? `Starts ${formatDateOnly(resident.sobriety_date)}`
+                    : `Since ${formatDateOnly(resident.sobriety_date)}`}
                 </p>
               </div>
             ) : (
@@ -533,8 +533,8 @@ async function ResidentDashboard({ userId }: { userId: string }) {
                 >
                   <div>
                     <p className="text-sm">
-                      {new Date(lr.departure_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} —{" "}
-                      {new Date(lr.expected_return_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+                      {formatDateOnly(lr.departure_date)} —{" "}
+                      {formatDateOnly(lr.expected_return_date)}
                     </p>
                     {lr.reason && (
                       <p className="text-xs text-muted-foreground">

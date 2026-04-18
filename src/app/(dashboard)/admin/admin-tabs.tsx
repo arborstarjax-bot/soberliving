@@ -15,6 +15,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { formatDateOnly } from "@/lib/timezone";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -598,7 +599,7 @@ function ResidentsTab({
                   <div>
                     <p className="font-medium text-sm">{r.full_name}</p>
                     <p className="text-xs text-muted-foreground">
-                      {houseName} &middot; Moved in {new Date(r.move_in_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+                      {houseName} &middot; Moved in {formatDateOnly(r.move_in_date)}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -816,8 +817,8 @@ function LeaveTab({ pendingLeave }: { pendingLeave: any[] }) {
                 <p className="font-medium text-sm">{resident?.full_name}</p>
                 <p className="text-xs text-muted-foreground">
                   {resident?.houses?.name} &middot;{" "}
-                  {new Date(lr.departure_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })} →{" "}
-                  {new Date(lr.expected_return_date).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+                  {formatDateOnly(lr.departure_date)} →{" "}
+                  {formatDateOnly(lr.expected_return_date)}
                 </p>
                 {lr.reason && (
                   <p className="text-xs text-muted-foreground mt-1">{lr.reason}</p>
@@ -1132,7 +1133,7 @@ function DemeritsTab({
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         {(inc.house as { name: string } | null)?.name} &middot;{" "}
-                        {new Date(inc.occurred_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+                        {formatDateOnly(inc.occurred_at)}
                         {inc.category && ` · ${inc.category}`}
                       </p>
                     </div>
