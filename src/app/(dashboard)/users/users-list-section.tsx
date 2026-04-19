@@ -118,7 +118,9 @@ export async function UsersListSection({ searchParams }: UsersListSectionProps) 
         "/users",
         {
           ...searchParams,
-          cp: (cursor ? [...cpList, encodeCursor(cursor)] : cpList).join(","),
+          cp:
+            (cursor ? [...cpList, encodeCursor(cursor)] : cpList).join(",") ||
+            undefined,
         },
         nextCursor
       )
