@@ -155,7 +155,7 @@ export function NewBlockerForm({
             onClick={() => setIsOpen(true)}
           >
             <Plus className="mr-2 h-4 w-4" />
-            New Blocker
+            New Notice
           </Button>
         </CardContent>
       </Card>
@@ -165,7 +165,7 @@ export function NewBlockerForm({
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>New Blocker</CardTitle>
+        <CardTitle>New Notice</CardTitle>
         <Button
           type="button"
           variant="ghost"
@@ -381,7 +381,7 @@ export function NewBlockerForm({
                 Sending…
               </>
             ) : (
-              "Send Blocker"
+              "Send Notice"
             )}
           </Button>
         </div>

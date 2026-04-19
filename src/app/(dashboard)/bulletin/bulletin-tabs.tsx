@@ -9,8 +9,9 @@ import type { UserRole } from "@/lib/types";
  * Lightweight top-nav for the Community Services section. Not a
  * base-ui Tabs component because the tabs are real routes (different
  * data fetches, different layouts) — this is just styled links.
- * Blockers / Reports are staff-only management views; Bulletin Board
- * and Ride Share are visible to residents too.
+ * Notices / Reports are staff-only management views; Bulletin Board
+ * and Ride Share are visible to residents too. (The Notices URL is
+ * still /bulletin/blockers — only the label changed.)
  */
 export function BulletinTabs({ userRole }: { userRole: UserRole }) {
   const pathname = usePathname();
@@ -31,7 +32,7 @@ export function BulletinTabs({ userRole }: { userRole: UserRole }) {
         </TabLink>
         {isStaff && (
           <TabLink href="/bulletin/blockers" active={isBlockers}>
-            Blockers
+            Notices
           </TabLink>
         )}
         {isStaff && (
