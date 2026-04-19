@@ -199,7 +199,10 @@ export function CommitmentSigningForm({
     // page 1 of the physical form: payment frequency selection,
     // admin-fee-paid-prior status, new-intake vs existing-tenant
     // activation, and any money collected at move-in with partial-
-    // reason + restrictions carried over.
+    // reason + restrictions carried over. Amendments skip this
+    // block entirely — the fields describe the original intake and
+    // the amendment PDF already has an old-vs-new terms panel.
+    if (!isAmendment) {
     y -= 6;
     newPageIfNeeded(40);
     drawText("INTAKE SUMMARY:", 50, y, 12, true);
@@ -274,6 +277,7 @@ export function CommitmentSigningForm({
       }
       y -= 4;
     }
+    } // end: if (!isAmendment)
 
     y -= 6;
     newPageIfNeeded(40);

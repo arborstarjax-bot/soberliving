@@ -632,8 +632,19 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Administrative Fee</span>
-            <span className="font-medium">
+            <span className="text-muted-foreground">
+              Administrative Fee
+              {skipAdminFee && (
+                <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                  paid prior / waived
+                </span>
+              )}
+            </span>
+            <span
+              className={`font-medium ${
+                skipAdminFee ? "text-muted-foreground line-through" : ""
+              }`}
+            >
               ${Number.isFinite(parsedAdminFee) ? parsedAdminFee.toFixed(2) : "0.00"}
             </span>
           </div>

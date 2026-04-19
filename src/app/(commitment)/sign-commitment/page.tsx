@@ -143,11 +143,31 @@ export default async function SignCommitmentPage() {
         }
       }
 
+      // `payments.note` is the output of buildMoveInNote(), which
+      // prefixes an auto-generated accounting breakdown on line 1
+      // ("Move-in payment (Admin Fee: $X / Rent: $Y)") and appends
+      // the admin's free-form reason on line 2+. Strip the prefix
+      // so the resident sees only the reason the admin typed.
+      const rawNote = (moveInPayment.note as string | null) ?? null;
+      const partialReason = (() => {
+        if (!rawNote) return null;
+        const lines = rawNote.split("\n");
+        // If the first line is the auto-generated breakdown, return
+        // everything after it. Otherwise treat the whole note as the
+        // reason (defensive for legacy / manually-edited rows).
+        const autoPrefix = /^Move-in payment \(/;
+        const userLines = autoPrefix.test(lines[0] ?? "")
+          ? lines.slice(1)
+          : lines;
+        const joined = userLines.join("\n").trim();
+        return joined.length > 0 ? joined : null;
+      })();
+
       moveInSummary = {
         totalCollected: Number(moveInPayment.amount ?? 0),
         adminFeeApplied,
         rentApplied,
-        partialReason: (moveInPayment.note as string | null) ?? null,
+        partialReason,
         paidAt: moveInPayment.paid_at as string,
         method: moveInPayment.payment_method as string,
       };
