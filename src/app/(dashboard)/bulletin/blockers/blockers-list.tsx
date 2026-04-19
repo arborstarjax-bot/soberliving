@@ -3,8 +3,8 @@
 import { useState, useTransition } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Archive, Paperclip, Loader2 } from "lucide-react";
-import { archiveBlocker } from "./actions";
+import { Archive, Paperclip, Loader2, Trash2 } from "lucide-react";
+import { archiveBlocker, deleteBlocker } from "./actions";
 import { formatInAppTz } from "@/lib/timezone";
 import type { BlockerTargetType, UserRole } from "@/lib/types";
 
@@ -106,11 +106,14 @@ function BlockerRow({
   currentUserRole: UserRole;
 }) {
   const [isPending, startTransition] = useTransition();
+  const [isDeleting, startDeleteTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
   const canArchive =
     !item.archived_at &&
     (currentUserRole === "admin" || item.created_by === currentUserId);
+  const canDelete =
+    currentUserRole === "admin" || item.created_by === currentUserId;
 
   function handleArchive() {
     if (!confirm("Archive this blocker? Residents who haven't acknowledged yet will no longer be blocked by it.")) {
@@ -119,6 +122,21 @@ function BlockerRow({
     setError(null);
     startTransition(async () => {
       const r = await archiveBlocker(item.id);
+      if (r.error) setError(r.error);
+    });
+  }
+
+  function handleDelete() {
+    if (
+      !confirm(
+        "Delete this notice permanently? All acknowledgments will also be removed. This cannot be undone."
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    startDeleteTransition(async () => {
+      const r = await deleteBlocker(item.id);
       if (r.error) setError(r.error);
     });
   }
@@ -143,22 +161,41 @@ function BlockerRow({
               {item.archived_at && ` • Archived ${formatDateTime(item.archived_at)}`}
             </p>
           </div>
-          {canArchive && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={isPending}
-              onClick={handleArchive}
-            >
-              {isPending ? (
-                <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-              ) : (
-                <Archive className="mr-2 h-3 w-3" />
-              )}
-              Archive
-            </Button>
-          )}
+          <div className="flex items-center gap-2 shrink-0">
+            {canArchive && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isPending || isDeleting}
+                onClick={handleArchive}
+              >
+                {isPending ? (
+                  <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                ) : (
+                  <Archive className="mr-2 h-3 w-3" />
+                )}
+                Archive
+              </Button>
+            )}
+            {canDelete && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                disabled={isPending || isDeleting}
+                onClick={handleDelete}
+              >
+                {isDeleting ? (
+                  <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                ) : (
+                  <Trash2 className="mr-2 h-3 w-3" />
+                )}
+                Delete
+              </Button>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
