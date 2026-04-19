@@ -66,12 +66,18 @@ export function TransferHouseDialog({
         setError(result.error);
         return;
       }
+      // Refresh the resident page either way — on the warning path the
+      // resident's house_id did change, just the bed assignment didn't
+      // land.
+      router.refresh();
       if (result?.warning) {
+        // Keep the dialog open so the user actually sees what happened
+        // and knows to assign a bed manually on the new house page.
         setWarning(result.warning);
+        return;
       }
       setOpen(false);
       reset();
-      router.refresh();
     });
   }
 

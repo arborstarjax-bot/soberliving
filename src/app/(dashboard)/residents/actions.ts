@@ -445,14 +445,18 @@ export async function transferResident(
     .eq("resident_id", residentId)
     .is("time_in", null);
 
-  // 3. Remove the resident from all chore rotation assignments
-  //    belonging to the OLD house. `chore_rotation_assignments`
-  //    doesn't carry a house_id directly — we filter by the
-  //    rotation → house join. Cascades to chore_signoffs via FK.
+  // 3. Remove the resident from CURRENT chore rotation assignments in
+  //    the old house. We deliberately skip past (is_current = false)
+  //    rotations — their assignments + cascaded chore_signoffs are
+  //    historical records that should stay with the old house, same
+  //    as warnings/demerits/payments. `chore_rotation_assignments`
+  //    doesn't carry a house_id directly so we filter by the
+  //    rotation → house join.
   const { data: oldHouseRotations } = await supabase
     .from("chore_rotations")
     .select("id")
-    .eq("house_id", sourceHouseId);
+    .eq("house_id", sourceHouseId)
+    .eq("is_current", true);
   const rotationIds = (oldHouseRotations ?? []).map((r) => r.id);
   if (rotationIds.length > 0) {
     await supabase
