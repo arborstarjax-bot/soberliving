@@ -93,13 +93,26 @@ export function CommitmentSigningForm({
     Number.isFinite(csYear) && Number.isFinite(csMonth) && Number.isFinite(csDay)
       ? new Date(csYear, (csMonth ?? 1) - 1, csDay ?? 1)
       : null;
-  const weekdayName = startDateObj
-    ? startDateObj.toLocaleDateString("en-US", { weekday: "long" })
-    : "the anchor weekday";
+  // Rent is always due the day BEFORE the cycle anchor (see
+  // computeRentDueDate in src/lib/payments/charges.ts). The paper
+  // contract's rate clause therefore references the due weekday /
+  // due day-of-month, NOT the anchor itself.
+  //   Weekly:   anchor Thursday → due every Wednesday
+  //   Monthly:  anchor on the 2nd → due on the 1st of each month
+  //   Monthly edge case: anchor on the 1st → due on the last day
+  //                      of each preceding month (variable length)
+  const dueDateObj = startDateObj
+    ? (() => {
+        const d = new Date(startDateObj);
+        d.setDate(d.getDate() - 1);
+        return d;
+      })()
+    : null;
+  const dueWeekdayName = dueDateObj
+    ? dueDateObj.toLocaleDateString("en-US", { weekday: "long" })
+    : "the day before the anchor weekday";
   const dayOfMonth = startDateObj ? startDateObj.getDate() : null;
-  const dayOfMonthOrdinal = (() => {
-    if (dayOfMonth == null) return "the agreed";
-    const n = dayOfMonth;
+  const ordinalize = (n: number) => {
     const mod100 = n % 100;
     if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
     const mod10 = n % 10;
@@ -107,7 +120,17 @@ export function CommitmentSigningForm({
     if (mod10 === 2) return `${n}nd`;
     if (mod10 === 3) return `${n}rd`;
     return `${n}th`;
-  })();
+  };
+  // The human phrase for the monthly due date. When the anchor is
+  // the 1st the due date walks into the prior month, so we use the
+  // "last day of each preceding month" wording to stay accurate
+  // regardless of whether the prior month has 28/29/30/31 days.
+  const monthlyDuePhrase =
+    dayOfMonth == null
+      ? "the agreed day"
+      : dayOfMonth === 1
+        ? "the last day of each preceding month"
+        : `the ${ordinalize(dayOfMonth - 1)} day of each month`;
   const startDateLong = startDateObj
     ? startDateObj.toLocaleDateString("en-US", {
         year: "numeric",
@@ -326,8 +349,8 @@ export function CommitmentSigningForm({
     // re-renders this block at the chosen cadence on the next
     // commitment PDF.
     const rateClause = isWeekly
-      ? `1. SOBER LIVING FEE: The Sober Living Fee shall be at the weekly rate of $${rentAmount.toFixed(2)} per week, payable every ${weekdayName} of each week, commencing ${startDateLong}. Rent is collected on the day before each weekly cycle begins.`
-      : `1. SOBER LIVING FEE: The Sober Living Fee shall be at the monthly rate of $${rentAmount.toFixed(2)} per month, payable on the ${dayOfMonthOrdinal} day of each month, commencing ${startDateLong}. Rent is collected on the day before each monthly cycle begins.`;
+      ? `1. SOBER LIVING FEE: The Sober Living Fee shall be at the weekly rate of $${rentAmount.toFixed(2)} per week, payable every ${dueWeekdayName} (the day before each weekly cycle begins), commencing ${startDateLong}.`
+      : `1. SOBER LIVING FEE: The Sober Living Fee shall be at the monthly rate of $${rentAmount.toFixed(2)} per month, payable on ${monthlyDuePhrase} (the day before each monthly cycle begins), commencing ${startDateLong}.`;
     drawParagraph(rateClause);
     drawParagraph(
       `2. ADMINISTRATIVE FEE: The Sober Living Administrative Fee (nonrefundable) shall be $${adminFee.toFixed(2)}, payable upon entering JSL. This one-time fee is charged once at the start of the resident's tenancy and is never re-charged by a payment-terms amendment.`
@@ -768,17 +791,15 @@ export function CommitmentSigningForm({
                 <>
                   The Sober Living Fee shall be at the weekly rate of $
                   {rentAmount.toFixed(2)} per week, payable every{" "}
-                  {weekdayName} of each week, commencing {startDateLong}.
-                  Rent is collected on the day before each weekly cycle
-                  begins.
+                  {dueWeekdayName} (the day before each weekly cycle
+                  begins), commencing {startDateLong}.
                 </>
               ) : (
                 <>
                   The Sober Living Fee shall be at the monthly rate of $
-                  {rentAmount.toFixed(2)} per month, payable on the{" "}
-                  {dayOfMonthOrdinal} day of each month, commencing{" "}
-                  {startDateLong}. Rent is collected on the day before each
-                  monthly cycle begins.
+                  {rentAmount.toFixed(2)} per month, payable on{" "}
+                  {monthlyDuePhrase} (the day before each monthly cycle
+                  begins), commencing {startDateLong}.
                 </>
               )}
             </li>
