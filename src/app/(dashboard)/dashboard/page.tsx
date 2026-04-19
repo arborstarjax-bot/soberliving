@@ -39,22 +39,29 @@ export default async function DashboardPage() {
   }
   const { count: residentCount } = await residentsQuery;
 
-  let bedsQuery = supabase.from("beds").select("id, label, room:rooms!inner(house_id)").eq("is_active", true);
+  // Fetch each active bed with its open assignments, then classify in
+  // one pass: a bed is "occupied" if it has an active assignment OR its
+  // label is tagged " [Not Available]" / legacy " [Empty]". Summing
+  // two independent queries (assignments + unavailable labels) would
+  // double-count beds that are both assigned and tagged.
+  let bedsQuery = supabase
+    .from("beds")
+    .select(
+      "id, label, room:rooms!inner(house_id), bed_assignments(id, end_date)"
+    )
+    .eq("is_active", true);
   if (houseFilter) bedsQuery = bedsQuery.in("room.house_id", houseFilter);
   const { data: bedRows } = await bedsQuery;
   const totalBeds = bedRows?.length ?? 0;
-  // Beds marked " [Not Available]" (or the legacy " [Empty]" tag) are
-  // held off the available pool — count them toward occupied so Open
-  // Beds matches the house-detail Not Available badge.
-  const unavailableBeds = (bedRows ?? []).filter((b) => {
+  let occupiedBeds = 0;
+  for (const b of bedRows ?? []) {
     const label: string = (b as { label: string | null }).label ?? "";
-    return label.endsWith(" [Not Available]") || label.endsWith(" [Empty]");
-  }).length;
-
-  let assignmentsQuery = supabase.from("bed_assignments").select("id, bed:beds!inner(room:rooms!inner(house_id))", { count: "exact" }).is("end_date", null);
-  if (houseFilter) assignmentsQuery = assignmentsQuery.in("bed.room.house_id", houseFilter);
-  const { count: assignedBeds } = await assignmentsQuery;
-  const occupiedBeds = (assignedBeds ?? 0) + unavailableBeds;
+    const isUnavailable =
+      label.endsWith(" [Not Available]") || label.endsWith(" [Empty]");
+    const assignments = ((b as { bed_assignments?: { end_date: string | null }[] }).bed_assignments ?? []);
+    const hasActive = assignments.some((a) => !a.end_date);
+    if (hasActive || isUnavailable) occupiedBeds++;
+  }
 
   // For pending counts, fetch with joins and filter in-app for managers
   let pendingChoreReviews = 0;

@@ -225,8 +225,9 @@ export async function deleteRideShare(postId: string): Promise<{ error?: string 
 
   const { data: post } = await admin
     .from("bulletin_posts")
-    .select("id, author_id, house_id, title")
+    .select("id, author_id, house_id, title, post_type")
     .eq("id", postId)
+    .eq("post_type", "ride_share")
     .maybeSingle();
   if (!post) return { error: "Ride share not found" };
 
@@ -298,13 +299,27 @@ async function userCanSeeRide(
 
 /** Build a timestamptz from a date + time treated as America/New_York. */
 function toEasternTimestamp(date: string, time: string): string {
-  // Compute the UTC equivalent of the given wall-clock time in Eastern.
-  // Using Intl to resolve the offset handles DST correctly without
-  // pulling in a library.
   const [h, m] = time.split(":").map((n) => parseInt(n, 10));
   const [y, mo, d] = date.split("-").map((n) => parseInt(n, 10));
-  // Probe: what is the America/New_York offset for this wall time?
-  const utcGuess = new Date(Date.UTC(y, mo - 1, d, h, m));
+  // Resolve the UTC instant whose Eastern wall-clock reads
+  // `date`/`time` by iterating: guess UTC, check what offset Eastern
+  // has at that instant, reapply. Two passes converge except inside
+  // the DST spring-forward gap where the submitted time doesn't
+  // exist — in that case we fall into the later offset and the ride
+  // lands one hour later, which matches what calendars do.
+  let utc = Date.UTC(y, mo - 1, d, h, m);
+  for (let i = 0; i < 2; i++) {
+    const offsetMs = easternOffsetMs(utc);
+    utc = Date.UTC(y, mo - 1, d, h, m) - offsetMs;
+  }
+  return new Date(utc).toISOString();
+}
+
+/**
+ * Returns the America/New_York UTC offset at the given UTC instant,
+ * in milliseconds. Negative for Eastern (EST = -5h, EDT = -4h).
+ */
+function easternOffsetMs(utcMs: number): number {
   const fmt = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
     hour12: false,
@@ -313,19 +328,20 @@ function toEasternTimestamp(date: string, time: string): string {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
   });
   const parts = Object.fromEntries(
-    fmt.formatToParts(utcGuess).map((p) => [p.type, p.value])
+    fmt.formatToParts(new Date(utcMs)).map((p) => [p.type, p.value])
   );
-  const guessWallUtc = Date.UTC(
+  const wallAsUtc = Date.UTC(
     parseInt(parts.year, 10),
     parseInt(parts.month, 10) - 1,
     parseInt(parts.day, 10),
     parseInt(parts.hour === "24" ? "0" : parts.hour, 10),
-    parseInt(parts.minute, 10)
+    parseInt(parts.minute, 10),
+    parseInt(parts.second, 10)
   );
-  const offsetMs = utcGuess.getTime() - guessWallUtc;
-  return new Date(utcGuess.getTime() + offsetMs).toISOString();
+  return wallAsUtc - utcMs;
 }
 
 function capitalize(s: string) {
