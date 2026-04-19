@@ -1,53 +1,20 @@
+import { Suspense } from "react";
 import { requireAuth } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Home } from "lucide-react";
-import Link from "next/link";
+import { ListSkeleton } from "@/components/ui/skeleton";
 import { CreateHouseDialog } from "./create-house-dialog";
+import { HousesGridSection } from "./houses-grid-section";
 
-export default async function HousesPage() {
+interface HousesPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function HousesPage({ searchParams }: HousesPageProps) {
   const user = await requireAuth();
-  const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
+  const params = await searchParams;
 
-  let query = supabase
-    .from("houses")
-    .select(
-      "*, rooms(id, is_active, beds(id, is_active, label, bed_assignments(id, end_date)))"
-    )
-    .eq("is_active", true)
-    .order("name");
-
-  if (houseFilter) {
-    query = query.in("id", houseFilter);
-  }
-
-  const { data: houses } = await query;
-
-  const housesWithOccupancy = (houses ?? []).map((house) => {
-    let totalBeds = 0;
-    let occupiedBeds = 0;
-    for (const room of house.rooms ?? []) {
-      if (!room.is_active) continue;
-      for (const bed of room.beds ?? []) {
-        if (!bed.is_active) continue;
-        totalBeds++;
-        const hasActive = (bed.bed_assignments ?? []).some(
-          (ba: { end_date: string | null }) => !ba.end_date
-        );
-        // A "Not Available" bed holds the slot off the open pool even
-        // though nobody is assigned — count it as occupied so the list
-        // card matches the detail page's bed count.
-        const label: string = bed.label ?? "";
-        const isUnavailable =
-          label.endsWith(" [Not Available]") || label.endsWith(" [Empty]");
-        if (hasActive || isUnavailable) occupiedBeds++;
-      }
-    }
-    return { ...house, totalBeds, occupiedBeds };
-  });
+  const suspenseKey = `c=${params.c ?? ""}&cp=${params.cp ?? ""}`;
 
   return (
     <div className="space-y-6">
@@ -61,59 +28,15 @@ export default async function HousesPage() {
         {user.role === "admin" && <CreateHouseDialog />}
       </div>
 
-      {housesWithOccupancy.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Home className="mx-auto h-12 w-12 text-muted-foreground/50" />
-            <p className="mt-4 text-muted-foreground">
-              No houses yet.{" "}
-              {user.role === "admin" && "Create your first house to get started."}
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {housesWithOccupancy.map((house) => (
-            <Link key={house.id} href={`/houses/${house.id}`}>
-              <Card className="hover:bg-muted/50 transition-colors h-full">
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg">{house.name}</CardTitle>
-                    <Badge variant="outline">
-                      {house.occupiedBeds}/{house.totalBeds} beds
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  {house.address && (
-                    <p className="text-sm text-muted-foreground mb-2">
-                      {house.address}
-                    </p>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <div className="h-2 flex-1 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-primary transition-all"
-                        style={{
-                          width: `${house.totalBeds > 0 ? (house.occupiedBeds / house.totalBeds) * 100 : 0}%`,
-                        }}
-                      />
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {house.totalBeds > 0
-                        ? Math.round(
-                            (house.occupiedBeds / house.totalBeds) * 100
-                          )
-                        : 0}
-                      %
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
-        </div>
-      )}
+      <Suspense
+        key={suspenseKey}
+        fallback={<ListSkeleton rows={6} rowClassName="h-40 w-full" />}
+      >
+        <HousesGridSection
+          houseFilter={houseFilter}
+          searchParams={params}
+        />
+      </Suspense>
     </div>
   );
 }
