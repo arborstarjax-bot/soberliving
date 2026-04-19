@@ -861,7 +861,10 @@ export default async function ResidentDetailPage(
         )}
 
         <TabsContent value="documents" className="mt-4">
-          <DocumentsList documents={documents ?? []} />
+          <DocumentsList
+            documents={documents ?? []}
+            canDelete={user.role === "admin"}
+          />
         </TabsContent>
 
         <TabsContent value="details" className="mt-4">

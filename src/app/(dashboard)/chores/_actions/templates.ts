@@ -12,6 +12,7 @@ import {
   updateChoreTaskSchema,
   setChoreRoomExclusionsSchema,
 } from "@/lib/validations";
+import { regenerateFutureSignoffsForChore } from "./_signoff-generation";
 
 // --- Chore Templates ---
 
@@ -102,6 +103,12 @@ export async function updateChore(
 
   if (error) return { error: error.message };
 
+  // Changing `days_of_week` or `cycle_weeks` invalidates every
+  // current-rotation signoff that was generated under the old
+  // schedule. Rebuild them so the dashboard "Due Today" tile and
+  // the rotation board reflect the new schedule immediately.
+  await regenerateFutureSignoffsForChore(supabase, choreId);
+
   await logActivity({
     houseId: chore.house_id,
     actorId: user.id,
@@ -112,6 +119,7 @@ export async function updateChore(
   });
 
   revalidatePath("/chores");
+  revalidatePath("/dashboard");
   return {};
 }
 
@@ -383,6 +391,12 @@ export async function updateChoreSchedule(choreId: string, scheduledDays: string
 
   if (error) return { error: error.message };
 
+  // Regenerate future signoffs under the new days. Without this, a
+  // chore previously scheduled for Sunday that's moved to Monday
+  // leaves its stale Sunday pending-signoffs in place and the
+  // resident dashboard shows "Chore Due Today" on the wrong day.
+  await regenerateFutureSignoffsForChore(supabase, choreId);
+
   await logActivity({
     houseId: chore.house_id,
     actorId: user.id,
@@ -393,6 +407,7 @@ export async function updateChoreSchedule(choreId: string, scheduledDays: string
   });
 
   revalidatePath("/chores");
+  revalidatePath("/dashboard");
   return {};
 }
 

@@ -48,7 +48,7 @@ export async function ResidentDashboardSection({
   const { data: myRotationAssignments } = await supabase
     .from("chore_rotation_assignments")
     .select(
-      "*, chore:chores(name), rotation:chore_rotations(cycle_start_date, cycle_end_date, is_current), chore_signoffs(*)"
+      "*, chore:chores(name, days_of_week), rotation:chore_rotations(cycle_start_date, cycle_end_date, is_current), chore_signoffs(*)"
     )
     .eq("resident_id", resident.id)
     .limit(10);
@@ -103,20 +103,29 @@ export async function ResidentDashboardSection({
   const rotationRows =
     (myRotationAssignments ?? []) as unknown as Array<{
       id: string;
-      chore: { name: string } | null;
+      chore: { name: string; days_of_week: string[] | null } | null;
       rotation: { is_current: boolean } | null;
       chore_signoffs: Array<{
         sign_off_date: string;
+        day_of_week: string;
         status: string;
       }> | null;
     }>;
   let choresDueTodayCount = 0;
   const choreNames = new Set<string>();
   for (const ra of rotationRows) {
+    // Defense-in-depth against stale signoffs: if the chore's
+    // schedule was edited (e.g. Sunday → Monday) after a rotation
+    // started but before `regenerateFutureSignoffsForChore` shipped,
+    // old pending signoffs still sit in the DB with the wrong
+    // `day_of_week`. Ignore any that no longer match the chore's
+    // current `days_of_week`.
+    const choreDays = ra.chore?.days_of_week ?? null;
     for (const s of ra.chore_signoffs ?? []) {
       if (
         s.sign_off_date === todayStr &&
-        (s.status === "pending" || s.status === "redo")
+        (s.status === "pending" || s.status === "redo") &&
+        (choreDays === null || choreDays.includes(s.day_of_week))
       ) {
         choresDueTodayCount++;
         if (ra.chore?.name) choreNames.add(ra.chore.name);

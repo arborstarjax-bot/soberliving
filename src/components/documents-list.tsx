@@ -3,6 +3,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { FileText, Download, Eye } from "lucide-react";
 import { createAdminClient } from "@/lib/supabase/server";
+import { DocumentDeleteButton } from "@/components/document-delete-button";
 
 // Staff-facing documents list used on the resident detail page. Like
 // the resident MyDocumentsView, signed URLs are generated server-side
@@ -20,6 +21,7 @@ interface DocumentRecord {
 
 interface DocumentsListProps {
   documents: DocumentRecord[];
+  canDelete?: boolean;
 }
 
 function formatBytes(bytes: number | null) {
@@ -29,7 +31,7 @@ function formatBytes(bytes: number | null) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export async function DocumentsList({ documents }: DocumentsListProps) {
+export async function DocumentsList({ documents, canDelete = false }: DocumentsListProps) {
   // Parallel-sign every document path. Anything that fails to sign
   // (missing object, expired bucket policy) just renders with a
   // disabled button so the whole list doesn't break.
@@ -104,6 +106,12 @@ export async function DocumentsList({ documents }: DocumentsListProps) {
                     >
                       <Download className="h-4 w-4" />
                     </a>
+                    {canDelete && (
+                      <DocumentDeleteButton
+                        documentId={doc.id}
+                        documentName={doc.name}
+                      />
+                    )}
                   </div>
                 </div>
               );
