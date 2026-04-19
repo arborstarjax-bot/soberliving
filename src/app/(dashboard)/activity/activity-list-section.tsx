@@ -164,7 +164,9 @@ export async function ActivityListSection({
         "/activity",
         {
           ...searchParams,
-          cp: (cursor ? [...cpList, encodeCursor(cursor)] : cpList).join(","),
+          cp:
+            (cursor ? [...cpList, encodeCursor(cursor)] : cpList).join(",") ||
+            undefined,
         },
         nextCursor
       )
