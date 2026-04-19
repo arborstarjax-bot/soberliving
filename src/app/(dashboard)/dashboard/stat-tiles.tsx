@@ -166,30 +166,24 @@ export async function ChoreReviewsStatTile({
   if (houseFilter) {
     // chore_signoffs has no denormalized house_id, so the filter has
     // to walk the chore_rotation_assignments -> chore_rotations join
-    // client-side. Fetching `CAP + 1` rows at the DB and then
-    // filtering by house would silently undercount: the 501-row
-    // pre-filter slice might not contain the manager's houses'
-    // rows at all (PR #79 regression flagged by Devin Review).
+    // client-side. Push the filter into PostgREST via the inner-join
+    // dot path so the DB returns only rows for the manager's houses,
+    // then cap at CAP + 1 rows for display.
     //
-    // Fall back to no-limit on the filtered path. In practice this
-    // is bounded by total pending-review signoffs across the
-    // organization, which is a small, drainable queue. Pushing the
-    // filter into PostgREST would need deep nested-relation filter
-    // support we can't rely on uniformly, so accept the unbounded
-    // fetch here to keep correctness.
+    // Note on the no-limit version of this query: PostgREST enforces
+    // `max_rows = 1000` globally (supabase/config.toml:18), so
+    // omitting .limit() would silently cap at 1000 rows — same
+    // class of silent-undercount bug the PR #79 regression produced
+    // at 500. Keep the filter-pushdown + explicit cap.
     const { data } = await supabase
       .from("chore_signoffs")
       .select(
         "id, rotation_assignment:chore_rotation_assignments!inner(rotation:chore_rotations!inner(house_id))"
       )
-      .eq("status", "completed_pending_review");
-    count = (data ?? []).filter((s) => {
-      const ra =
-        s.rotation_assignment as unknown as {
-          rotation: { house_id: string };
-        } | null;
-      return houseFilter.includes(ra?.rotation?.house_id ?? "");
-    }).length;
+      .eq("status", "completed_pending_review")
+      .in("rotation_assignment.rotation.house_id", houseFilter)
+      .limit(CAP + 1);
+    count = data?.length ?? 0;
   } else {
     const { data } = await supabase
       .from("chore_signoffs")
@@ -235,24 +229,24 @@ export async function LeaveRequestsStatTile({
   const supabase = await createClient();
   let count: number;
   if (houseFilter) {
-    // leave_requests has no denormalized house_id and the filter
-    // has to go through residents.house_id client-side. Fetching
-    // `CAP + 1` rows at the DB and THEN filtering would silently
-    // undercount: the 501-row pre-filter slice might not contain
-    // the manager's houses' rows at all (PR #79 regression flagged
-    // by Devin Review).
+    // leave_requests has no denormalized house_id — push the
+    // filter into PostgREST via the residents!inner join dot
+    // path so the DB returns only rows for the manager's
+    // houses, then cap at CAP + 1 rows for display.
     //
-    // Fall back to no-limit on the filtered path — bounded by
-    // total pending leave requests across the organization, which
-    // is a small, drainable queue in practice.
+    // Note on the no-limit version of this query: PostgREST
+    // enforces `max_rows = 1000` globally
+    // (supabase/config.toml:18), so omitting .limit() would
+    // silently cap at 1000 rows — same class of silent-
+    // undercount bug PR #79 produced at 500. Keep the filter-
+    // pushdown + explicit cap.
     const { data } = await supabase
       .from("leave_requests")
       .select("id, resident:residents!inner(house_id)")
-      .eq("status", "pending");
-    count = (data ?? []).filter((lr) => {
-      const r = lr.resident as unknown as { house_id: string } | null;
-      return houseFilter.includes(r?.house_id ?? "");
-    }).length;
+      .eq("status", "pending")
+      .in("resident.house_id", houseFilter)
+      .limit(CAP + 1);
+    count = data?.length ?? 0;
   } else {
     const { data } = await supabase
       .from("leave_requests")
