@@ -6,24 +6,28 @@ import { cn } from "@/lib/utils";
 import type { UserRole } from "@/lib/types";
 
 /**
- * Lightweight top-nav for /bulletin and /bulletin/blockers. Not a
+ * Lightweight top-nav for the Community Services section. Not a
  * base-ui Tabs component because the tabs are real routes (different
  * data fetches, different layouts) — this is just styled links.
- * The Blockers tab is hidden from residents since it's a staff-only
- * management view.
+ * Blockers / Reports are staff-only management views; Bulletin Board
+ * and Ride Share are visible to residents too.
  */
 export function BulletinTabs({ userRole }: { userRole: UserRole }) {
   const pathname = usePathname();
   const isPosts = pathname === "/bulletin";
+  const isRideShare = pathname.startsWith("/bulletin/ride-share");
   const isBlockers = pathname.startsWith("/bulletin/blockers");
   const isGrievances = pathname.startsWith("/bulletin/grievances");
   const isStaff = userRole === "admin" || userRole === "manager";
 
   return (
     <div className="border-b">
-      <nav className="-mb-px flex gap-6">
+      <nav className="-mb-px flex gap-6 overflow-x-auto">
         <TabLink href="/bulletin" active={isPosts}>
-          Posts
+          Bulletin Board
+        </TabLink>
+        <TabLink href="/bulletin/ride-share" active={isRideShare}>
+          Ride Share
         </TabLink>
         {isStaff && (
           <TabLink href="/bulletin/blockers" active={isBlockers}>
