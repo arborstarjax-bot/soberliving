@@ -329,13 +329,15 @@ export async function assignBed(
 
   const supabase = await createClient();
 
-  // Check bed is not already occupied
+  // Check bed is not already occupied. Final race-proofing comes from
+  // the partial unique index on bed_assignments(bed_id) WHERE end_date
+  // IS NULL; this SELECT is just for the friendly pre-flight error.
   const { data: existingAssignment } = await supabase
     .from("bed_assignments")
     .select("id")
     .eq("bed_id", bedId)
     .is("end_date", null)
-    .single();
+    .maybeSingle();
 
   if (existingAssignment) {
     return { error: "This bed is already occupied" };
@@ -363,7 +365,12 @@ export async function assignBed(
     .select("id")
     .single();
 
-  if (error) return { error: error.message };
+  if (error) {
+    if (error.code === "23505") {
+      return { error: "This bed is already occupied" };
+    }
+    return { error: error.message };
+  }
 
   // Get bed details for logging
   const { data: bed } = await supabase
@@ -482,7 +489,12 @@ export async function changeResidentBed(
       .select("id")
       .single();
 
-    if (error) return { error: error.message };
+    if (error) {
+      if (error.code === "23505") {
+        return { error: "This bed is already occupied" };
+      }
+      return { error: error.message };
+    }
 
     const { data: bed } = await supabase
       .from("beds")
