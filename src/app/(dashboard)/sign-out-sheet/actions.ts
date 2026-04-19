@@ -201,12 +201,21 @@ export async function signInResident(
     return { error: "Reason is required when attaching discipline" };
   }
 
+  // Conditional update: only close the row if it is still open. This
+  // makes the sign-in step idempotent under a double-submit and
+  // prevents a concurrent second submission from silently attaching a
+  // second Warning/Demerit after the first one already landed.
   const now = new Date().toISOString();
-  const { error: updateErr } = await supabase
+  const { data: closedRows, error: updateErr } = await supabase
     .from("sign_out_sheet")
     .update({ time_in: now, signed_in_by: user.id })
-    .eq("id", row.id);
+    .eq("id", row.id)
+    .is("time_in", null)
+    .select("id");
   if (updateErr) return { error: updateErr.message };
+  if (!closedRows || closedRows.length === 0) {
+    return { error: "Resident is already signed in" };
+  }
 
   await logActivity({
     houseId: row.house_id,
