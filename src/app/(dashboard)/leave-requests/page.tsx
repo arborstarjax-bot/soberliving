@@ -45,7 +45,7 @@ async function CreateDialogSection({ user }: { user: SessionUser }) {
       .select("id")
       .eq("user_id", user.id)
       .eq("status", "active")
-      .single();
+      .maybeSingle();
     userResidentId = myResident?.id;
   }
 

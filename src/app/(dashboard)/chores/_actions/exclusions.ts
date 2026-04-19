@@ -23,7 +23,7 @@ export async function addChoreExclusion(
     .from("chores")
     .select("house_id, name")
     .eq("id", choreId)
-    .single();
+    .maybeSingle();
 
   if (!chore) return { error: "Chore not found" };
   if (user.role !== "admin" && !canAccessHouse(user, chore.house_id)) {
@@ -72,7 +72,7 @@ export async function removeChoreExclusion(exclusionId: string) {
     .from("chore_exclusions")
     .select("chore_id, resident_id, chore:chores(house_id, name), resident:residents(full_name)")
     .eq("id", exclusionId)
-    .single();
+    .maybeSingle();
 
   if (!exclusion) return { error: "Exclusion not found" };
 

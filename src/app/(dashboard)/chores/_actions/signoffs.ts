@@ -17,7 +17,7 @@ export async function markSignoffComplete(signoffId: string, photoUrl?: string) 
     .from("chore_signoffs")
     .select("id, status, sign_off_date, rotation_assignment_id, rotation_assignment:chore_rotation_assignments(resident_id, rotation:chore_rotations(house_id))")
     .eq("id", signoffId)
-    .single();
+    .maybeSingle();
 
   if (!signoff) return { error: "Signoff not found" };
 
@@ -40,7 +40,7 @@ export async function markSignoffComplete(signoffId: string, photoUrl?: string) 
     .from("houses")
     .select("timezone")
     .eq("id", houseId)
-    .single();
+    .maybeSingle();
   const tz = houseRow?.timezone ?? DEFAULT_TIMEZONE;
   const todayLocal = getHouseToday(tz);
   const yesterdayLocal = getHouseYesterday(tz);
@@ -52,7 +52,7 @@ export async function markSignoffComplete(signoffId: string, photoUrl?: string) 
       .select("id, force_photo")
       .eq("user_id", user.id)
       .eq("status", "active")
-      .single();
+      .maybeSingle();
 
     if (!residentRecord || residentRecord.id !== assignment?.resident_id) {
       return { error: "Not authorized" };
@@ -122,7 +122,7 @@ export async function reviewSignoff(
     .from("chore_signoffs")
     .select("rotation_assignment:chore_rotation_assignments(rotation:chore_rotations(house_id))")
     .eq("id", signoffId)
-    .single();
+    .maybeSingle();
 
   if (signoffData) {
     const ra = signoffData.rotation_assignment as unknown as {
@@ -159,7 +159,7 @@ export async function reviewSignoff(
       "rotation_assignment:chore_rotation_assignments(resident_id, chore:chores(name, house_id))"
     )
     .eq("id", signoffId)
-    .single();
+    .maybeSingle();
 
   if (signoff?.rotation_assignment) {
     const ra = signoff.rotation_assignment as unknown as {
@@ -181,7 +181,7 @@ export async function reviewSignoff(
       .from("residents")
       .select("user_id")
       .eq("id", ra.resident_id)
-      .single();
+      .maybeSingle();
 
     if (residentUser?.user_id) {
       await sendNotification({
@@ -218,7 +218,7 @@ export async function overrideSignoffStatus(
     .from("chore_signoffs")
     .select("id, status, rotation_assignment:chore_rotation_assignments(resident_id, chore:chores(name, house_id))")
     .eq("id", signoffId)
-    .single();
+    .maybeSingle();
 
   if (!signoff) return { error: "Signoff not found" };
 
@@ -313,7 +313,7 @@ export async function redoSignoff(signoffId: string, photoUrl?: string) {
     .from("chore_signoffs")
     .select("id, status, sign_off_date, rotation_assignment_id, rotation_assignment:chore_rotation_assignments(resident_id, rotation:chore_rotations(house_id))")
     .eq("id", signoffId)
-    .single();
+    .maybeSingle();
 
   if (!signoff) return { error: "Signoff not found" };
   if ((signoff as unknown as { status: string }).status !== "rejected") {
@@ -331,7 +331,7 @@ export async function redoSignoff(signoffId: string, photoUrl?: string) {
     .select("id, force_photo")
     .eq("user_id", user.id)
     .eq("status", "active")
-    .single();
+    .maybeSingle();
 
   if (!residentRecord || residentRecord.id !== assignment?.resident_id) {
     return { error: "Not authorized" };

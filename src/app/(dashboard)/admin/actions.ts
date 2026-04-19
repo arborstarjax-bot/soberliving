@@ -36,7 +36,7 @@ export async function issueDemerit(
     .from("residents")
     .select("full_name")
     .eq("id", parsed.data.resident_id)
-    .single();
+    .maybeSingle();
 
   const { data, error } = await supabase
     .from("demerits")
@@ -82,7 +82,7 @@ export async function resolveDemerit(
     .from("demerits")
     .select("house_id, resident_id, resident:residents(full_name)")
     .eq("id", parsed.data.demerit_id)
-    .single();
+    .maybeSingle();
 
   if (!demerit) return { error: "Demerit not found" };
 
@@ -131,7 +131,7 @@ export async function markPaymentReceived(paymentId: string) {
     .from("payments")
     .select("id, house_id, resident_id, amount, payment_type, status, resident:residents(full_name)")
     .eq("id", paymentId)
-    .single();
+    .maybeSingle();
 
   if (!payment) return { error: "Payment not found" };
   if (payment.status !== "pending") return { error: "Payment is not pending" };

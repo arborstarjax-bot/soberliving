@@ -35,7 +35,7 @@ export async function ResidentDashboardSection({
     .select("*, bed_assignments(*, bed:beds(*, room:rooms(*)))")
     .eq("user_id", userId)
     .eq("status", "active")
-    .single();
+    .maybeSingle();
 
   if (!resident) {
     return (

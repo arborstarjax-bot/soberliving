@@ -155,7 +155,7 @@ export async function ChoresBodySection({ user }: { user: SessionUser }) {
       .select("id, force_photo")
       .eq("user_id", user.id)
       .eq("status", "active")
-      .single();
+      .maybeSingle();
 
     if (resident) {
       userResidentId = resident.id;

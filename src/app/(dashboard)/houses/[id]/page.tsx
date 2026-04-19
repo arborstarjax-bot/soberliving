@@ -38,7 +38,7 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
   }
 
   const [{ data: house }, { data: managerAssignments }] = await Promise.all([
-    supabase.from("houses").select("*").eq("id", id).single(),
+    supabase.from("houses").select("*").eq("id", id).maybeSingle(),
     supabase
       .from("manager_house_assignments")
       .select("users!inner(full_name), unassigned_at")

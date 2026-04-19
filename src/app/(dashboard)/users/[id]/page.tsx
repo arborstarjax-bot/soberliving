@@ -20,7 +20,7 @@ export default async function UserDetailPage({
     .from("users")
     .select("*, user_roles(role)")
     .eq("id", id)
-    .single();
+    .maybeSingle();
 
   if (!userRecord) {
     return (
@@ -57,7 +57,7 @@ export default async function UserDetailPage({
     .select("id, house_id, houses(name)")
     .eq("user_id", id)
     .eq("status", "active")
-    .single();
+    .maybeSingle();
 
   return (
     <div className="space-y-6">
