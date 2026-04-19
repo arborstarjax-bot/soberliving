@@ -39,13 +39,22 @@ export default async function DashboardPage() {
   }
   const { count: residentCount } = await residentsQuery;
 
-  let bedsQuery = supabase.from("beds").select("id, room:rooms!inner(house_id)", { count: "exact" }).eq("is_active", true);
+  let bedsQuery = supabase.from("beds").select("id, label, room:rooms!inner(house_id)").eq("is_active", true);
   if (houseFilter) bedsQuery = bedsQuery.in("room.house_id", houseFilter);
-  const { count: totalBeds } = await bedsQuery;
+  const { data: bedRows } = await bedsQuery;
+  const totalBeds = bedRows?.length ?? 0;
+  // Beds marked " [Not Available]" (or the legacy " [Empty]" tag) are
+  // held off the available pool — count them toward occupied so Open
+  // Beds matches the house-detail Not Available badge.
+  const unavailableBeds = (bedRows ?? []).filter((b) => {
+    const label: string = (b as { label: string | null }).label ?? "";
+    return label.endsWith(" [Not Available]") || label.endsWith(" [Empty]");
+  }).length;
 
   let assignmentsQuery = supabase.from("bed_assignments").select("id, bed:beds!inner(room:rooms!inner(house_id))", { count: "exact" }).is("end_date", null);
   if (houseFilter) assignmentsQuery = assignmentsQuery.in("bed.room.house_id", houseFilter);
-  const { count: occupiedBeds } = await assignmentsQuery;
+  const { count: assignedBeds } = await assignmentsQuery;
+  const occupiedBeds = (assignedBeds ?? 0) + unavailableBeds;
 
   // For pending counts, fetch with joins and filter in-app for managers
   let pendingChoreReviews = 0;
@@ -116,7 +125,7 @@ export default async function DashboardPage() {
   const stats = [
     { label: "Houses", value: houseCount ?? 0, icon: Home, href: "/houses" },
     { label: "Active Residents", value: residentCount ?? 0, icon: Users, href: "/residents" },
-    { label: "Open Beds", value: (totalBeds ?? 0) - (occupiedBeds ?? 0), icon: Bed, href: "/houses" },
+    { label: "Open Beds", value: Math.max(0, totalBeds - occupiedBeds), icon: Bed, href: "/houses" },
     { label: "Chore Reviews", value: pendingChoreReviews ?? 0, icon: ClipboardCheck, href: "/chores" },
     { label: "Pending Payments", value: pendingPaymentsCount, icon: DollarSign, href: "/payments" },
     { label: "Leave Requests", value: pendingLeaveRequests ?? 0, icon: CalendarClock, href: "/leave-requests" },

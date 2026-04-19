@@ -14,7 +14,9 @@ export default async function HousesPage() {
 
   let query = supabase
     .from("houses")
-    .select("*, rooms(id, is_active, beds(id, is_active, bed_assignments(id, end_date)))")
+    .select(
+      "*, rooms(id, is_active, beds(id, is_active, label, bed_assignments(id, end_date)))"
+    )
     .eq("is_active", true)
     .order("name");
 
@@ -35,7 +37,13 @@ export default async function HousesPage() {
         const hasActive = (bed.bed_assignments ?? []).some(
           (ba: { end_date: string | null }) => !ba.end_date
         );
-        if (hasActive) occupiedBeds++;
+        // A "Not Available" bed holds the slot off the open pool even
+        // though nobody is assigned — count it as occupied so the list
+        // card matches the detail page's bed count.
+        const label: string = bed.label ?? "";
+        const isUnavailable =
+          label.endsWith(" [Not Available]") || label.endsWith(" [Empty]");
+        if (hasActive || isUnavailable) occupiedBeds++;
       }
     }
     return { ...house, totalBeds, occupiedBeds };
