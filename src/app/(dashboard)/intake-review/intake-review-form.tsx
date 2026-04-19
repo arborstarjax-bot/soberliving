@@ -102,7 +102,11 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
   // the admin selects. Default next-rent date is the first of next
   // month, which is what we use most often.
   const [isExistingTenant, setIsExistingTenant] = useState(false);
-  const [skipAdminFee, setSkipAdminFee] = useState(true);
+  // Admin fee defaults to being charged (checkbox unchecked). Admin
+  // must explicitly opt in when the fee was paid prior to move-in,
+  // waived, or carried over from a previous commitment — otherwise
+  // new intakes would silently skip the admin fee on every submit.
+  const [skipAdminFee, setSkipAdminFee] = useState(false);
   const [nextRentDueDate, setNextRentDueDate] = useState(() => {
     // First of next month, seeded from today-in-app-tz so it doesn't
     // drift around the UTC midnight boundary (8 PM Eastern).

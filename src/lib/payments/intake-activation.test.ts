@@ -83,7 +83,14 @@ describe("buildInitialCharges", () => {
     expect(rows[0].period_start).toBeUndefined();
     expect(rows[1].charge_type).toBe("rent");
     expect(rows[1].amount).toBe(225);
-    expect(rows[1].due_date).toBe("2025-06-01");
+    expect(rows[1].due_date).toBe("2025-05-31");
+  });
+
+  it("sets first rent due_date to anchor - 1 day (matches ongoing cycles)", () => {
+    const rows = buildInitialCharges(base);
+    const rent = rows.find((r) => r.charge_type === "rent");
+    expect(rent?.period_start).toBe("2025-06-01");
+    expect(rent?.due_date).toBe("2025-05-31");
   });
 
   it("computes rent period end from frequency (weekly = +7d)", () => {
