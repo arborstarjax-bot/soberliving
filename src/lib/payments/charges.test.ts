@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   addCycles,
   addMonthsClamped,
+  computeRentDueDate,
   nextDueDate,
   normalizePaymentFrequency,
   parseIsoDate,
   periodEndFor,
+  RENT_DUE_OFFSET_DAYS,
   toIsoDate,
 } from "./charges";
 
@@ -182,6 +184,70 @@ describe("nextDueDate — weekly", () => {
     expect(toIsoDate(nextDueDate(start, existing, "weekly"))).toBe(
       "2025-06-29"
     );
+  });
+});
+
+describe("computeRentDueDate (rent is due the day before the cycle anchor)", () => {
+  it("uses a -1 day offset", () => {
+    expect(RENT_DUE_OFFSET_DAYS).toBe(-1);
+  });
+
+  it("shifts an ordinary anchor back one day", () => {
+    const anchor = parseIsoDate("2025-06-15");
+    expect(toIsoDate(computeRentDueDate(anchor))).toBe("2025-06-14");
+  });
+
+  it("rolls back across month boundaries", () => {
+    const febFirst = parseIsoDate("2025-02-01");
+    expect(toIsoDate(computeRentDueDate(febFirst))).toBe("2025-01-31");
+    const marFirst = parseIsoDate("2025-03-01");
+    // Regression: Feb 2025 has 28 days → Mar 1 − 1 = Feb 28.
+    expect(toIsoDate(computeRentDueDate(marFirst))).toBe("2025-02-28");
+  });
+
+  it("rolls back into a leap-year February correctly", () => {
+    const marFirst2024 = parseIsoDate("2024-03-01");
+    expect(toIsoDate(computeRentDueDate(marFirst2024))).toBe("2024-02-29");
+  });
+
+  it("rolls back across year boundaries", () => {
+    const janFirst = parseIsoDate("2026-01-01");
+    expect(toIsoDate(computeRentDueDate(janFirst))).toBe("2025-12-31");
+  });
+
+  it("does not mutate the original anchor date", () => {
+    const anchor = parseIsoDate("2025-06-15");
+    computeRentDueDate(anchor);
+    expect(toIsoDate(anchor)).toBe("2025-06-15");
+  });
+
+  it("shifts the weekly anchor back one day (Monday → Sunday)", () => {
+    // 2025-06-02 is a Monday.
+    const mon = parseIsoDate("2025-06-02");
+    const due = computeRentDueDate(mon);
+    expect(toIsoDate(due)).toBe("2025-06-01");
+    expect(due.getDay()).toBe(0); // Sunday
+  });
+});
+
+describe("periodEndFor matches the anchor, not the shifted due date", () => {
+  // Defense against a regression where period_end would accidentally
+  // be computed from the shifted due_date instead of the anchor. The
+  // receipt semantics require period_start = anchor, period_end =
+  // anchor + 1 cycle, regardless of the rent-due offset.
+  it("monthly: period_end = anchor + 1 month", () => {
+    const anchor = parseIsoDate("2025-03-15");
+    expect(toIsoDate(periodEndFor(anchor, "monthly"))).toBe("2025-04-15");
+  });
+
+  it("weekly: period_end = anchor + 7 days", () => {
+    const anchor = parseIsoDate("2025-03-15");
+    expect(toIsoDate(periodEndFor(anchor, "weekly"))).toBe("2025-03-22");
+  });
+
+  it("monthly clamp still applies on end-of-month anchors", () => {
+    const anchor = parseIsoDate("2025-01-31");
+    expect(toIsoDate(periodEndFor(anchor, "monthly"))).toBe("2025-02-28");
   });
 });
 
