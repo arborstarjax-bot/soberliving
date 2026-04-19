@@ -281,6 +281,18 @@ export async function deleteResident(residentId: string) {
       .eq("resident_id", residentId)
       .limit(1),
   ]);
+  // Fail CLOSED on errors: if any of the 6 history checks errored
+  // (transient DB hiccup, timeout, etc.) treat it as "unknown, don't
+  // delete" rather than "no history found", otherwise the guard is
+  // silently bypassed and the subsequent .delete() would cascade
+  // destroy compliance records.
+  const hasError = historyChecks.some((r) => r.error);
+  if (hasError) {
+    return {
+      error:
+        "Unable to verify resident history right now. Please try again.",
+    };
+  }
   const hasHistory = historyChecks.some((r) => (r.count ?? 0) > 0);
   if (hasHistory) {
     return {
