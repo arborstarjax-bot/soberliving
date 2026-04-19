@@ -13,6 +13,7 @@ const FIXED_MILESTONES: { days: number; label: string }[] = [
   { days: 60, label: "60 days sober" },
   { days: 90, label: "90 days sober" },
   { days: 182, label: "6 months sober" },
+  { days: 273, label: "9 months sober" },
   { days: 365, label: "1 year sober" },
 ];
 
