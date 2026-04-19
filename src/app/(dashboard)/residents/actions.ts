@@ -83,7 +83,7 @@ export async function updateResident(residentId: string, formData: FormData) {
     .from("residents")
     .select("house_id")
     .eq("id", residentId)
-    .single();
+    .maybeSingle();
 
   if (!resident) return { error: "Resident not found" };
   if (
@@ -153,7 +153,7 @@ export async function dischargeResident(
     .from("residents")
     .select("house_id, full_name")
     .eq("id", residentId)
-    .single();
+    .maybeSingle();
 
   if (!resident) return { error: "Resident not found" };
   if (
@@ -208,7 +208,7 @@ export async function dischargeResident(
     .from("residents")
     .select("user_id")
     .eq("id", residentId)
-    .single();
+    .maybeSingle();
 
   if (residentUser?.user_id) {
     await sendNotification({
@@ -624,7 +624,7 @@ export async function updateResidentForcePhoto(
     .from("residents")
     .select("house_id, full_name")
     .eq("id", residentId)
-    .single();
+    .maybeSingle();
 
   if (!resident) return { error: "Resident not found" };
   if (user.role !== "admin" && !canAccessHouse(user, resident.house_id)) {
@@ -715,13 +715,13 @@ export async function assignBed(
     .from("beds")
     .select("label, room:rooms(name)")
     .eq("id", bedId)
-    .single();
+    .maybeSingle();
 
   const { data: resident } = await supabase
     .from("residents")
     .select("full_name")
     .eq("id", residentId)
-    .single();
+    .maybeSingle();
 
   await logActivity({
     houseId,
@@ -738,7 +738,7 @@ export async function assignBed(
     .from("residents")
     .select("user_id")
     .eq("id", residentId)
-    .single();
+    .maybeSingle();
 
   if (residentUser?.user_id) {
     const roomName = (bed?.room as unknown as { name: string } | null)?.name ?? "your room";
@@ -848,7 +848,7 @@ export async function changeResidentBed(
       .from("beds")
       .select("label, room:rooms(name)")
       .eq("id", bedId)
-      .single();
+      .maybeSingle();
 
     await logActivity({
       houseId,
@@ -865,7 +865,7 @@ export async function changeResidentBed(
       .from("residents")
       .select("user_id")
       .eq("id", residentId)
-      .single();
+      .maybeSingle();
 
     if (residentUser?.user_id) {
       const roomName = (bed?.room as unknown as { name: string } | null)?.name ?? "your room";
@@ -913,7 +913,7 @@ export async function vacateBed(assignmentId: string) {
     .from("bed_assignments")
     .select("resident_id, bed_id, bed:beds(label, room:rooms(name, house_id))")
     .eq("id", assignmentId)
-    .single();
+    .maybeSingle();
 
   if (!assignment) return { error: "Assignment not found" };
 
@@ -966,7 +966,7 @@ export async function createNote(
     .from("residents")
     .select("house_id, full_name")
     .eq("id", parsed.data.resident_id)
-    .single();
+    .maybeSingle();
 
   if (!resident) return { error: "Resident not found" };
   if (

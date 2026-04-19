@@ -23,7 +23,7 @@ export async function ResidentPaymentsSection({
     .select("id")
     .eq("user_id", user.id)
     .eq("status", "active")
-    .single();
+    .maybeSingle();
 
   if (!residentRow) {
     return (

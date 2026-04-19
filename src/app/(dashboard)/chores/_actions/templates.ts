@@ -88,7 +88,7 @@ export async function updateChore(
     .from("chores")
     .select("house_id, name")
     .eq("id", choreId)
-    .single();
+    .maybeSingle();
 
   if (!chore) return { error: "Chore not found" };
   if (user.role !== "admin" && !canAccessHouse(user, chore.house_id)) {
@@ -123,7 +123,7 @@ export async function archiveChore(choreId: string) {
     .from("chores")
     .select("house_id, name")
     .eq("id", choreId)
-    .single();
+    .maybeSingle();
 
   if (!chore) return { error: "Chore not found" };
   if (user.role !== "admin" && !canAccessHouse(user, chore.house_id)) {
@@ -170,7 +170,7 @@ export async function addChoreTask(
     .from("chores")
     .select("house_id")
     .eq("id", parsed.data.chore_id)
-    .single();
+    .maybeSingle();
 
   if (!chore) return { error: "Chore not found" };
   if (user.role !== "admin" && !canAccessHouse(user, chore.house_id)) {
@@ -209,7 +209,7 @@ export async function updateChoreTask(taskId: string, description: string) {
     .from("chore_tasks")
     .select("chore_id, chore:chores(house_id)")
     .eq("id", taskId)
-    .single();
+    .maybeSingle();
 
   if (!task) return { error: "Task not found" };
   const houseId =
@@ -252,7 +252,7 @@ export async function setChoreRoomExclusions(
     .from("chores")
     .select("house_id, name")
     .eq("id", choreId)
-    .single();
+    .maybeSingle();
 
   if (!chore) return { error: "Chore not found" };
   if (user.role !== "admin" && !canAccessHouse(user, chore.house_id)) {
@@ -330,7 +330,7 @@ export async function removeChoreTask(taskId: string) {
     .from("chore_tasks")
     .select("chore_id, chore:chores(house_id)")
     .eq("id", taskId)
-    .single();
+    .maybeSingle();
 
   if (!task) return { error: "Task not found" };
 
@@ -361,7 +361,7 @@ export async function updateChoreSchedule(choreId: string, scheduledDays: string
     .from("chores")
     .select("house_id, name")
     .eq("id", choreId)
-    .single();
+    .maybeSingle();
 
   if (!chore) return { error: "Chore not found" };
   if (user.role !== "admin" && !canAccessHouse(user, chore.house_id)) {

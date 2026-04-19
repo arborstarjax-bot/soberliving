@@ -95,7 +95,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     .from("users")
     .select("id, full_name, email, phone, intake_completed")
     .eq("id", data.userId)
-    .single();
+    .maybeSingle();
 
   if (!targetUser) return { error: "User not found" };
   if (!targetUser.intake_completed) return { error: "User has not completed intake form" };
@@ -106,7 +106,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     .select("form_data")
     .eq("user_id", data.userId)
     .eq("status", "completed")
-    .single();
+    .maybeSingle();
 
   const fd = (intakeForm?.form_data ?? {}) as Record<string, unknown>;
 
@@ -115,7 +115,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     .from("houses")
     .select("name, address")
     .eq("id", data.houseId)
-    .single();
+    .maybeSingle();
 
   const propertyLocation = house?.address || house?.name || "";
 
@@ -478,7 +478,7 @@ export async function markIntakeComplete(userId: string) {
     .from("users")
     .select("id, full_name")
     .eq("id", userId)
-    .single();
+    .maybeSingle();
 
   if (!targetUser) return { error: "User not found" };
 
@@ -692,7 +692,7 @@ export async function denyIntakeApplication(userId: string, reason: string) {
     .from("users")
     .select("id, full_name, account_status")
     .eq("id", userId)
-    .single();
+    .maybeSingle();
 
   if (!targetUser) return { error: "User not found" };
   if ((targetUser as { account_status?: string }).account_status === "rejected") {
@@ -738,7 +738,7 @@ export async function reopenIntakeApplication(userId: string) {
     .from("users")
     .select("id, full_name, account_status")
     .eq("id", userId)
-    .single();
+    .maybeSingle();
 
   if (!targetUser) return { error: "User not found" };
   if ((targetUser as { account_status?: string }).account_status !== "rejected") {

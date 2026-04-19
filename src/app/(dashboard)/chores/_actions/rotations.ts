@@ -118,7 +118,7 @@ export async function assignRotationChore(
     .from("chore_rotations")
     .select("house_id, cycle_start_date, cycle_end_date")
     .eq("id", parsed.data.rotation_id)
-    .single();
+    .maybeSingle();
 
   if (!rotation) return { error: "Rotation not found" };
   if (user.role !== "admin" && !canAccessHouse(user, rotation.house_id)) {
@@ -154,7 +154,7 @@ export async function assignRotationChore(
     .from("houses")
     .select("timezone")
     .eq("id", rotation.house_id)
-    .single();
+    .maybeSingle();
   const todayStr = getHouseToday(
     houseRow?.timezone ?? DEFAULT_TIMEZONE
   );
@@ -165,7 +165,7 @@ export async function assignRotationChore(
     .select("id")
     .eq("rotation_id", parsed.data.rotation_id)
     .eq("chore_id", parsed.data.chore_id)
-    .single();
+    .maybeSingle();
 
   if (existingAssignment) {
     // Clean up stale signoffs from the previous resident before reassigning
@@ -190,7 +190,7 @@ export async function assignRotationChore(
       .from("chores")
       .select("days_of_week, cycle_weeks")
       .eq("id", parsed.data.chore_id)
-      .single();
+      .maybeSingle();
 
     const choreDays: string[] = choreData?.days_of_week ?? ["monday", "wednesday", "friday"];
     const choreCycleWeeks: number = choreData?.cycle_weeks ?? 2;
@@ -242,7 +242,7 @@ export async function assignRotationChore(
       .from("chores")
       .select("days_of_week, cycle_weeks")
       .eq("id", parsed.data.chore_id)
-      .single();
+      .maybeSingle();
 
     const choreDays: string[] = choreData?.days_of_week ?? ["monday", "wednesday", "friday"];
     const choreCycleWeeks: number = choreData?.cycle_weeks ?? 2;
@@ -291,13 +291,13 @@ export async function assignRotationChore(
     .from("chores")
     .select("name")
     .eq("id", parsed.data.chore_id)
-    .single();
+    .maybeSingle();
 
   const { data: resident } = await supabase
     .from("residents")
     .select("full_name")
     .eq("id", parsed.data.resident_id)
-    .single();
+    .maybeSingle();
 
   await logActivity({
     houseId: rotation.house_id,
@@ -316,7 +316,7 @@ export async function assignRotationChore(
     .from("residents")
     .select("user_id")
     .eq("id", parsed.data.resident_id)
-    .single();
+    .maybeSingle();
 
   if (residentUser?.user_id) {
     await sendNotification({
@@ -344,7 +344,7 @@ export async function unassignRotationChore(assignmentId: string) {
     .from("chore_rotation_assignments")
     .select("id, chore_id, resident_id, rotation:chore_rotations(house_id), chore:chores(name), resident:residents(full_name)")
     .eq("id", assignmentId)
-    .single();
+    .maybeSingle();
 
   if (!assignment) return { error: "Assignment not found" };
 
@@ -394,7 +394,7 @@ export async function rotateSchedule(rotationId: string) {
     .from("chore_rotations")
     .select("id, house_id, cycle_start_date, cycle_end_date")
     .eq("id", rotationId)
-    .single();
+    .maybeSingle();
 
   if (!rotation) return { error: "Rotation not found" };
   if (user.role !== "admin" && !canAccessHouse(user, rotation.house_id)) {
@@ -409,7 +409,7 @@ export async function rotateSchedule(rotationId: string) {
     .from("houses")
     .select("timezone")
     .eq("id", rotation.house_id)
-    .single();
+    .maybeSingle();
   const rotateTodayStr = getHouseToday(
     rotateHouseRow?.timezone ?? DEFAULT_TIMEZONE
   );

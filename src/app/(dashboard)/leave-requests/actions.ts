@@ -57,7 +57,7 @@ export async function createLeaveRequest(
     .from("residents")
     .select("house_id, full_name")
     .eq("id", parsed.data.resident_id)
-    .single();
+    .maybeSingle();
 
   if (!resident) return { error: "Resident not found" };
 
@@ -66,7 +66,7 @@ export async function createLeaveRequest(
     .from("residents")
     .select("house_id, full_name, user_id")
     .eq("id", parsed.data.covering_resident_id)
-    .single();
+    .maybeSingle();
 
   if (!coverResident) return { error: "Covering resident not found" };
   if (coverResident.house_id !== resident.house_id) {
@@ -84,7 +84,7 @@ export async function createLeaveRequest(
       .select("id")
       .eq("user_id", user.id)
       .eq("status", "active")
-      .single();
+      .maybeSingle();
     if (!myResident || myResident.id !== parsed.data.resident_id) {
       return { error: "Not authorized" };
     }
@@ -176,7 +176,7 @@ export async function approveCoverRequest(requestId: string) {
     .from("leave_requests")
     .select("*, resident:residents!leave_requests_resident_id_fkey(full_name, house_id), covering_resident:residents!leave_requests_covering_resident_id_fkey(user_id, full_name)")
     .eq("id", requestId)
-    .single();
+    .maybeSingle();
 
   if (!request) return { error: "Request not found" };
   if (request.status !== "pending_cover") return { error: "Request is not pending cover approval" };
@@ -240,7 +240,7 @@ export async function denyCoverRequest(requestId: string, note?: string) {
     .from("leave_requests")
     .select("*, resident:residents!leave_requests_resident_id_fkey(full_name, house_id, user_id), covering_resident:residents!leave_requests_covering_resident_id_fkey(user_id)")
     .eq("id", requestId)
-    .single();
+    .maybeSingle();
 
   if (!request) return { error: "Request not found" };
   if (request.status !== "pending_cover") return { error: "Request is not pending cover approval" };
@@ -306,7 +306,7 @@ export async function approveManagerRequest(requestId: string) {
     .from("leave_requests")
     .select("*, resident:residents!leave_requests_resident_id_fkey(full_name, house_id)")
     .eq("id", requestId)
-    .single();
+    .maybeSingle();
 
   if (!request) return { error: "Request not found" };
   if (request.status !== "pending_manager") return { error: "Request is not pending manager approval" };
@@ -364,7 +364,7 @@ export async function denyManagerRequest(requestId: string, note?: string) {
     .from("leave_requests")
     .select("*, resident:residents!leave_requests_resident_id_fkey(full_name, house_id, user_id)")
     .eq("id", requestId)
-    .single();
+    .maybeSingle();
 
   if (!request) return { error: "Request not found" };
   if (request.status !== "pending_manager") return { error: "Request is not pending manager approval" };
@@ -426,7 +426,7 @@ export async function approveAdminRequest(requestId: string) {
     .from("leave_requests")
     .select("*, resident:residents!leave_requests_resident_id_fkey(full_name, house_id, user_id)")
     .eq("id", requestId)
-    .single();
+    .maybeSingle();
 
   if (!request) return { error: "Request not found" };
   // Admin trumps manager: allow final approval at either the manager or
@@ -500,7 +500,7 @@ export async function denyAdminRequest(requestId: string, note?: string) {
     .from("leave_requests")
     .select("*, resident:residents!leave_requests_resident_id_fkey(full_name, house_id, user_id)")
     .eq("id", requestId)
-    .single();
+    .maybeSingle();
 
   if (!request) return { error: "Request not found" };
   // Mirror the admin-trumps-manager approval path: admins can deny at
@@ -561,7 +561,7 @@ export async function markLeaveReturned(requestId: string) {
     .from("leave_requests")
     .select("status, resident_id, resident:residents!leave_requests_resident_id_fkey(full_name, house_id)")
     .eq("id", requestId)
-    .single();
+    .maybeSingle();
 
   if (!request) return { error: "Request not found" };
 

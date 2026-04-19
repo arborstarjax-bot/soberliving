@@ -33,7 +33,7 @@ export default async function ResidentDetailPage(
     .from("residents")
     .select("*, houses(id, name)")
     .eq("id", id)
-    .single();
+    .maybeSingle();
 
   if (!resident) redirect("/residents");
 
