@@ -25,6 +25,21 @@ import { Skeleton } from "@/components/ui/skeleton";
  * (i.e. an auth edge case). The cards still stream correctly though.
  */
 
+/**
+ * Upper bound on the number of rows any single stat-tile query will
+ * fetch / scan. Replaces `count: "exact", head: true` — which forces
+ * a full-table COUNT aggregate — with a cheap `.limit(CAP + 1)` row
+ * fetch. Tiles render the raw count up to CAP and collapse to
+ * "`CAP`+" beyond that. 500 is generous enough that a staff
+ * dashboard almost always shows the real number; only pathological
+ * backlogs get the cap treatment.
+ */
+const CAP = 500;
+
+function displayCount(n: number): string {
+  return n > CAP ? `${CAP}+` : String(n);
+}
+
 function StatShell({
   label,
   icon: Icon,
@@ -73,13 +88,14 @@ export async function HousesStatTile({
   const supabase = await createClient();
   let q = supabase
     .from("houses")
-    .select("id", { count: "exact", head: true })
-    .eq("is_active", true);
+    .select("id")
+    .eq("is_active", true)
+    .limit(CAP + 1);
   if (houseFilter) q = q.in("id", houseFilter);
-  const { count } = await q;
+  const { data } = await q;
   return (
     <StatShell label="Houses" icon={Home} href="/houses">
-      <div className="text-2xl font-bold">{count ?? 0}</div>
+      <div className="text-2xl font-bold">{displayCount(data?.length ?? 0)}</div>
     </StatShell>
   );
 }
@@ -92,13 +108,14 @@ export async function ActiveResidentsStatTile({
   const supabase = await createClient();
   let q = supabase
     .from("residents")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "active");
+    .select("id")
+    .eq("status", "active")
+    .limit(CAP + 1);
   if (houseFilter) q = q.in("house_id", houseFilter);
-  const { count } = await q;
+  const { data } = await q;
   return (
     <StatShell label="Active Residents" icon={Users} href="/residents">
-      <div className="text-2xl font-bold">{count ?? 0}</div>
+      <div className="text-2xl font-bold">{displayCount(data?.length ?? 0)}</div>
     </StatShell>
   );
 }
@@ -145,14 +162,18 @@ export async function ChoreReviewsStatTile({
   houseFilter: string[] | null;
 }) {
   const supabase = await createClient();
-  let count = 0;
+  let count: number;
   if (houseFilter) {
+    // Nested house_id filter via the chore_rotations join — still
+    // caps the row fetch at CAP+1 to avoid pulling unbounded rows
+    // on a large backlog.
     const { data } = await supabase
       .from("chore_signoffs")
       .select(
         "id, rotation_assignment:chore_rotation_assignments!inner(rotation:chore_rotations!inner(house_id))"
       )
-      .eq("status", "completed_pending_review");
+      .eq("status", "completed_pending_review")
+      .limit(CAP + 1);
     count = (data ?? []).filter((s) => {
       const ra =
         s.rotation_assignment as unknown as {
@@ -161,15 +182,16 @@ export async function ChoreReviewsStatTile({
       return houseFilter.includes(ra?.rotation?.house_id ?? "");
     }).length;
   } else {
-    const { count: c } = await supabase
+    const { data } = await supabase
       .from("chore_signoffs")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "completed_pending_review");
-    count = c ?? 0;
+      .select("id")
+      .eq("status", "completed_pending_review")
+      .limit(CAP + 1);
+    count = data?.length ?? 0;
   }
   return (
     <StatShell label="Chore Reviews" icon={ClipboardCheck} href="/chores">
-      <div className="text-2xl font-bold">{count}</div>
+      <div className="text-2xl font-bold">{displayCount(count)}</div>
     </StatShell>
   );
 }
@@ -180,23 +202,18 @@ export async function PendingPaymentsStatTile({
   houseFilter: string[] | null;
 }) {
   const supabase = await createClient();
-  let count = 0;
-  if (houseFilter) {
-    const { data } = await supabase
-      .from("payments")
-      .select("id, house_id")
-      .eq("status", "pending");
-    count = (data ?? []).filter((p) => houseFilter.includes(p.house_id)).length;
-  } else {
-    const { count: c } = await supabase
-      .from("payments")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "pending");
-    count = c ?? 0;
-  }
+  // payments has house_id as a direct column — push the filter into
+  // the query so we don't fetch rows we'll discard client-side.
+  let q = supabase
+    .from("payments")
+    .select("id")
+    .eq("status", "pending")
+    .limit(CAP + 1);
+  if (houseFilter) q = q.in("house_id", houseFilter);
+  const { data } = await q;
   return (
     <StatShell label="Pending Payments" icon={DollarSign} href="/payments">
-      <div className="text-2xl font-bold">{count}</div>
+      <div className="text-2xl font-bold">{displayCount(data?.length ?? 0)}</div>
     </StatShell>
   );
 }
@@ -207,22 +224,26 @@ export async function LeaveRequestsStatTile({
   houseFilter: string[] | null;
 }) {
   const supabase = await createClient();
-  let count = 0;
+  let count: number;
   if (houseFilter) {
+    // leave_requests has no denormalized house_id; filter via the
+    // inner join on residents.house_id, capped at CAP+1 rows.
     const { data } = await supabase
       .from("leave_requests")
       .select("id, resident:residents!inner(house_id)")
-      .eq("status", "pending");
+      .eq("status", "pending")
+      .limit(CAP + 1);
     count = (data ?? []).filter((lr) => {
       const r = lr.resident as unknown as { house_id: string } | null;
       return houseFilter.includes(r?.house_id ?? "");
     }).length;
   } else {
-    const { count: c } = await supabase
+    const { data } = await supabase
       .from("leave_requests")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "pending");
-    count = c ?? 0;
+      .select("id")
+      .eq("status", "pending")
+      .limit(CAP + 1);
+    count = data?.length ?? 0;
   }
   return (
     <StatShell
@@ -230,7 +251,7 @@ export async function LeaveRequestsStatTile({
       icon={CalendarClock}
       href="/leave-requests"
     >
-      <div className="text-2xl font-bold">{count}</div>
+      <div className="text-2xl font-bold">{displayCount(count)}</div>
     </StatShell>
   );
 }
@@ -333,4 +354,3 @@ export function RecentActivityFallback() {
     </Card>
   );
 }
-

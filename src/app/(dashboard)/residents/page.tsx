@@ -58,14 +58,22 @@ async function ActiveCountLine({
 }) {
   const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
+  // Cap the row fetch at 501 rows and display "500+" beyond that.
+  // Swapping off `count: "exact", head: true` avoids the full-table
+  // COUNT aggregate that grows linearly with the residents table.
+  const CAP = 500;
   let q = supabase
     .from("residents")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "active");
+    .select("id")
+    .eq("status", "active")
+    .limit(CAP + 1);
   if (houseFilter) q = q.in("house_id", houseFilter);
-  const { count } = await q;
+  const { data } = await q;
+  const n = data?.length ?? 0;
   return (
-    <p className="text-muted-foreground">{count ?? 0} active residents</p>
+    <p className="text-muted-foreground">
+      {n > CAP ? `${CAP}+` : n} active residents
+    </p>
   );
 }
 

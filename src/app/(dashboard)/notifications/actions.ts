@@ -23,14 +23,21 @@ export async function getUnreadCount() {
   const user = await requireAuth();
   const supabase = await createClient();
 
-  const { count, error } = await supabase
+  // Cap at 99 — this powers unread-badge callers that only need
+  // "some" / "up to 99+". Avoids the full-table COUNT aggregate a
+  // `count: "exact"` head scan would do on users with long unread
+  // histories.
+  const CAP = 99;
+  const { data, error } = await supabase
     .from("notifications")
-    .select("*", { count: "exact", head: true })
+    .select("id")
     .eq("user_id", user.id)
-    .eq("is_read", false);
+    .eq("is_read", false)
+    .limit(CAP + 1);
 
   if (error) return 0;
-  return count ?? 0;
+  const n = data?.length ?? 0;
+  return n > CAP ? CAP : n;
 }
 
 export async function markNotificationRead(notificationId: string) {
