@@ -6,6 +6,7 @@ import { NewPostForm } from "./new-post-form";
 import { Pagination } from "@/components/pagination";
 import { getPageParams, buildPaginationMeta } from "@/lib/pagination";
 import { RefreshOnMount } from "@/components/refresh-on-mount";
+import { ensureMilestonePosts } from "@/lib/sobriety-milestones";
 
 type AuthorWithSobriety = {
   full_name: string;
@@ -68,6 +69,13 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
     .from("users")
     .update({ last_seen_bulletin_at: new Date().toISOString() })
     .eq("id", user.id);
+
+  // Post auto-congrats for any resident who has crossed a new sobriety
+  // milestone since the last time we checked. No-op inside the
+  // in-memory debounce window (see ensureMilestonePosts) and safe to
+  // call unconditionally — UNIQUE(resident_user_id, milestone_days)
+  // prevents duplicates across concurrent renders.
+  await ensureMilestonePosts(supabase);
 
   // Determine which houses the user can post to
   let postableHouses: { id: string; name: string }[] = [];
