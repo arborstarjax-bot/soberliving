@@ -41,6 +41,13 @@ export interface PaymentTerms {
   // Safari refuses `window.open` that's called after an async server
   // action has resolved because the user-gesture context is gone.
   pdf_signed_url: string | null;
+  // Additional commitment fields surfaced so the Edit Commitment
+  // Agreement dialog can seed its inputs with the current values.
+  // Optional because legacy callers may not populate them — the
+  // dialog falls back to safe defaults.
+  commitment_term?: string | null;
+  restrictions_notes?: string | null;
+  notes?: string | null;
 }
 
 export interface PendingAmendment {

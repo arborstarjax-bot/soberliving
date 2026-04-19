@@ -97,7 +97,7 @@ export default async function ResidentDetailPage(
   const { data: activeCommitment } = await supabase
     .from("house_commitments")
     .select(
-      "id, rent_amount, admin_fee, payment_frequency, commitment_start_date, status, pdf_storage_path"
+      "id, rent_amount, admin_fee, payment_frequency, commitment_start_date, commitment_term, restrictions_notes, notes, status, pdf_storage_path"
     )
     .eq("resident_id", id)
     .eq("status", "active")
@@ -766,6 +766,15 @@ export default async function ResidentDetailPage(
                       (activeCommitment.pdf_storage_path as string | null) ??
                       null,
                     pdf_signed_url: activeCommitmentPdfSignedUrl,
+                    commitment_term:
+                      (activeCommitment.commitment_term as string | null) ??
+                      null,
+                    restrictions_notes:
+                      (activeCommitment.restrictions_notes as
+                        | string
+                        | null) ?? null,
+                    notes:
+                      (activeCommitment.notes as string | null) ?? null,
                   }
                 : null
             }
