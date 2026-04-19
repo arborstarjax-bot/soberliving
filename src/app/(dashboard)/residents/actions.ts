@@ -241,9 +241,53 @@ export async function deleteResident(residentId: string) {
     .from("residents")
     .select("house_id, full_name")
     .eq("id", residentId)
-    .single();
+    .maybeSingle();
 
   if (!resident) return { error: "Resident not found" };
+
+  // Block hard-delete if the resident has any real history. We check
+  // the tables where a cascade would destroy compliance-relevant
+  // records (or raw FK errors would surface to the user). Staff
+  // should Discharge instead, which preserves history.
+  const historyChecks = await Promise.all([
+    supabase
+      .from("warnings")
+      .select("id", { head: true, count: "exact" })
+      .eq("resident_id", residentId)
+      .limit(1),
+    supabase
+      .from("demerits")
+      .select("id", { head: true, count: "exact" })
+      .eq("resident_id", residentId)
+      .limit(1),
+    supabase
+      .from("payment_charges")
+      .select("id", { head: true, count: "exact" })
+      .eq("resident_id", residentId)
+      .limit(1),
+    supabase
+      .from("incidents")
+      .select("id", { head: true, count: "exact" })
+      .eq("resident_id", residentId)
+      .limit(1),
+    supabase
+      .from("leave_requests")
+      .select("id", { head: true, count: "exact" })
+      .eq("resident_id", residentId)
+      .limit(1),
+    supabase
+      .from("sign_out_sheet")
+      .select("id", { head: true, count: "exact" })
+      .eq("resident_id", residentId)
+      .limit(1),
+  ]);
+  const hasHistory = historyChecks.some((r) => (r.count ?? 0) > 0);
+  if (hasHistory) {
+    return {
+      error:
+        "This resident has discipline, payment, or activity history. Use Discharge to preserve records instead of deleting.",
+    };
+  }
 
   // End all active bed assignments
   await supabase
