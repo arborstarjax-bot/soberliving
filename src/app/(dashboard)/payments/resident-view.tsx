@@ -23,6 +23,8 @@ import {
 import { DownloadReceiptButton } from "./download-receipt-button";
 import { getDocumentUrl } from "@/app/(intake)/actions";
 import { daysUntilLocal, dayOfMonthLocal } from "@/lib/local-date";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 // Resident-facing payments view. Single component because the page
 // already does all the data fetching; this just handles presentation
@@ -56,6 +58,12 @@ interface PaymentTerms {
   admin_fee: number | null;
   commitment_start_date: string;
   pdf_storage_path: string | null;
+  // Pre-signed Supabase URL for the stored PDF. Rendered as a real
+  // <a href> on the "View Signed Commitment" button so iOS Safari
+  // doesn't block the tap. window.open after an async server action
+  // is silently dropped on mobile Safari because the user-gesture
+  // context has already closed.
+  pdf_signed_url: string | null;
 }
 
 interface Props {
@@ -251,12 +259,25 @@ function PaymentTermsCard({ terms }: { terms: PaymentTerms }) {
   const [loading, setLoading] = useState(false);
   const dueDay = dayOfMonthLocal(terms.commitment_start_date);
 
+  // Fallback handler for the rare case the server component didn't
+  // manage to pre-sign the URL (e.g. a transient Supabase storage
+  // error). Opens a blank tab synchronously so iOS Safari keeps the
+  // user-gesture context, then redirects it once the signed URL
+  // resolves. Mobile Safari silently drops `window.open` calls that
+  // run after an `await` because the gesture window has already
+  // closed.
   async function open() {
     if (!terms.pdf_storage_path) return;
+    const w = typeof window !== "undefined" ? window.open("", "_blank") : null;
     setLoading(true);
     try {
       const res = await getDocumentUrl(terms.pdf_storage_path);
-      if (res.url) window.open(res.url, "_blank");
+      if (res.url) {
+        if (w) w.location.href = res.url;
+        else window.location.href = res.url;
+      } else if (w) {
+        w.close();
+      }
     } finally {
       setLoading(false);
     }
@@ -296,19 +317,36 @@ function PaymentTermsCard({ terms }: { terms: PaymentTerms }) {
             </p>
           </div>
         </div>
-        {terms.pdf_storage_path && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5"
-            disabled={loading}
-            onClick={open}
-          >
-            <FileText className="h-3.5 w-3.5" />
-            View Signed Commitment
-          </Button>
-        )}
+        {terms.pdf_storage_path &&
+          (terms.pdf_signed_url ? (
+            // Native <a href> tap is required for iOS Safari, which
+            // blocks window.open called after an async server action
+            // has resolved. The URL is pre-signed server-side.
+            <a
+              href={terms.pdf_signed_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "h-8 gap-1.5"
+              )}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              View Signed Commitment
+            </a>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5"
+              disabled={loading}
+              onClick={open}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              View Signed Commitment
+            </Button>
+          ))}
       </CardContent>
     </Card>
   );

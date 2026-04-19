@@ -35,6 +35,12 @@ export interface PaymentTerms {
   payment_frequency: "weekly" | "monthly";
   commitment_start_date: string;
   pdf_storage_path: string | null;
+  // Pre-signed Supabase URL for the stored PDF, generated server-side
+  // at render time. Rendered as a native <a href> on the View Signed
+  // Commitment button so iOS Safari doesn't block the tap — mobile
+  // Safari refuses `window.open` that's called after an async server
+  // action has resolved because the user-gesture context is gone.
+  pdf_signed_url: string | null;
 }
 
 export interface PendingAmendment {

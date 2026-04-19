@@ -1,5 +1,6 @@
 import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { canAccessHouse } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -154,6 +155,27 @@ export default async function ResidentDetailPage(
       await openAllChargesForCommitment(activeCommitment.id as string);
     } catch (e) {
       console.error("Charge backfill failed on resident detail load", e);
+    }
+  }
+
+  // Pre-sign the active commitment's PDF storage URL so the View
+  // Signed Commitment button on the Payments tab can render as a
+  // real <a href> — iOS Safari silently drops `window.open` calls
+  // that fire after an async server action resolves because the
+  // user-gesture context is gone. Server-side signing keeps the
+  // button working on every device.
+  let activeCommitmentPdfSignedUrl: string | null = null;
+  const activeCommitmentPdfPath =
+    (activeCommitment?.pdf_storage_path as string | null) ?? null;
+  if (activeCommitmentPdfPath) {
+    try {
+      const admin = createAdminClient();
+      const { data } = await admin.storage
+        .from("documents")
+        .createSignedUrl(activeCommitmentPdfPath, 3600);
+      activeCommitmentPdfSignedUrl = data?.signedUrl ?? null;
+    } catch (e) {
+      console.error("Failed to sign commitment PDF URL", e);
     }
   }
 
@@ -743,6 +765,7 @@ export default async function ResidentDetailPage(
                     pdf_storage_path:
                       (activeCommitment.pdf_storage_path as string | null) ??
                       null,
+                    pdf_signed_url: activeCommitmentPdfSignedUrl,
                   }
                 : null
             }

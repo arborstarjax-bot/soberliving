@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { openAllChargesForCommitment } from "@/lib/payments/charges";
 import { ResidentPaymentsView } from "./resident-view";
 import type { SessionUser } from "@/lib/types";
@@ -49,12 +50,31 @@ export async function ResidentPaymentsSection({
     admin_fee: number | null;
     commitment_start_date: string;
     pdf_storage_path: string | null;
+    pdf_signed_url: string | null;
   } | null = null;
   if (commitment?.id) {
     try {
       await openAllChargesForCommitment(commitment.id as string);
     } catch (e) {
       console.error("Resident charge backfill failed", e);
+    }
+    // Pre-sign the stored PDF URL server-side so the View Signed
+    // Commitment button renders as a native <a href> — iOS Safari
+    // drops `window.open` calls that happen after an async server
+    // action resolves because the user-gesture window has closed.
+    const storagePath =
+      (commitment.pdf_storage_path as string | null) ?? null;
+    let signedUrl: string | null = null;
+    if (storagePath) {
+      try {
+        const admin = createAdminClient();
+        const { data } = await admin.storage
+          .from("documents")
+          .createSignedUrl(storagePath, 3600);
+        signedUrl = data?.signedUrl ?? null;
+      } catch (e) {
+        console.error("Failed to sign commitment PDF URL", e);
+      }
     }
     residentTerms = {
       rent_amount: Number(commitment.rent_amount ?? 0),
@@ -63,8 +83,8 @@ export async function ResidentPaymentsSection({
           ? Number(commitment.admin_fee)
           : null,
       commitment_start_date: commitment.commitment_start_date as string,
-      pdf_storage_path:
-        (commitment.pdf_storage_path as string | null) ?? null,
+      pdf_storage_path: storagePath,
+      pdf_signed_url: signedUrl,
     };
   }
 
