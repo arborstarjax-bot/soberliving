@@ -17,6 +17,7 @@ const MILESTONE_DEFINITIONS = [
   { label: "60 Days", days: 60 },
   { label: "90 Days", days: 90 },
   { label: "6 Months", days: 182 },
+  { label: "9 Months", days: 273 },
   { label: "1 Year", days: 365 },
 ];
 
