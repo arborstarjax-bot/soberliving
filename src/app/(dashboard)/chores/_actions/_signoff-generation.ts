@@ -103,7 +103,14 @@ export async function regenerateFutureSignoffsForChore(
       (existing ?? []).map((e) => e.sign_off_date as string)
     );
 
-    const startDate = new Date(cycleStartDate + "T00:00:00");
+    // Match rotations.ts `assignRotationChore` / `rotateSchedule`
+    // exactly: parse the YYYY-MM-DD string as UTC midnight. On a
+    // UTC server (Vercel prod) this produces the right calendar
+    // day; more importantly, it produces the SAME calendar day as
+    // the original signoff creation did, so completed-rotation
+    // signoffs and freshly-regenerated ones can't end up labelled
+    // for different days on a non-UTC dev box.
+    const startDate = new Date(cycleStartDate);
     const signoffs: Array<{
       rotation_assignment_id: string;
       sign_off_date: string;
