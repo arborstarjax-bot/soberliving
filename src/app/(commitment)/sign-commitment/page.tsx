@@ -122,12 +122,14 @@ export default async function SignCommitmentPage() {
       .maybeSingle();
 
     if (moveInPayment) {
+      // Scoped by commitment_id so the due_date filter is unnecessary
+      // (admin_fee and rent have different due_dates after the -1 day
+      // policy shift). Commitment is uniquely identified already.
       const { data: charges } = await adminClient
         .from("payment_charges")
         .select("charge_type, paid_amount, amount")
         .eq("resident_id", residentId)
         .eq("commitment_id", commitment.id)
-        .eq("due_date", commitment.commitment_start_date)
         .in("charge_type", ["admin_fee", "rent"]);
 
       let adminFeeApplied = 0;

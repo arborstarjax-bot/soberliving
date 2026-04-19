@@ -301,13 +301,15 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
   if (data.moveInPayment) {
     const mi = data.moveInPayment;
 
-    // Re-read the freshly opened charges to get their IDs.
+    // Re-read the freshly opened charges to get their IDs. Scoped by
+    // commitment_id so we don't need to filter by due_date, which
+    // differs between admin_fee (commitmentStartDate) and rent
+    // (commitmentStartDate - 1, per the -1 day policy).
     const { data: openCharges } = await adminClient
       .from("payment_charges")
       .select("id, charge_type, amount")
       .eq("resident_id", residentId)
       .eq("commitment_id", commitmentId)
-      .eq("due_date", data.commitmentStartDate)
       .in("charge_type", ["admin_fee", "rent"]);
 
     const adminFeeRow = (openCharges ?? []).find(
