@@ -125,7 +125,11 @@ export async function SignOutHistorySection({
   }
 
   const typed = (data ?? []) as unknown as SignOutRow[];
-  const { rows, nextCursor } = sliceForPage(typed);
+  const { rows, nextCursor } = sliceForPage(
+    typed,
+    DEFAULT_PAGE_SIZE,
+    (r) => ({ ts: r.time_out, id: r.id }),
+  );
 
   // cp= back-stack — same contract as activity / users / bulletin.
   const cpRaw = Array.isArray(searchParams.cp)
