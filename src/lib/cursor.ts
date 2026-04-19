@@ -130,9 +130,25 @@ export function applyCursor<
   const tsCol = options.tsColumn ?? "created_at";
   const idCol = options.idColumn ?? "id";
   const cmp = (options.direction ?? "desc") === "desc" ? "lt" : "gt";
+  const ts = quotePostgrestValue(cursor.ts);
+  const id = quotePostgrestValue(cursor.id);
   return query.or(
-    `${tsCol}.${cmp}.${cursor.ts},and(${tsCol}.eq.${cursor.ts},${idCol}.${cmp}.${cursor.id})`
+    `${tsCol}.${cmp}.${ts},and(${tsCol}.eq.${ts},${idCol}.${cmp}.${id})`
   ) as TBuilder;
+}
+
+/**
+ * PostgREST treats `,`, `.`, `:`, `(`, and `)` as structural
+ * characters inside `.or(...)` filter strings, so any value that
+ * can contain one of them must be wrapped in double quotes.
+ * Cursor values come from user-controlled URL params and from
+ * free-text columns like `houses.name`, so we always quote.
+ *
+ * Inner `"` characters are escaped by doubling (`""`), per
+ * PostgREST syntax.
+ */
+function quotePostgrestValue(raw: string): string {
+  return `"${String(raw).replace(/"/g, '""')}"`;
 }
 
 /**

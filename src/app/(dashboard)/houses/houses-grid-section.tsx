@@ -6,9 +6,11 @@ import { createClient } from "@/lib/supabase/server";
 import { CursorPager } from "@/components/cursor-pager";
 import {
   DEFAULT_PAGE_SIZE,
+  applyCursor,
   buildCursorHref,
   encodeCursor,
   parseCursor,
+  sliceForPage,
   type Cursor,
 } from "@/lib/cursor";
 
@@ -51,12 +53,15 @@ export async function HousesGridSection({
     query = query.in("id", houseFilter);
   }
 
-  // Cursor keyed on `(name, id)` — alphabetical pagination.
-  if (cursor) {
-    query = query.or(
-      `name.gt.${cursor.ts},and(name.eq.${cursor.ts},id.gt.${cursor.id})`
-    );
-  }
+  // Cursor keyed on `(name, id)` — alphabetical pagination. Routed
+  // through `applyCursor` so the interpolated values are correctly
+  // double-quoted (house names can legitimately contain `,()` which
+  // would otherwise break the PostgREST `.or(...)` parser).
+  query = applyCursor(query, cursor, {
+    tsColumn: "name",
+    idColumn: "id",
+    direction: "asc",
+  });
 
   const { data: rawHouses, error } = await query;
   if (error) {
