@@ -106,7 +106,7 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["resident"],
   },
   {
-    label: "Bulletin",
+    label: "Community Services",
     href: "/bulletin",
     icon: MessageSquare,
     roles: ["admin", "manager", "resident"],

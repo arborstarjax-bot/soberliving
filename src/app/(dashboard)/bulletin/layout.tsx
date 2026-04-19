@@ -17,9 +17,9 @@ export default async function BulletinLayout({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Bulletin Board</h1>
+        <h1 className="text-2xl font-bold">Community Services</h1>
         <p className="text-muted-foreground">
-          Announcements, messages, and required acknowledgments
+          Announcements, ride shares, acknowledgments, and reports
         </p>
       </div>
       <BulletinTabs userRole={user.role} />

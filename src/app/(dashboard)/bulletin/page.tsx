@@ -92,16 +92,24 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
   const pinnedSelect =
     "*, author:users!author_id(full_name, user_roles(role)), house:houses(name)";
 
+  // Exclude ride_share posts — those render on their own tab at
+  // /bulletin/ride-share. `.or("post_type.eq.standard,post_type.is.null")`
+  // keeps rows that predate the post_type column (NULL) alongside the
+  // new 'standard' default.
+  const postTypeFilter = "post_type.eq.standard,post_type.is.null";
+
   let pinnedQuery = supabase
     .from("bulletin_posts")
     .select(pinnedSelect)
     .eq("is_pinned", true)
+    .or(postTypeFilter)
     .order("created_at", { ascending: false });
 
   let nonPinnedQuery = supabase
     .from("bulletin_posts")
     .select(pinnedSelect, { count: "exact" })
     .eq("is_pinned", false)
+    .or(postTypeFilter)
     .order("created_at", { ascending: false })
     .range(offset, offset + pageSize - 1);
 
