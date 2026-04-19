@@ -26,7 +26,7 @@ import {
   togglePinPost,
 } from "./actions";
 import type { UserRole } from "@/lib/types";
-import { SobrietyChip } from "@/components/sobriety-chip";
+import { sobrietyAvatarTier } from "@/components/sobriety-chip";
 
 interface Comment {
   id: string;
@@ -79,7 +79,7 @@ function getAvatarColor(name: string) {
   for (let i = 0; i < name.length; i++) {
     hash = name.charCodeAt(i) + ((hash << 5) - hash);
   }
-  return colors[Math.abs(hash) % colors.length];
+  return `${colors[Math.abs(hash) % colors.length]} text-white`;
 }
 
 function RoleBadge({ role }: { role: string }) {
@@ -96,10 +96,25 @@ function RoleBadge({ role }: { role: string }) {
   );
 }
 
-function UserAvatar({ name, size = "md" }: { name: string; size?: "sm" | "md" }) {
+function UserAvatar({
+  name,
+  sobrietyDate,
+  size = "md",
+}: {
+  name: string;
+  sobrietyDate?: string | null;
+  size?: "sm" | "md";
+}) {
   const sizeClasses = size === "sm" ? "h-7 w-7 text-[10px]" : "h-10 w-10 text-sm";
+  const tier = sobrietyAvatarTier(sobrietyDate);
+  const colorClasses = tier
+    ? `${tier.bg} ${tier.text}${tier.border ? " " + tier.border : ""}`
+    : getAvatarColor(name);
   return (
-    <div className={`${sizeClasses} ${getAvatarColor(name)} rounded-full flex items-center justify-center text-white font-semibold shrink-0`}>
+    <div
+      title={tier ? tier.label : undefined}
+      className={`${sizeClasses} ${colorClasses} rounded-full flex items-center justify-center font-semibold shrink-0`}
+    >
       {getInitials(name)}
     </div>
   );
@@ -165,12 +180,15 @@ function CommentSection({
         <div className="mt-4 space-y-3 border-t pt-4">
           {comments.map((c) => (
             <div key={c.id} className="group/comment flex items-start gap-2.5">
-              <UserAvatar name={c.author_name} size="sm" />
+              <UserAvatar
+                name={c.author_name}
+                sobrietyDate={c.author_sobriety_date}
+                size="sm"
+              />
               <div className="flex-1 min-w-0 bg-muted/40 rounded-xl px-3 py-2">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-sm">{c.author_name}</span>
                   <RoleBadge role={c.author_role} />
-                  <SobrietyChip sobrietyDate={c.author_sobriety_date} />
                   <span className="text-xs text-muted-foreground">
                     {timeAgo(c.created_at)}
                   </span>
@@ -266,14 +284,16 @@ export function BulletinFeed({
           <div className="p-5">
             {/* Header: Avatar + Author + Role + Time + Menu */}
             <div className="flex items-start gap-3">
-              <UserAvatar name={post.author_name} />
+              <UserAvatar
+                name={post.author_name}
+                sobrietyDate={post.author_sobriety_date}
+              />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-sm text-foreground">
                     {post.author_name}
                   </span>
                   <RoleBadge role={post.author_role} />
-                  <SobrietyChip sobrietyDate={post.author_sobriety_date} />
                   {post.house_name && (
                     <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold leading-none text-amber-700">
                       {post.house_name}
