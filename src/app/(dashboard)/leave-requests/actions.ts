@@ -11,6 +11,26 @@ import { getHouseToday } from "@/lib/timezone";
 
 const DATETIME_LOCAL_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/;
 
+// Shapes returned by PostgREST joins. The select string is untyped for TS,
+// so we narrow the joined rows here to avoid sprinkling `as unknown as`
+// at every access site.
+type ResidentJoin = {
+  full_name: string;
+  house_id: string;
+  user_id: string | null;
+};
+type CoverResidentJoin = {
+  user_id: string | null;
+  full_name: string;
+};
+type LeaveRequestRow = {
+  id: string;
+  status: string;
+  resident_id: string;
+  resident: ResidentJoin | null;
+  covering_resident: CoverResidentJoin | null;
+};
+
 const createLeaveRequestSchema = z.object({
   resident_id: z.string().uuid(),
   covering_resident_id: z.string().uuid("You must select a covering resident from your house"),
@@ -172,20 +192,21 @@ export async function approveCoverRequest(requestId: string) {
   // and do the permission check ourselves.
   const adminClient = createAdminClient();
 
-  const { data: request } = await adminClient
+  const { data: rawRequest } = await adminClient
     .from("leave_requests")
     .select("*, resident:residents!leave_requests_resident_id_fkey(full_name, house_id), covering_resident:residents!leave_requests_covering_resident_id_fkey(user_id, full_name)")
     .eq("id", requestId)
     .maybeSingle();
 
+  const request = rawRequest as unknown as LeaveRequestRow | null;
   if (!request) return { error: "Request not found" };
   if (request.status !== "pending_cover") return { error: "Request is not pending cover approval" };
 
-  const resident = request.resident as unknown as { full_name: string; house_id: string } | null;
+  const resident = request.resident;
   const houseId = resident?.house_id ?? "";
 
   // Verify the current user is the covering resident, or authorized staff
-  const coverResident = request.covering_resident as unknown as { user_id: string; full_name: string } | null;
+  const coverResident = request.covering_resident;
   if (user.role === "resident" && coverResident?.user_id !== user.id) {
     return { error: "Only the covering resident can approve this" };
   }
@@ -236,20 +257,21 @@ export async function denyCoverRequest(requestId: string, note?: string) {
   // neither, so use the admin client and enforce permission in code.
   const adminClient = createAdminClient();
 
-  const { data: request } = await adminClient
+  const { data: rawRequest } = await adminClient
     .from("leave_requests")
     .select("*, resident:residents!leave_requests_resident_id_fkey(full_name, house_id, user_id), covering_resident:residents!leave_requests_covering_resident_id_fkey(user_id)")
     .eq("id", requestId)
     .maybeSingle();
 
+  const request = rawRequest as unknown as LeaveRequestRow | null;
   if (!request) return { error: "Request not found" };
   if (request.status !== "pending_cover") return { error: "Request is not pending cover approval" };
 
-  const residentInfo = request.resident as unknown as { full_name: string; house_id: string; user_id: string | null } | null;
+  const residentInfo = request.resident;
   const houseId = residentInfo?.house_id ?? "";
 
   // Verify the current user is the covering resident, or authorized staff
-  const coverResident = request.covering_resident as unknown as { user_id: string } | null;
+  const coverResident = request.covering_resident;
   if (user.role === "resident" && coverResident?.user_id !== user.id) {
     return { error: "Only the covering resident can deny this" };
   }
@@ -302,16 +324,17 @@ export async function approveManagerRequest(requestId: string) {
 
   const supabase = await createClient();
 
-  const { data: request } = await supabase
+  const { data: rawRequest } = await supabase
     .from("leave_requests")
     .select("*, resident:residents!leave_requests_resident_id_fkey(full_name, house_id)")
     .eq("id", requestId)
     .maybeSingle();
 
+  const request = rawRequest as unknown as LeaveRequestRow | null;
   if (!request) return { error: "Request not found" };
   if (request.status !== "pending_manager") return { error: "Request is not pending manager approval" };
 
-  const resident = request.resident as unknown as { full_name: string; house_id: string } | null;
+  const resident = request.resident;
   const houseId = resident?.house_id ?? "";
 
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
@@ -360,16 +383,17 @@ export async function denyManagerRequest(requestId: string, note?: string) {
 
   const supabase = await createClient();
 
-  const { data: request } = await supabase
+  const { data: rawRequest } = await supabase
     .from("leave_requests")
     .select("*, resident:residents!leave_requests_resident_id_fkey(full_name, house_id, user_id)")
     .eq("id", requestId)
     .maybeSingle();
 
+  const request = rawRequest as unknown as LeaveRequestRow | null;
   if (!request) return { error: "Request not found" };
   if (request.status !== "pending_manager") return { error: "Request is not pending manager approval" };
 
-  const resident = request.resident as unknown as { full_name: string; house_id: string; user_id: string | null } | null;
+  const resident = request.resident;
   const houseId = resident?.house_id ?? "";
 
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
@@ -422,12 +446,13 @@ export async function approveAdminRequest(requestId: string) {
 
   const supabase = await createClient();
 
-  const { data: request } = await supabase
+  const { data: rawRequest } = await supabase
     .from("leave_requests")
     .select("*, resident:residents!leave_requests_resident_id_fkey(full_name, house_id, user_id)")
     .eq("id", requestId)
     .maybeSingle();
 
+  const request = rawRequest as unknown as LeaveRequestRow | null;
   if (!request) return { error: "Request not found" };
   // Admin trumps manager: allow final approval at either the manager or
   // admin stage. If the admin is short-circuiting the manager step, we
@@ -460,7 +485,7 @@ export async function approveAdminRequest(requestId: string) {
 
   if (error) return { error: error.message };
 
-  const resident = request.resident as unknown as { full_name: string; house_id: string; user_id: string | null } | null;
+  const resident = request.resident;
 
   await logActivity({
     houseId: resident?.house_id,
@@ -496,12 +521,13 @@ export async function denyAdminRequest(requestId: string, note?: string) {
 
   const supabase = await createClient();
 
-  const { data: request } = await supabase
+  const { data: rawRequest } = await supabase
     .from("leave_requests")
     .select("*, resident:residents!leave_requests_resident_id_fkey(full_name, house_id, user_id)")
     .eq("id", requestId)
     .maybeSingle();
 
+  const request = rawRequest as unknown as LeaveRequestRow | null;
   if (!request) return { error: "Request not found" };
   // Mirror the admin-trumps-manager approval path: admins can deny at
   // either the manager or admin stage.
@@ -509,7 +535,7 @@ export async function denyAdminRequest(requestId: string, note?: string) {
     return { error: "Request cannot be denied from its current status" };
   }
 
-  const resident = request.resident as unknown as { full_name: string; house_id: string; user_id: string | null } | null;
+  const resident = request.resident;
 
   const { error } = await supabase
     .from("leave_requests")
@@ -557,19 +583,19 @@ export async function markLeaveReturned(requestId: string) {
 
   const supabase = await createClient();
 
-  const { data: request } = await supabase
+  const { data: rawRequest } = await supabase
     .from("leave_requests")
     .select("status, resident_id, resident:residents!leave_requests_resident_id_fkey(full_name, house_id)")
     .eq("id", requestId)
     .maybeSingle();
 
+  const request = rawRequest as unknown as LeaveRequestRow | null;
   if (!request) return { error: "Request not found" };
 
   // Only approved requests can be marked as returned
-  const requestStatus = (request as unknown as { status: string }).status;
-  if (requestStatus !== "approved") return { error: "Only approved requests can be marked as returned" };
+  if (request.status !== "approved") return { error: "Only approved requests can be marked as returned" };
 
-  const resident = request.resident as unknown as { full_name: string; house_id: string } | null;
+  const resident = request.resident;
   const houseId = resident?.house_id ?? "";
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
     return { error: "Not authorized" };

@@ -8,30 +8,41 @@ import { logActivity } from "@/lib/activity";
 import { getHouseToday, getHouseYesterday, DEFAULT_TIMEZONE } from "@/lib/timezone";
 import { sendNotification, sendNotificationToHouseManagers } from "@/lib/notifications";
 
+// Shapes returned by PostgREST joins. TS can't parse the select string, so
+// we narrow the joined rows centrally instead of casting at each access.
+type RotationAssignmentJoin = {
+  resident_id: string;
+  rotation: { house_id: string } | null;
+  chore: { name: string; house_id: string } | null;
+};
+type SignoffRow = {
+  id: string;
+  status: string;
+  sign_off_date?: string | null;
+  rotation_assignment_id?: string | null;
+  rotation_assignment: RotationAssignmentJoin | null;
+};
+
 export async function markSignoffComplete(signoffId: string, photoUrl?: string) {
   const user = await requireAuth();
   const supabase = await createClient();
 
   // Look up the signoff's assignment to verify authorization
-  const { data: signoff } = await supabase
+  const { data: rawSignoff } = await supabase
     .from("chore_signoffs")
     .select("id, status, sign_off_date, rotation_assignment_id, rotation_assignment:chore_rotation_assignments(resident_id, rotation:chore_rotations(house_id))")
     .eq("id", signoffId)
     .maybeSingle();
 
+  const signoff = rawSignoff as unknown as SignoffRow | null;
   if (!signoff) return { error: "Signoff not found" };
 
   // Only allow marking signoffs that are still pending
-  const currentStatus = (signoff as unknown as { status: string }).status;
-  if (currentStatus !== "pending") {
+  if (signoff.status !== "pending") {
     return { error: "This signoff has already been submitted or reviewed" };
   }
 
-  const assignment = signoff.rotation_assignment as unknown as {
-    resident_id: string;
-    rotation: { house_id: string } | null;
-  } | null;
-
+  const assignment = signoff.rotation_assignment;
   const houseId = assignment?.rotation?.house_id ?? "";
 
   // Look up house timezone for accurate date checks
@@ -118,16 +129,15 @@ export async function reviewSignoff(
   const supabase = await createClient();
 
   // Verify house-scoped access before mutating
-  const { data: signoffData } = await supabase
+  const { data: rawSignoffData } = await supabase
     .from("chore_signoffs")
     .select("rotation_assignment:chore_rotation_assignments(rotation:chore_rotations(house_id))")
     .eq("id", signoffId)
     .maybeSingle();
 
+  const signoffData = rawSignoffData as unknown as Pick<SignoffRow, "rotation_assignment"> | null;
   if (signoffData) {
-    const ra = signoffData.rotation_assignment as unknown as {
-      rotation: { house_id: string } | null;
-    } | null;
+    const ra = signoffData.rotation_assignment;
     const houseId = ra?.rotation?.house_id ?? "";
     if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
       return { error: "Not authorized" };
@@ -153,7 +163,7 @@ export async function reviewSignoff(
   if (error) return { error: error.message };
 
   // Get details for activity log
-  const { data: signoff } = await supabase
+  const { data: rawSignoff } = await supabase
     .from("chore_signoffs")
     .select(
       "rotation_assignment:chore_rotation_assignments(resident_id, chore:chores(name, house_id))"
@@ -161,11 +171,9 @@ export async function reviewSignoff(
     .eq("id", signoffId)
     .maybeSingle();
 
+  const signoff = rawSignoff as unknown as Pick<SignoffRow, "rotation_assignment"> | null;
   if (signoff?.rotation_assignment) {
-    const ra = signoff.rotation_assignment as unknown as {
-      resident_id: string;
-      chore: { name: string; house_id: string } | null;
-    };
+    const ra = signoff.rotation_assignment;
     await logActivity({
       houseId: ra.chore?.house_id,
       residentId: ra.resident_id,
@@ -214,19 +222,16 @@ export async function overrideSignoffStatus(
 
   const supabase = await createClient();
 
-  const { data: signoff } = await supabase
+  const { data: rawSignoff } = await supabase
     .from("chore_signoffs")
     .select("id, status, rotation_assignment:chore_rotation_assignments(resident_id, chore:chores(name, house_id))")
     .eq("id", signoffId)
     .maybeSingle();
 
+  const signoff = rawSignoff as unknown as SignoffRow | null;
   if (!signoff) return { error: "Signoff not found" };
 
-  const ra = signoff.rotation_assignment as unknown as {
-    resident_id: string;
-    chore: { name: string; house_id: string } | null;
-  } | null;
-
+  const ra = signoff.rotation_assignment;
   const houseId = ra?.chore?.house_id ?? "";
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
     return { error: "Not authorized" };
@@ -254,7 +259,7 @@ export async function overrideSignoffStatus(
   }
 
   // If changing FROM missed to another status, auto-reverse the linked demerit
-  const oldStatus = (signoff as unknown as { status: string }).status;
+  const oldStatus = signoff.status;
 
   const { error } = await supabase
     .from("chore_signoffs")
@@ -309,21 +314,19 @@ export async function redoSignoff(signoffId: string, photoUrl?: string) {
 
   const supabase = await createClient();
 
-  const { data: signoff } = await supabase
+  const { data: rawSignoff } = await supabase
     .from("chore_signoffs")
     .select("id, status, sign_off_date, rotation_assignment_id, rotation_assignment:chore_rotation_assignments(resident_id, rotation:chore_rotations(house_id))")
     .eq("id", signoffId)
     .maybeSingle();
 
+  const signoff = rawSignoff as unknown as SignoffRow | null;
   if (!signoff) return { error: "Signoff not found" };
-  if ((signoff as unknown as { status: string }).status !== "rejected") {
+  if (signoff.status !== "rejected") {
     return { error: "Only rejected signoffs can be redone" };
   }
 
-  const assignment = signoff.rotation_assignment as unknown as {
-    resident_id: string;
-    rotation: { house_id: string } | null;
-  } | null;
+  const assignment = signoff.rotation_assignment;
 
   // Verify this is the resident's own signoff
   const { data: residentRecord } = await supabase

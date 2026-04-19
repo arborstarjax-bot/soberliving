@@ -158,30 +158,37 @@ export default async function DisciplinePage() {
   });
 
   // Normalize restriction data for client component
-  const normalizedActiveRestrictions = (activeRestrictions ?? []).map((r) => ({
-    id: r.id as string,
-    resident_id: r.resident_id as string,
-    house_id: r.house_id as string,
-    restriction_type: r.restriction_type as string,
-    description: r.description as string,
-    notes: (r.notes as string) ?? null,
-    start_date: r.start_date as string,
-    end_date: (r.end_date as string) ?? null,
-    is_active: r.is_active as boolean,
-    is_house_commitment: r.is_house_commitment as boolean,
-    updated_at: r.updated_at as string,
-    resident_name: (r.resident as unknown as { full_name: string } | null)?.full_name ?? "Unknown",
-    house_name: (r.house as unknown as { name: string } | null)?.name ?? "",
-  }));
+  const normalizedActiveRestrictions = (activeRestrictions ?? []).map((r) => {
+    const resident = Array.isArray(r.resident) ? r.resident[0] : r.resident;
+    const house = Array.isArray(r.house) ? r.house[0] : r.house;
+    return {
+      id: r.id as string,
+      resident_id: r.resident_id as string,
+      house_id: r.house_id as string,
+      restriction_type: r.restriction_type as string,
+      description: r.description as string,
+      notes: (r.notes as string) ?? null,
+      start_date: r.start_date as string,
+      end_date: (r.end_date as string) ?? null,
+      is_active: r.is_active as boolean,
+      is_house_commitment: r.is_house_commitment as boolean,
+      updated_at: r.updated_at as string,
+      resident_name: (resident as { full_name?: string } | null)?.full_name ?? "Unknown",
+      house_name: (house as { name?: string } | null)?.name ?? "",
+    };
+  });
 
-  const normalizedPastRestrictions = (pastRestrictions ?? []).map((r) => ({
-    id: r.id as string,
-    restriction_type: r.restriction_type as string,
-    description: r.description as string,
-    end_date: (r.end_date as string) ?? null,
-    updated_at: r.updated_at as string,
-    resident_name: (r.resident as unknown as { full_name: string } | null)?.full_name ?? "Unknown",
-  }));
+  const normalizedPastRestrictions = (pastRestrictions ?? []).map((r) => {
+    const resident = Array.isArray(r.resident) ? r.resident[0] : r.resident;
+    return {
+      id: r.id as string,
+      restriction_type: r.restriction_type as string,
+      description: r.description as string,
+      end_date: (r.end_date as string) ?? null,
+      updated_at: r.updated_at as string,
+      resident_name: (resident as { full_name?: string } | null)?.full_name ?? "Unknown",
+    };
+  });
 
   const demeritMatrixContent = (
     <DemeritMatrix
@@ -230,17 +237,22 @@ export default async function DisciplinePage() {
       .limit(100);
     if (houseFilter && houseFilter.length > 0) incidentsQuery = incidentsQuery.in("house_id", houseFilter);
     const { data: rawIncidents } = await incidentsQuery;
-    incidents = (rawIncidents ?? []).map((inc) => ({
-      id: inc.id as string,
-      severity: inc.severity as string,
-      category: (inc.category as string) ?? null,
-      description: inc.description as string,
-      occurred_at: inc.occurred_at as string,
-      photo_url: (inc.photo_url as string) ?? null,
-      resident_name: (inc.resident as unknown as { full_name: string } | null)?.full_name ?? "Unknown",
-      house_name: (inc.house as unknown as { name: string } | null)?.name ?? "",
-      reporter_name: (inc.reporter as unknown as { full_name: string } | null)?.full_name ?? "Unknown",
-    }));
+    incidents = (rawIncidents ?? []).map((inc) => {
+      const resident = Array.isArray(inc.resident) ? inc.resident[0] : inc.resident;
+      const house = Array.isArray(inc.house) ? inc.house[0] : inc.house;
+      const reporter = Array.isArray(inc.reporter) ? inc.reporter[0] : inc.reporter;
+      return {
+        id: inc.id as string,
+        severity: inc.severity as string,
+        category: (inc.category as string) ?? null,
+        description: inc.description as string,
+        occurred_at: inc.occurred_at as string,
+        photo_url: (inc.photo_url as string) ?? null,
+        resident_name: (resident as { full_name?: string } | null)?.full_name ?? "Unknown",
+        house_name: (house as { name?: string } | null)?.name ?? "",
+        reporter_name: (reporter as { full_name?: string } | null)?.full_name ?? "Unknown",
+      };
+    });
   }
 
   const addIncidentButton = isStaff ? (

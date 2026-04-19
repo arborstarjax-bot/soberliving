@@ -257,12 +257,13 @@ export default async function ResidentDetailPage(
       )
       .eq("room.house_id", resident.house_id)
       .eq("is_active", true);
-    bedOptions = ((houseBeds ?? []) as unknown as {
+    type HouseBedRow = {
       id: string;
       label: string;
       room: { name: string } | null;
       bed_assignments: { end_date: string | null }[];
-    }[])
+    };
+    bedOptions = ((houseBeds ?? []) as unknown as HouseBedRow[])
       .map((b) => ({
         id: b.id,
         label: b.label,
@@ -304,7 +305,7 @@ export default async function ResidentDetailPage(
         <div>
           <h1 className="text-2xl font-bold">{resident.full_name}</h1>
           <p className="text-muted-foreground">
-            {(resident.houses as unknown as { name: string } | null)?.name} ·{" "}
+            {(resident.houses as { name: string } | null)?.name} ·{" "}
             <Badge variant="outline" className="capitalize">
               {resident.status}
             </Badge>
@@ -532,10 +533,14 @@ export default async function ResidentDetailPage(
           {choreAssignments && choreAssignments.length > 0 ? (
             <div className="space-y-2">
               {choreAssignments.map((ca) => {
-                const signoffs = (ca.chore_signoffs as unknown as Array<{ status: string }>) ?? [];
+                const signoffs = (ca.chore_signoffs as Array<{ status: string }> | null) ?? [];
                 const approved = signoffs.filter((s) => s.status === "approved").length;
                 const total = signoffs.length;
-                const rotation = ca.rotation as unknown as { cycle_start_date: string; cycle_end_date: string; is_current: boolean } | null;
+                const rotation = ca.rotation as {
+                  cycle_start_date: string;
+                  cycle_end_date: string;
+                  is_current: boolean;
+                } | null;
                 return (
                   <Card key={ca.id}>
                     <CardContent className="flex items-center justify-between py-3">

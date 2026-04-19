@@ -304,7 +304,16 @@ export async function loadStateOfHouseData(
   ]);
 
   // Census
-  const residents = residentsRes.data ?? [];
+  type ResidentRow = {
+    id: string;
+    full_name: string;
+    status: string | null;
+    move_in_date: string | null;
+    move_out_date: string | null;
+    discharge_reason: string | null;
+    discharge_is_voluntary: boolean | null;
+  };
+  const residents = (residentsRes.data ?? []) as unknown as ResidentRow[];
   const currentResidents = residents.filter((r) => r.status === "active");
   const newResidentsInRange = currentResidents.filter((r) =>
     isIn(r.move_in_date, range)
@@ -392,11 +401,7 @@ export async function loadStateOfHouseData(
     (r) => r.status === "discharged" && isIn(r.move_out_date, range)
   );
   const discharges = dischargedInRange
-    .filter(
-      (r) =>
-        !(r as unknown as { discharge_is_voluntary: boolean | null })
-          .discharge_is_voluntary
-    )
+    .filter((r) => !r.discharge_is_voluntary)
     .map((r) => ({
       id: r.id,
       full_name: r.full_name,
@@ -404,11 +409,7 @@ export async function loadStateOfHouseData(
       reason: r.discharge_reason ?? null,
     }));
   const voluntaryDepartures = dischargedInRange
-    .filter(
-      (r) =>
-        (r as unknown as { discharge_is_voluntary: boolean | null })
-          .discharge_is_voluntary === true
-    )
+    .filter((r) => r.discharge_is_voluntary === true)
     .map((r) => ({
       id: r.id,
       full_name: r.full_name,
@@ -520,10 +521,8 @@ export async function loadStateOfHouseData(
   for (const resp of responsesInRange) {
     if (resp.status !== "completed") continue;
     const fd = (resp.form_data ?? {}) as Record<string, unknown>;
-    const residentRel = (
-      resp as unknown as { residents?: { full_name?: string } | null }
-    ).residents;
-    const name = residentRel?.full_name ?? "Unknown resident";
+    const residentRel = (resp as { residents?: { full_name?: string } | { full_name?: string }[] | null }).residents;
+    const name = pickName(residentRel);
     const m = Number(fd.meeting_rating as number | string | undefined);
     if (Number.isFinite(m) && m > 0) {
       meetingResponses.push({ id: resp.id, name, rating: m });

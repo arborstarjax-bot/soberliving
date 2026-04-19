@@ -76,7 +76,10 @@ export async function removeChoreExclusion(exclusionId: string) {
 
   if (!exclusion) return { error: "Exclusion not found" };
 
-  const houseId = (exclusion.chore as unknown as { house_id: string; name: string })?.house_id ?? "";
+  const chore = (Array.isArray(exclusion.chore) ? exclusion.chore[0] : exclusion.chore) as
+    | { house_id: string; name: string }
+    | null;
+  const houseId = chore?.house_id ?? "";
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
     return { error: "Not authorized" };
   }
@@ -88,8 +91,11 @@ export async function removeChoreExclusion(exclusionId: string) {
 
   if (error) return { error: error.message };
 
-  const choreName = (exclusion.chore as unknown as { name: string })?.name ?? "";
-  const residentName = (exclusion.resident as unknown as { full_name: string })?.full_name ?? "";
+  const choreName = chore?.name ?? "";
+  const residentRel = (Array.isArray(exclusion.resident) ? exclusion.resident[0] : exclusion.resident) as
+    | { full_name: string }
+    | null;
+  const residentName = residentRel?.full_name ?? "";
 
   await logActivity({
     houseId,

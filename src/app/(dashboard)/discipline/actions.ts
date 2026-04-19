@@ -293,10 +293,14 @@ export async function generateMissedChoreDemerits(houseId?: string) {
   }
 
   let count = 0;
-  for (const signoff of missedSignoffs) {
-    const ra = signoff.rotation_assignment as unknown as {
-      chore: { house_id: string } | null;
-    } | null;
+  const missedSignoffRows = missedSignoffs as unknown as Array<{
+    id: string;
+    sign_off_date: string;
+    created_at: string | null;
+    rotation_assignment: { chore: { house_id: string } | null } | null;
+  }>;
+  for (const signoff of missedSignoffRows) {
+    const ra = signoff.rotation_assignment;
     if (!ra?.chore) continue;
     if (ra.chore.house_id !== houseId) continue;
 
@@ -362,27 +366,32 @@ export async function cleanupBackfilledAutoDemerits() {
   }
 
   let count = 0;
-  for (const d of candidates) {
-    const houseId = (d as unknown as { house_id: string }).house_id;
+  const candidateRows = candidates as unknown as Array<{
+    id: string;
+    house_id: string;
+    resident_id: string;
+    signoff_id: string | null;
+    signoff: { id: string; sign_off_date: string; created_at: string | null } | null;
+  }>;
+  for (const d of candidateRows) {
+    const houseId = d.house_id;
     if (user.role !== "admin" && !canAccessHouse(user, houseId)) continue;
 
-    const s = (d as unknown as {
-      signoff: { sign_off_date: string; created_at: string | null } | null;
-    }).signoff;
+    const s = d.signoff;
     if (!s?.sign_off_date || !s.created_at) continue;
 
     const tz = await tzFor(houseId);
     const createdDate = isoDateInTz(s.created_at, tz);
     if (createdDate <= s.sign_off_date) continue; // legit missed chore, leave it
 
-    const demeritId = (d as unknown as { id: string }).id;
+    const demeritId = d.id;
     const { error: delErr } = await supabase.from("demerits").delete().eq("id", demeritId);
     if (delErr) continue;
 
     count++;
     await logActivity({
       houseId,
-      residentId: (d as unknown as { resident_id: string }).resident_id,
+      residentId: d.resident_id,
       actorId: user.id,
       eventType: "demerit_deleted",
       entityType: "demerit",

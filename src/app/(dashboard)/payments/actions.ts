@@ -326,9 +326,10 @@ export async function voidPayment(
     });
   }
 
-  const residentName = (
-    payment.resident as unknown as { full_name: string } | null
-  )?.full_name;
+  const residentRel = Array.isArray(payment.resident)
+    ? payment.resident[0]
+    : payment.resident;
+  const residentName = (residentRel as { full_name?: string } | null)?.full_name;
 
   await logActivity({
     houseId: payment.house_id,
@@ -412,9 +413,10 @@ export async function deletePayment(
     .eq("id", parsed.data.payment_id);
   if (error) return { error: error.message };
 
-  const residentName = (
-    payment.resident as unknown as { full_name: string } | null
-  )?.full_name;
+  const residentRel = Array.isArray(payment.resident)
+    ? payment.resident[0]
+    : payment.resident;
+  const residentName = (residentRel as { full_name?: string } | null)?.full_name;
 
   await logActivity({
     houseId: payment.house_id,

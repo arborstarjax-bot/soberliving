@@ -212,8 +212,10 @@ export async function updateChoreTask(taskId: string, description: string) {
     .maybeSingle();
 
   if (!task) return { error: "Task not found" };
-  const houseId =
-    (task.chore as unknown as { house_id: string } | null)?.house_id ?? "";
+  const choreRel = (Array.isArray(task.chore) ? task.chore[0] : task.chore) as
+    | { house_id: string }
+    | null;
+  const houseId = choreRel?.house_id ?? "";
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
     return { error: "Not authorized" };
   }
@@ -334,7 +336,10 @@ export async function removeChoreTask(taskId: string) {
 
   if (!task) return { error: "Task not found" };
 
-  const houseId = (task.chore as unknown as { house_id: string } | null)?.house_id ?? "";
+  const choreRel = (Array.isArray(task.chore) ? task.chore[0] : task.chore) as
+    | { house_id: string }
+    | null;
+  const houseId = choreRel?.house_id ?? "";
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
     return { error: "Not authorized" };
   }

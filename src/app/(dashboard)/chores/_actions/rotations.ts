@@ -23,8 +23,8 @@ async function getResidentCurrentRoomId(
     .eq("resident_id", residentId)
     .is("end_date", null)
     .maybeSingle();
-  const bed = data?.bed as unknown as { room_id: string } | null;
-  return bed?.room_id ?? null;
+  const row = data as unknown as { bed: { room_id: string } | null } | null;
+  return row?.bed?.room_id ?? null;
 }
 
 // --- Rotations ---
@@ -340,15 +340,23 @@ export async function unassignRotationChore(assignmentId: string) {
   const user = await requireAuth();
   const supabase = await createClient();
 
-  const { data: assignment } = await supabase
+  const { data: rawAssignment } = await supabase
     .from("chore_rotation_assignments")
     .select("id, chore_id, resident_id, rotation:chore_rotations(house_id), chore:chores(name), resident:residents(full_name)")
     .eq("id", assignmentId)
     .maybeSingle();
 
+  const assignment = rawAssignment as unknown as {
+    id: string;
+    chore_id: string;
+    resident_id: string;
+    rotation: { house_id: string } | null;
+    chore: { name: string } | null;
+    resident: { full_name: string } | null;
+  } | null;
   if (!assignment) return { error: "Assignment not found" };
 
-  const houseId = (assignment.rotation as unknown as { house_id: string })?.house_id ?? "";
+  const houseId = assignment.rotation?.house_id ?? "";
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
     return { error: "Not authorized" };
   }
@@ -367,8 +375,8 @@ export async function unassignRotationChore(assignmentId: string) {
 
   if (error) return { error: error.message };
 
-  const choreName = (assignment.chore as unknown as { name: string })?.name ?? "";
-  const residentName = (assignment.resident as unknown as { full_name: string })?.full_name ?? "";
+  const choreName = assignment.chore?.name ?? "";
+  const residentName = assignment.resident?.full_name ?? "";
 
   await logActivity({
     houseId,
@@ -453,10 +461,10 @@ export async function rotateSchedule(rotationId: string) {
       .select("resident_id, bed:beds(room_id)")
       .in("resident_id", residentIds)
       .is("end_date", null);
-    for (const row of beds ?? []) {
-      const bed = row.bed as unknown as { room_id: string } | null;
-      if (bed?.room_id) {
-        residentRoomMap.set(row.resident_id as string, bed.room_id);
+    const bedRows = (beds ?? []) as unknown as Array<{ resident_id: string; bed: { room_id: string } | null }>;
+    for (const row of bedRows) {
+      if (row.bed?.room_id) {
+        residentRoomMap.set(row.resident_id, row.bed.room_id);
       }
     }
   }
@@ -516,10 +524,7 @@ export async function rotateSchedule(rotationId: string) {
       .eq("rotation_assignment_id", assignment.id);
 
     // Recreate signoffs for new assignment
-    const choreData = assignment.chore as unknown as {
-      days_of_week?: string[];
-      cycle_weeks?: number;
-    } | null;
+    const choreData = assignment.chore as unknown as { days_of_week?: string[]; cycle_weeks?: number } | null;
     const choreDays: string[] = choreData?.days_of_week ?? ["monday", "wednesday", "friday"];
     const choreCycleWeeks: number = choreData?.cycle_weeks ?? 2;
 
