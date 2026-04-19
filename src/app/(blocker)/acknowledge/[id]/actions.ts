@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/server";
 import { logActivity } from "@/lib/activity";
-import { isBlockerApplicableToUser } from "@/lib/blockers";
+import { isBlockerApplicableToUser, maybeAutoArchiveBlocker } from "@/lib/blockers";
 
 /**
  * Resident-side ack of a blocker. Writes the signature + an optional
@@ -115,6 +115,11 @@ export async function acknowledgeBlocker(
     entityId: blockerId,
     description: `${user.full_name} acknowledged blocker "${blocker.title}"`,
   });
+
+  // Auto-archive the notice once every targeted resident has acked.
+  // Keeps the staff Notices list scoped to work-in-progress — a
+  // fulfilled notice silently moves to the Archived section.
+  await maybeAutoArchiveBlocker(blockerId, admin);
 
   // Bust the layout cache so the gate re-evaluates on the next
   // navigation. Without this the router cache keeps the resident

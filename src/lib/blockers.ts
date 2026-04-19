@@ -4,6 +4,80 @@ import { createAdminClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
+ * After a resident acknowledges a blocker, check whether every
+ * targeted resident has now acked and — if so — set `archived_at`
+ * so the Notices list auto-archives fulfilled entries and they no
+ * longer appear under Active Notices.
+ *
+ * Idempotent: a retry won't re-archive an already-archived row
+ * because we `.is('archived_at', null)` before the update.
+ *
+ * Safe to call after every ack; target counts are cheap for the
+ * 'residents' / 'house' targeting modes and bounded by the active
+ * residents table for 'all'.
+ */
+export async function maybeAutoArchiveBlocker(
+  blockerId: string,
+  adminClient?: SupabaseClient
+): Promise<{ archived: boolean }> {
+  const admin = adminClient ?? createAdminClient();
+
+  const { data: blocker } = await admin
+    .from("blockers")
+    .select(
+      "id, archived_at, target_type, target_house_ids, target_user_ids"
+    )
+    .eq("id", blockerId)
+    .maybeSingle();
+  if (!blocker || blocker.archived_at) return { archived: false };
+
+  const targetType = blocker.target_type as string;
+
+  // Compute the set of active-resident user_ids this blocker targets.
+  let targetUserIds: string[] = [];
+  if (targetType === "all") {
+    const { data: rows } = await admin
+      .from("residents")
+      .select("user_id")
+      .eq("status", "active");
+    targetUserIds = (rows ?? []).map((r) => r.user_id as string);
+  } else if (targetType === "house") {
+    const hids = (blocker.target_house_ids as string[] | null) ?? [];
+    if (hids.length === 0) return { archived: false };
+    const { data: rows } = await admin
+      .from("residents")
+      .select("user_id")
+      .eq("status", "active")
+      .in("house_id", hids);
+    targetUserIds = (rows ?? []).map((r) => r.user_id as string);
+  } else if (targetType === "residents") {
+    targetUserIds = (blocker.target_user_ids as string[] | null) ?? [];
+  } else {
+    return { archived: false };
+  }
+
+  if (targetUserIds.length === 0) return { archived: false };
+
+  const { data: acks } = await admin
+    .from("blocker_acknowledgments")
+    .select("user_id")
+    .eq("blocker_id", blockerId)
+    .in("user_id", targetUserIds);
+  const acked = new Set((acks ?? []).map((a) => a.user_id as string));
+  const allAcked = targetUserIds.every((id) => acked.has(id));
+  if (!allAcked) return { archived: false };
+
+  const nowIso = new Date().toISOString();
+  const { error } = await admin
+    .from("blockers")
+    .update({ archived_at: nowIso, updated_at: nowIso })
+    .eq("id", blockerId)
+    .is("archived_at", null);
+  if (error) return { archived: false };
+  return { archived: true };
+}
+
+/**
  * Checks whether a specific blocker row is targeted at `userId` per
  * its `target_type` + `target_house_ids` / `target_user_ids` config.
  *
