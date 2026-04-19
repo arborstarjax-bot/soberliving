@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MoreVertical } from "lucide-react";
 import type { UserRole } from "@/lib/types";
-import { SobrietyChip } from "@/components/sobriety-chip";
+import { sobrietyAvatarTier } from "@/components/sobriety-chip";
 import {
   deleteRideShare,
   reserveRideSeat,
@@ -204,16 +204,26 @@ function RideCard({
     >
       <div className="p-5">
         <div className="flex items-start gap-3">
-          <div className="h-10 w-10 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0">
-            <Car className="h-5 w-5" />
-          </div>
+          {(() => {
+            const tier = sobrietyAvatarTier(ride.author_sobriety_date);
+            const colorClasses = tier
+              ? `${tier.bg} ${tier.text}${tier.border ? " " + tier.border : ""}`
+              : "bg-indigo-600 text-white";
+            return (
+              <div
+                title={tier ? tier.label : undefined}
+                className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${colorClasses}`}
+              >
+                <Car className="h-5 w-5" />
+              </div>
+            );
+          })()}
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-sm">
                 {ride.author_name}
               </span>
-              <SobrietyChip sobrietyDate={ride.author_sobriety_date} />
               {ride.house_name && (
                 <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold leading-none text-amber-700">
                   {ride.house_name}
