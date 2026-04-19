@@ -50,11 +50,12 @@ export function milestonesPassed(sobrietyDate: string | null): number[] {
   return out;
 }
 
-// In-memory debounce — avoid running the residents→milestones scan
-// on every single bulletin render. A single entry per process is
-// enough because the check is idempotent (UNIQUE constraint).
-let lastRunAt = 0;
-const MIN_INTERVAL_MS = 60_000; // 1 minute
+// Cross-process debounce key used against public.system_flags. A
+// module-global in-memory timestamp won't survive lambda cold starts
+// (every fresh process would re-run the full residents→milestones
+// scan once), so we do a compare-and-swap on a DB row instead.
+const DEBOUNCE_KEY = "milestone_scan_last_run_at";
+const MIN_INTERVAL = "1 minute";
 
 /**
  * Scan all active residents with a sobriety_date, post a celebratory
@@ -63,14 +64,29 @@ const MIN_INTERVAL_MS = 60_000; // 1 minute
  * to call from any server render — all writes are idempotent via
  * the UNIQUE(resident_user_id, milestone_days) constraint.
  *
+ * Cross-process debounced via public.system_flags: only the first
+ * caller in any given MIN_INTERVAL window actually runs the scan;
+ * the rest short-circuit. The CAS uses an atomic UPSERT so racing
+ * processes can't both win the window.
+ *
  * Returns the number of new posts created on this call.
  */
 export async function ensureMilestonePosts(
   admin: SupabaseClient,
 ): Promise<number> {
-  const now = Date.now();
-  if (now - lastRunAt < MIN_INTERVAL_MS) return 0;
-  lastRunAt = now;
+  // Atomic compare-and-swap: insert the flag if missing, or update
+  // it if the stored timestamp is older than MIN_INTERVAL ago. PG
+  // returns the row only when the WHERE clause on the DO UPDATE
+  // branch matches — so an empty result set means another process
+  // already owns this scan window and we should bail.
+  const { data: claim, error: claimErr } = await admin.rpc(
+    "claim_debounce_slot",
+    { p_key: DEBOUNCE_KEY, p_interval: MIN_INTERVAL },
+  );
+  // If the RPC itself errored (e.g. migration not yet deployed), err
+  // on the side of running the scan — the idempotent UNIQUE
+  // constraint on sobriety_milestone_posts still prevents duplicates.
+  if (!claimErr && claim === false) return 0;
 
   const { data: residents } = await admin
     .from("residents")
