@@ -110,6 +110,23 @@ export async function ensureMilestonePosts(
     (alreadyPosted ?? []).map((r) => r.resident_user_id as string),
   );
 
+  // Only announce a milestone if the resident is within GRACE_DAYS
+  // of actually crossing it today. Anything older gets silent-logged
+  // (the avatar / profile chip still upgrades — we just don't fire a
+  // stale "🎉 X hit 30 days!" post days or weeks after the fact).
+  //
+  // This covers three scenarios with one rule:
+  //   1. Brand-new resident added with a long-past sobriety_date →
+  //      every passed milestone is > GRACE_DAYS old → silent-log all,
+  //      announce none.
+  //   2. Established resident who crosses a milestone today and
+  //      someone opens Bulletin the same day → within grace →
+  //      announce.
+  //   3. Established resident who crossed a milestone but nobody
+  //      opened Bulletin for several days → past grace → silent-log.
+  //      (Prevents posting a stale congrats dated today.)
+  const GRACE_DAYS = 2;
+
   let created = 0;
   for (const r of rows) {
     const passed = milestonesPassed(r.sobriety_date);
@@ -122,17 +139,24 @@ export async function ensureMilestonePosts(
       ? r.user[0]?.full_name ?? "Resident"
       : r.user?.full_name ?? "Resident";
 
-    // For a newly-added resident (no prior milestone log) we
-    // silently log every milestone they've already crossed and
-    // announce NONE. Announcing a backfilled milestone is misleading
-    // — the house didn't actually watch the resident earn that
-    // milestone here, so posting "X hit 30 days!" the instant they
-    // joined reads as a bug. After this first run the user becomes
-    // "established" and any milestone they cross going forward will
-    // post normally.
-    const isNew = !establishedUsers.has(r.user_id);
-    const toAnnounce = isNew ? [] : needed;
-    const toSilentlyLog = isNew ? needed : [];
+    const daysSober = differenceInDays(
+      new Date(),
+      new Date(r.sobriety_date),
+    );
+
+    const toAnnounce: number[] = [];
+    const toSilentlyLog: number[] = [];
+    for (const d of needed) {
+      if (daysSober - d <= GRACE_DAYS) {
+        toAnnounce.push(d);
+      } else {
+        toSilentlyLog.push(d);
+      }
+    }
+    // `establishedUsers` is retained for future diagnostics but no
+    // longer gates the announce/silent-log split — the grace window
+    // is strictly date-based.
+    void establishedUsers;
 
     for (const days of toSilentlyLog) {
       await admin

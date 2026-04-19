@@ -6,6 +6,28 @@ export interface SobrietyChipProps {
   className?: string;
 }
 
+/**
+ * Tailwind classes for the Sobriety Milestones badge row on the
+ * resident profile. Each milestone chip is colored to match the tier
+ * it represents so the badge list mirrors the avatar color scale:
+ *   30 days  → Brown (saddle)
+ *   60 days  → Purple
+ *   90 days  → Red
+ *   6 months (182) → Yellow
+ *   9 months (273) → Green
+ *   1 year+ (365+) → Blue
+ * Returns null for anything unmapped — caller falls back to a neutral badge.
+ */
+export function milestoneBadgeClasses(days: number): string | null {
+  if (days >= 365) return "bg-blue-600 text-white border-blue-600 hover:bg-blue-600";
+  if (days >= 273) return "bg-green-600 text-white border-green-600 hover:bg-green-600";
+  if (days >= 182) return "bg-yellow-300 text-gray-900 border-yellow-300 hover:bg-yellow-300";
+  if (days >= 90) return "bg-red-600 text-white border-red-600 hover:bg-red-600";
+  if (days >= 60) return "bg-purple-600 text-white border-purple-600 hover:bg-purple-600";
+  if (days >= 30) return "bg-[#8B4513] text-white border-[#8B4513] hover:bg-[#8B4513]";
+  return null;
+}
+
 interface TierStyle {
   label: string;
   classes: string;

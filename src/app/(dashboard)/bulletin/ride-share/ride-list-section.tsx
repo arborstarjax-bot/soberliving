@@ -170,13 +170,12 @@ export async function RideListSection({
       : residentsRaw
         ? [residentsRaw]
         : [];
-    // Gate to residents only — staff may have legacy residents rows
-    // and we don't want their avatar painted a recovery-tier color.
+    // Any active residents row wins — staff who are themselves in
+    // recovery should still show their sobriety tier. `status`
+    // already filters out archived / discharged legacy rows.
     const authorSobrietyDate =
-      authorRole === "resident"
-        ? residentsList.find((x) => x?.status === "active")?.sobriety_date ??
-          null
-        : null;
+      residentsList.find((x) => x?.status === "active")?.sobriety_date ??
+      null;
     const houseRaw = (bp?.house ?? null) as
       | Array<{ name: string }>
       | { name: string }
