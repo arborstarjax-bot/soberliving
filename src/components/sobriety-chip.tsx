@@ -43,11 +43,11 @@ export function sobrietyAvatarTier(
     const years = Math.max(1, differenceInYears(new Date(), start));
     return { bg: "bg-blue-600", text: "text-white", label: `${years}y+ sober` };
   }
-  if (days >= 273) return { bg: "bg-emerald-600", text: "text-white", label: "9 mo sober" };
+  if (days >= 273) return { bg: "bg-green-600", text: "text-white", label: "9 mo sober" };
   if (days >= 182) return { bg: "bg-yellow-300", text: "text-gray-900", label: "6 mo sober" };
   if (days >= 90) return { bg: "bg-red-600", text: "text-white", label: "90 day sober" };
   if (days >= 60) return { bg: "bg-purple-600", text: "text-white", label: "60 day sober" };
-  if (days >= 30) return { bg: "bg-amber-700", text: "text-white", label: "30 day sober" };
+  if (days >= 30) return { bg: "bg-[#8B4513]", text: "text-white", label: "30 day sober" };
   return {
     bg: "bg-white",
     text: "text-gray-700",
@@ -89,7 +89,7 @@ export function sobrietyTier(sobrietyDate: string): TierStyle | null {
     return {
       label: "9 mo sober",
       classes:
-        "bg-emerald-50 border-emerald-200 text-emerald-700",
+        "bg-green-50 border-green-200 text-green-700",
     };
   }
   if (days >= 182) {

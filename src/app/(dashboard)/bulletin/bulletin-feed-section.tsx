@@ -24,10 +24,17 @@ type AuthorWithSobriety = {
 /**
  * From the residents rows joined onto a users author, pick the
  * sobriety_date of the currently active resident row.
+ *
+ * Only returns a date when the author's current role is `resident`.
+ * Staff (admin / manager) sometimes have a legacy residents row from
+ * prior use of the app; returning their stale sobriety_date would
+ * paint their avatar a recovery-tier color, which is misleading.
  */
 function pickActiveSobrietyDate(
-  residents: AuthorWithSobriety["residents"] | undefined
+  residents: AuthorWithSobriety["residents"] | undefined,
+  role: string | null
 ): string | null {
+  if (role !== "resident") return null;
   if (!residents) return null;
   const list = Array.isArray(residents) ? residents : [residents];
   const active = list.find((r) => r?.status === "active");
@@ -203,7 +210,7 @@ export async function BulletinFeedSection({
         created_at: c.created_at as string,
         author_name: authorData?.full_name ?? "Unknown",
         author_role: role,
-        author_sobriety_date: pickActiveSobrietyDate(authorData?.residents),
+        author_sobriety_date: pickActiveSobrietyDate(authorData?.residents, role),
       };
       const pid = c.post_id as string;
       if (!commentsMap[pid]) commentsMap[pid] = [];
@@ -233,7 +240,7 @@ export async function BulletinFeedSection({
       created_at: post.created_at as string,
       author_name: authorData?.full_name ?? "Unknown",
       author_role: authorRole,
-      author_sobriety_date: pickActiveSobrietyDate(authorData?.residents),
+      author_sobriety_date: pickActiveSobrietyDate(authorData?.residents, authorRole),
       house_name: houseName ?? null,
       like_count: likesMap[pid] ?? 0,
       user_liked: userLikedSet.has(pid),
