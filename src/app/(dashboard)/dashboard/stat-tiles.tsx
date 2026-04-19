@@ -164,16 +164,25 @@ export async function ChoreReviewsStatTile({
   const supabase = await createClient();
   let count: number;
   if (houseFilter) {
-    // Nested house_id filter via the chore_rotations join — still
-    // caps the row fetch at CAP+1 to avoid pulling unbounded rows
-    // on a large backlog.
+    // chore_signoffs has no denormalized house_id, so the filter has
+    // to walk the chore_rotation_assignments -> chore_rotations join
+    // client-side. Fetching `CAP + 1` rows at the DB and then
+    // filtering by house would silently undercount: the 501-row
+    // pre-filter slice might not contain the manager's houses'
+    // rows at all (PR #79 regression flagged by Devin Review).
+    //
+    // Fall back to no-limit on the filtered path. In practice this
+    // is bounded by total pending-review signoffs across the
+    // organization, which is a small, drainable queue. Pushing the
+    // filter into PostgREST would need deep nested-relation filter
+    // support we can't rely on uniformly, so accept the unbounded
+    // fetch here to keep correctness.
     const { data } = await supabase
       .from("chore_signoffs")
       .select(
         "id, rotation_assignment:chore_rotation_assignments!inner(rotation:chore_rotations!inner(house_id))"
       )
-      .eq("status", "completed_pending_review")
-      .limit(CAP + 1);
+      .eq("status", "completed_pending_review");
     count = (data ?? []).filter((s) => {
       const ra =
         s.rotation_assignment as unknown as {
@@ -226,13 +235,20 @@ export async function LeaveRequestsStatTile({
   const supabase = await createClient();
   let count: number;
   if (houseFilter) {
-    // leave_requests has no denormalized house_id; filter via the
-    // inner join on residents.house_id, capped at CAP+1 rows.
+    // leave_requests has no denormalized house_id and the filter
+    // has to go through residents.house_id client-side. Fetching
+    // `CAP + 1` rows at the DB and THEN filtering would silently
+    // undercount: the 501-row pre-filter slice might not contain
+    // the manager's houses' rows at all (PR #79 regression flagged
+    // by Devin Review).
+    //
+    // Fall back to no-limit on the filtered path — bounded by
+    // total pending leave requests across the organization, which
+    // is a small, drainable queue in practice.
     const { data } = await supabase
       .from("leave_requests")
       .select("id, resident:residents!inner(house_id)")
-      .eq("status", "pending")
-      .limit(CAP + 1);
+      .eq("status", "pending");
     count = (data ?? []).filter((lr) => {
       const r = lr.resident as unknown as { house_id: string } | null;
       return houseFilter.includes(r?.house_id ?? "");
