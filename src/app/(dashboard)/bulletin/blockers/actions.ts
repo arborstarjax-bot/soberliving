@@ -209,6 +209,62 @@ export async function archiveBlocker(blockerId: string) {
 }
 
 /**
+ * Permanently delete a notice and all of its acknowledgments. Staff
+ * only: admin anywhere, manager only for notices they authored
+ * (same gate as archive). Attachments in Storage are removed
+ * best-effort — a failed storage delete does not roll back the row
+ * deletion since the row is the user-visible source of truth.
+ *
+ * `blocker_acknowledgments` has ON DELETE CASCADE (FK to blockers)
+ * so acks are removed by the DB.
+ */
+export async function deleteBlocker(blockerId: string) {
+  const user = await requireAuth();
+  if (!canCreateBlockers(user.role)) {
+    return { error: "Not authorized" };
+  }
+  const admin = createAdminClient();
+
+  const { data: blocker } = await admin
+    .from("blockers")
+    .select("id, title, created_by, attachment_paths")
+    .eq("id", blockerId)
+    .maybeSingle();
+  if (!blocker) return { error: "Notice not found" };
+  if (user.role !== "admin" && blocker.created_by !== user.id) {
+    return { error: "You can only delete notices you created." };
+  }
+
+  const attachmentPaths = (blocker.attachment_paths as string[] | null) ?? [];
+
+  const { error } = await admin
+    .from("blockers")
+    .delete()
+    .eq("id", blockerId);
+  if (error) return { error: error.message };
+
+  if (attachmentPaths.length > 0) {
+    try {
+      await admin.storage.from(BUCKET).remove(attachmentPaths);
+    } catch (err) {
+      console.error("Failed to clean up notice attachments", err);
+    }
+  }
+
+  await logActivity({
+    actorId: user.id,
+    eventType: "blocker_deleted",
+    entityType: "blocker",
+    entityId: blockerId,
+    description: `${user.full_name} deleted notice "${blocker.title}"`,
+  });
+
+  revalidatePath("/bulletin/blockers");
+  revalidatePath("/", "layout");
+  return {};
+}
+
+/**
  * Staff-side signed URL for a blocker attachment, used to preview
  * uploads on the admin list.
  */
