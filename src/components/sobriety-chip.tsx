@@ -1,4 +1,5 @@
 import { differenceInDays, differenceInYears } from "date-fns";
+import { formatDateOnly } from "@/lib/timezone";
 
 export interface SobrietyChipProps {
   sobrietyDate: string | null | undefined;
@@ -92,7 +93,7 @@ export function SobrietyChip({ sobrietyDate, className }: SobrietyChipProps) {
   if (!tier) return null;
   return (
     <span
-      title={`Sober since ${new Date(sobrietyDate).toLocaleDateString(undefined, { timeZone: "America/New_York" })}`}
+      title={`Sober since ${formatDateOnly(sobrietyDate)}`}
       className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-none ${tier.classes}${className ? ` ${className}` : ""}`}
     >
       {tier.label}

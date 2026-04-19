@@ -59,14 +59,44 @@ const DEST_LABEL: Record<Ride["destination_type"], string> = {
   other: "Trip",
 };
 
+/**
+ * Extract the America/New_York calendar date (y/m/d) of a UTC instant.
+ * We compare on Eastern rather than browser-local so "Today" /
+ * "Tomorrow" match the time string (which is always Eastern).
+ */
+function easternYMD(d: Date): { y: number; m: number; d: number } {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    })
+      .formatToParts(d)
+      .map((p) => [p.type, p.value])
+  );
+  return {
+    y: parseInt(parts.year, 10),
+    m: parseInt(parts.month, 10),
+    d: parseInt(parts.day, 10),
+  };
+}
+
+function sameYMD(
+  a: { y: number; m: number; d: number },
+  b: { y: number; m: number; d: number }
+): boolean {
+  return a.y === b.y && a.m === b.m && a.d === b.d;
+}
+
 function formatWhen(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
-  const sameDay =
-    d.toDateString() === now.toDateString();
-  const tomorrow = new Date(now);
-  tomorrow.setDate(now.getDate() + 1);
-  const isTomorrow = d.toDateString() === tomorrow.toDateString();
+
+  const dYMD = easternYMD(d);
+  const nowYMD = easternYMD(now);
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const tomorrowYMD = easternYMD(tomorrow);
 
   const time = d.toLocaleTimeString(undefined, {
     hour: "numeric",
@@ -74,15 +104,14 @@ function formatWhen(iso: string): string {
     timeZone: "America/New_York",
   });
 
-  if (sameDay) return `Today · ${time}`;
-  if (isTomorrow) return `Tomorrow · ${time}`;
+  if (sameYMD(dYMD, nowYMD)) return `Today · ${time}`;
+  if (sameYMD(dYMD, tomorrowYMD)) return `Tomorrow · ${time}`;
 
   const datePart = d.toLocaleDateString(undefined, {
     weekday: "short",
     month: "short",
     day: "numeric",
-    year:
-      d.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+    year: dYMD.y !== nowYMD.y ? "numeric" : undefined,
     timeZone: "America/New_York",
   });
   return `${datePart} · ${time}`;
