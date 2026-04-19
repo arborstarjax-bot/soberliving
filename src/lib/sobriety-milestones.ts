@@ -122,18 +122,17 @@ export async function ensureMilestonePosts(
       ? r.user[0]?.full_name ?? "Resident"
       : r.user?.full_name ?? "Resident";
 
-    // For a newly-added resident (no prior milestone log) that is
-    // already past multiple milestones, only announce the highest
-    // one. Silently log the lower tiers so future runs don't spam
-    // the feed with backfilled milestones the house missed. After
-    // this first run the user is "established" and subsequent
-    // milestone crossings fire normally.
+    // For a newly-added resident (no prior milestone log) we
+    // silently log every milestone they've already crossed and
+    // announce NONE. Announcing a backfilled milestone is misleading
+    // — the house didn't actually watch the resident earn that
+    // milestone here, so posting "X hit 30 days!" the instant they
+    // joined reads as a bug. After this first run the user becomes
+    // "established" and any milestone they cross going forward will
+    // post normally.
     const isNew = !establishedUsers.has(r.user_id);
-    const highest = needed[needed.length - 1];
-    const toAnnounce = isNew && needed.length > 1 ? [highest] : needed;
-    const toSilentlyLog = isNew && needed.length > 1
-      ? needed.slice(0, -1)
-      : [];
+    const toAnnounce = isNew ? [] : needed;
+    const toSilentlyLog = isNew ? needed : [];
 
     for (const days of toSilentlyLog) {
       await admin

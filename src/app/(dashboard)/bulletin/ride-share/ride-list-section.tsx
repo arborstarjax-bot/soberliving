@@ -170,8 +170,13 @@ export async function RideListSection({
       : residentsRaw
         ? [residentsRaw]
         : [];
+    // Gate to residents only — staff may have legacy residents rows
+    // and we don't want their avatar painted a recovery-tier color.
     const authorSobrietyDate =
-      residentsList.find((x) => x?.status === "active")?.sobriety_date ?? null;
+      authorRole === "resident"
+        ? residentsList.find((x) => x?.status === "active")?.sobriety_date ??
+          null
+        : null;
     const houseRaw = (bp?.house ?? null) as
       | Array<{ name: string }>
       | { name: string }
