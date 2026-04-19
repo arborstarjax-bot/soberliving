@@ -14,14 +14,28 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
 
   if (!user) return null;
 
-  const { data: profile } = await supabase
-    .from("users")
-    .select(
-      "id, email, full_name, intake_completed, commitment_signed, is_resident, account_status"
-    )
-    .eq("id", user.id)
-    .single();
+  // Phase 1: users profile and role lookup are both keyed on user.id
+  // only — fire in parallel instead of sequentially. On a 50–100ms
+  // Supabase RTT this saves a full round-trip on every server
+  // component render that calls requireAuth() (i.e. every dashboard
+  // page load). `cache()` guarantees one execution per request.
+  const [profileRes, roleRes] = await Promise.all([
+    supabase
+      .from("users")
+      .select(
+        "id, email, full_name, intake_completed, commitment_signed, is_resident, account_status"
+      )
+      .eq("id", user.id)
+      .single(),
+    supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .limit(1)
+      .single(),
+  ]);
 
+  const profile = profileRes.data;
   if (!profile) return null;
 
   // Gate pending / rejected accounts at the session layer. Defense in
@@ -32,64 +46,64 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     .account_status;
   if (status && status !== "active") return null;
 
-  const { data: roleRecord } = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", user.id)
-    .limit(1)
-    .single();
-
-  const role: UserRole = roleRecord?.role ?? "resident";
-
-  let assignedHouseIds: string[] = [];
-  if (role === "manager") {
-    const { data: assignments } = await supabase
-      .from("manager_house_assignments")
-      .select("house_id")
-      .eq("user_id", user.id)
-      .is("unassigned_at", null);
-    assignedHouseIds = assignments?.map((a) => a.house_id) ?? [];
-  }
+  const role: UserRole = roleRes.data?.role ?? "resident";
 
   // Read intake/commitment status from the users table
   // (submitIntakeForm and signCommitment both write to users, not residents)
   const isResident = role === "resident" || profile.is_resident === true;
+
+  // Phase 2: manager-assignment + resident-only gating queries all
+  // depend only on (profile.id, role) and are independent of each
+  // other — fan them out in parallel. For admins nothing fires at
+  // all; for managers only the assignment lookup runs; for residents
+  // the full trio runs concurrently.
+  const admin = isResident ? createAdminClient() : null;
+
+  const assignmentsPromise =
+    role === "manager"
+      ? supabase
+          .from("manager_house_assignments")
+          .select("house_id")
+          .eq("user_id", user.id)
+          .is("unassigned_at", null)
+      : Promise.resolve({ data: null as { house_id: string }[] | null });
+
+  // house_commitments has no resident-scoped SELECT policy, so every
+  // reader uses the admin client (matches sign-commitment page,
+  // proposeAmendment, intake-review, residents profile, etc.).
+  const pendingCommitmentPromise =
+    isResident && admin
+      ? admin
+          .from("house_commitments")
+          .select("id")
+          .eq("user_id", profile.id)
+          .eq("status", "pending_resident_signature")
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve({ data: null as { id: string } | null });
+
+  // Gate residents into /acknowledge/[id] if any active blocker is
+  // targeted at them and not yet signed. Admins/managers can't be
+  // the target of a blocker. Resolution is FIFO — oldest pending id
+  // first so multi-blocker scenarios step through one at a time.
+  const pendingBlockerPromise =
+    isResident && admin
+      ? findPendingBlockerForUser(profile.id, admin)
+      : Promise.resolve(null);
+
+  const [assignmentsRes, pendingCommitmentRes, pendingBlockerId] =
+    await Promise.all([
+      assignmentsPromise,
+      pendingCommitmentPromise,
+      pendingBlockerPromise,
+    ]);
+
+  const assignedHouseIds: string[] =
+    assignmentsRes.data?.map((a) => a.house_id) ?? [];
+  const hasPendingCommitment = !!pendingCommitmentRes.data;
+
   const intakeCompleted = profile.intake_completed === true;
   const commitmentSigned = profile.commitment_signed === true;
-
-  // Pending commitment = any house_commitments row awaiting this
-  // user's signature. Covers the initial commitment (before they've
-  // ever signed) and amendments proposed after they signed. Layouts
-  // use this to force residents into /sign-commitment even when
-  // commitment_signed is already true.
-  //
-  // Uses the admin (service-role) client deliberately. Every other
-  // reader of house_commitments in the app does the same
-  // (sign-commitment page, proposeAmendment, intake-review, residents
-  // profile, etc.) because the table has no resident-scoped SELECT
-  // RLS policy. If we used the RLS-bound client here the query would
-  // silently return null for residents and the redirect would be a
-  // no-op — the original intent of the PR #47 fix.
-  let hasPendingCommitment = false;
-  let pendingBlockerId: string | null = null;
-  if (isResident) {
-    const admin = createAdminClient();
-    const { data: pending } = await admin
-      .from("house_commitments")
-      .select("id")
-      .eq("user_id", profile.id)
-      .eq("status", "pending_resident_signature")
-      .limit(1)
-      .maybeSingle();
-    hasPendingCommitment = !!pending;
-
-    // Gate residents into /acknowledge/[id] if any active blocker is
-    // targeted at them and not yet signed. Only evaluated for residents
-    // — admins/managers can't be the target of a blocker. Resolution
-    // is FIFO: the oldest pending id is returned first, so multi-blocker
-    // scenarios step through one at a time.
-    pendingBlockerId = await findPendingBlockerForUser(profile.id, admin);
-  }
 
   return {
     id: profile.id,
