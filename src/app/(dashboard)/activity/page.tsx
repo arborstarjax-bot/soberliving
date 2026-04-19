@@ -1,27 +1,10 @@
+import { Suspense } from "react";
+import Link from "next/link";
 import { requireAuth } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
-import { getAccessibleHouseFilter } from "@/lib/permissions";
-import { getPageParams, buildPaginationMeta } from "@/lib/pagination";
-import { ActivityView } from "./activity-view";
-import {
-  ACTIVITY_CATEGORIES,
-  eventTypesForCategory,
-  allMappedEventTypes,
-} from "./categories";
-
-interface ActivityLogRow {
-  id: string;
-  event_type: string;
-  description: string;
-  created_at: string;
-  actor: { full_name: string } | { full_name: string }[] | null;
-  house: { name: string } | { name: string }[] | null;
-}
-
-function firstOrNull<T>(value: T | T[] | null | undefined): T | null {
-  if (!value) return null;
-  return Array.isArray(value) ? (value[0] ?? null) : value;
-}
+import { ListSkeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+import { ACTIVITY_CATEGORIES } from "./categories";
+import { ActivityListSection } from "./activity-list-section";
 
 function normalizeTab(
   raw: string | string[] | undefined
@@ -34,69 +17,39 @@ function normalizeTab(
   return match ?? "All";
 }
 
+/** Build a tab href that selects `tab` and drops cursor state so
+ *  tab switches always land on page 1. */
+function buildTabHref(
+  tab: string,
+  searchParams: Record<string, string | string[] | undefined>
+): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(searchParams)) {
+    if (key === "tab" || key === "c" || key === "cp" || key === "page")
+      continue;
+    if (Array.isArray(value)) {
+      for (const v of value) params.append(key, v);
+    } else if (value !== undefined) {
+      params.set(key, value);
+    }
+  }
+  if (tab !== "All") params.set("tab", tab);
+  const qs = params.toString();
+  return qs ? `/activity?${qs}` : "/activity";
+}
+
 interface PageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
+/**
+ * Activity Log shell. Title + tab strip paint immediately; the
+ * list + cursor pager stream in behind `<Suspense>`.
+ */
 export default async function ActivityLogPage({ searchParams }: PageProps) {
   const user = await requireAuth();
-  const supabase = await createClient();
-  const houseFilter = getAccessibleHouseFilter(user);
-
-  const params = await searchParams;
-  const activeTab = normalizeTab(params.tab);
-  const { page, offset, pageSize } = getPageParams(params);
-
-  // Build the base query. `count: "exact"` gives us the total row count
-  // so we can show "Page X of Y" and hide Next on the last page. We keep
-  // the select list tight — only the columns the list row renders.
-  let query = supabase
-    .from("activity_log")
-    .select(
-      "id, event_type, description, created_at, actor:users!actor_id(full_name), house:houses!house_id(name)",
-      { count: "exact" }
-    )
-    .order("created_at", { ascending: false });
-
-  if (houseFilter) {
-    query = query.in("house_id", houseFilter);
-  }
-
-  // Apply the category filter server-side so pagination counts the right
-  // subset. "All" skips the filter entirely; "Other" is "event_type not
-  // in any mapped category".
-  if (activeTab !== "All") {
-    if (activeTab === "Other") {
-      const mapped = allMappedEventTypes();
-      if (mapped.length > 0) {
-        // `.not("event_type", "in", "(a,b,c)")` — the tuple form is how
-        // PostgREST consumes NOT IN. No quoting needed for our ASCII
-        // event_type values.
-        query = query.not("event_type", "in", `(${mapped.join(",")})`);
-      }
-    } else {
-      const events = eventTypesForCategory(activeTab);
-      if (events.length > 0) {
-        query = query.in("event_type", events);
-      } else {
-        // Safety: no mapped events → this tab is empty by definition.
-        query = query.eq("event_type", "__never__");
-      }
-    }
-  }
-
-  const { data: logs, count } = await query.range(offset, offset + pageSize - 1);
-
-  const normalized = ((logs ?? []) as ActivityLogRow[]).map((l) => ({
-    id: l.id,
-    event_type: l.event_type,
-    description: l.description,
-    created_at: l.created_at,
-    actor: firstOrNull(l.actor),
-    house: firstOrNull(l.house),
-  }));
-
-  const meta = buildPaginationMeta(count ?? 0, page, pageSize);
+  const sp = await searchParams;
+  const activeTab = normalizeTab(sp.tab);
 
   return (
     <div className="space-y-6">
@@ -106,12 +59,37 @@ export default async function ActivityLogPage({ searchParams }: PageProps) {
           Recent activity across all houses
         </p>
       </div>
-      <ActivityView
-        logs={normalized}
-        activeTab={activeTab}
-        meta={meta}
-        searchParams={params}
-      />
+
+      <div className="flex flex-wrap items-center gap-1 rounded-lg border border-border/50 bg-muted/30 p-1">
+        {ACTIVITY_CATEGORIES.map((cat) => {
+          const isActive = cat === activeTab;
+          return (
+            <Link
+              key={cat}
+              href={buildTabHref(cat, sp)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                isActive
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-background/60"
+              )}
+            >
+              {cat}
+            </Link>
+          );
+        })}
+      </div>
+
+      <Suspense
+        key={`${activeTab}-${String(sp.c ?? "")}`}
+        fallback={<ListSkeleton rows={8} rowClassName="h-10 w-full" />}
+      >
+        <ActivityListSection
+          user={user}
+          activeTab={activeTab}
+          searchParams={sp}
+        />
+      </Suspense>
     </div>
   );
 }
