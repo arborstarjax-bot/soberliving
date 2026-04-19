@@ -131,17 +131,9 @@ export async function createRideShare(
     return { error: rideError.message };
   }
 
-  // 3. Auto-reserve the driver's seat. Uses the same RPC so overbook
-  //    safety applies uniformly.
-  const { error: reserveError } = await admin.rpc("reserve_ride_seat", {
-    p_post_id: post.id,
-    p_user_id: user.id,
-  });
-  if (reserveError) {
-    // Driver auto-reserve failing isn't fatal to the ride — log and
-    // continue; the driver can click Reserve themselves.
-    console.error("driver auto-reserve failed", reserveError);
-  }
+  // New ride shares start with zero reserved seats. The driver does
+  // not auto-occupy one — if they want to mark themselves as riding,
+  // they click the Reserve button like any passenger.
 
   await logActivity({
     houseId,
