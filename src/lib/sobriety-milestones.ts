@@ -3,8 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * Sobriety milestones that auto-generate a congratulatory bulletin
- * post when crossed. Ordered ascending. The first six match the chip
- * color tiers (see src/components/sobriety-chip.tsx); after 365 days
+ * post when crossed. Ordered ascending and aligned with the chip
+ * color tiers (see src/components/sobriety-chip.tsx). After 365 days
  * we keep posting on every subsequent full-year anniversary (2y, 3y,
  * 4y, …) generated dynamically in `milestonesPassed`.
  */
