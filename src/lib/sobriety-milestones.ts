@@ -103,6 +103,13 @@ export async function ensureMilestonePosts(
     ),
   );
 
+  // Residents that already have at least one logged milestone —
+  // they are "established" and should receive a post for every
+  // new milestone they cross going forward.
+  const establishedUsers = new Set(
+    (alreadyPosted ?? []).map((r) => r.resident_user_id as string),
+  );
+
   let created = 0;
   for (const r of rows) {
     const passed = milestonesPassed(r.sobriety_date);
@@ -115,7 +122,30 @@ export async function ensureMilestonePosts(
       ? r.user[0]?.full_name ?? "Resident"
       : r.user?.full_name ?? "Resident";
 
-    for (const days of needed) {
+    // For a newly-added resident (no prior milestone log) that is
+    // already past multiple milestones, only announce the highest
+    // one. Silently log the lower tiers so future runs don't spam
+    // the feed with backfilled milestones the house missed. After
+    // this first run the user is "established" and subsequent
+    // milestone crossings fire normally.
+    const isNew = !establishedUsers.has(r.user_id);
+    const highest = needed[needed.length - 1];
+    const toAnnounce = isNew && needed.length > 1 ? [highest] : needed;
+    const toSilentlyLog = isNew && needed.length > 1
+      ? needed.slice(0, -1)
+      : [];
+
+    for (const days of toSilentlyLog) {
+      await admin
+        .from("sobriety_milestone_posts")
+        .insert({
+          resident_user_id: r.user_id,
+          milestone_days: days,
+          bulletin_post_id: null,
+        });
+    }
+
+    for (const days of toAnnounce) {
       const label = milestoneLabel(days);
       const { data: inserted, error: postErr } = await admin
         .from("bulletin_posts")
