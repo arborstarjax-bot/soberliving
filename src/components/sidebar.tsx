@@ -140,16 +140,20 @@ interface SidebarProps {
   role: UserRole;
   userName: string;
   hasNoLeaveRestriction?: boolean;
-  unreadNotificationCount?: number;
-  unreadBulletinCount?: number;
+  // Badges are passed as React nodes (not numbers) so the server
+  // can stream them into the sidebar behind `<Suspense>` — the
+  // sidebar paints immediately and the badges fill in on their own.
+  // Each slot resolves to either a `<span>` with the count or `null`.
+  notificationBadge?: React.ReactNode;
+  bulletinBadge?: React.ReactNode;
 }
 
 export function Sidebar({
   role,
   userName,
   hasNoLeaveRestriction,
-  unreadNotificationCount = 0,
-  unreadBulletinCount = 0,
+  notificationBadge = null,
+  bulletinBadge = null,
 }: SidebarProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -199,20 +203,8 @@ export function Sidebar({
             >
               <item.icon className="h-4 w-4 shrink-0" />
               {item.label}
-              {item.href === "/notifications" &&
-                unreadNotificationCount > 0 &&
-                !isActive && (
-                  <span className="ml-auto text-xs font-bold text-yellow-400">
-                    +{unreadNotificationCount > 99 ? "99" : unreadNotificationCount}
-                  </span>
-                )}
-              {item.href === "/bulletin" &&
-                unreadBulletinCount > 0 &&
-                !isActive && (
-                  <span className="ml-auto text-xs font-bold text-yellow-400">
-                    +{unreadBulletinCount > 99 ? "99" : unreadBulletinCount}
-                  </span>
-                )}
+              {item.href === "/notifications" && !isActive && notificationBadge}
+              {item.href === "/bulletin" && !isActive && bulletinBadge}
             </Link>
           );
         })}
