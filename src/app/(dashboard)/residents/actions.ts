@@ -462,22 +462,18 @@ export async function changeResidentBed(
 
   const today = getHouseToday();
 
-  // Vacate any active beds for this resident.
-  const { error: vacateError } = await supabase
-    .from("bed_assignments")
-    .update({ end_date: today })
-    .eq("resident_id", residentId)
-    .is("end_date", null);
-
-  if (vacateError) return { error: vacateError.message };
-
   const { data: resident } = await supabase
     .from("residents")
     .select("full_name")
     .eq("id", residentId)
-    .single();
+    .maybeSingle();
 
   if (bedId) {
+    // Insert the new bed assignment FIRST so that a race-induced
+    // 23505 from the partial unique index on bed_assignments(bed_id)
+    // WHERE end_date IS NULL cannot leave the resident with no bed.
+    // (The resident briefly has two active rows; we close the old
+    // ones immediately below.)
     const { data, error } = await supabase
       .from("bed_assignments")
       .insert({
@@ -495,6 +491,20 @@ export async function changeResidentBed(
       }
       return { error: error.message };
     }
+
+    // New row is committed; now close the resident's other active
+    // assignments. If this update fails the resident ends up with
+    // two active beds — harmless and trivially cleanable — which is
+    // far better than the previous ordering, which could leave them
+    // with zero.
+    const { error: vacateError } = await supabase
+      .from("bed_assignments")
+      .update({ end_date: today })
+      .eq("resident_id", residentId)
+      .is("end_date", null)
+      .neq("id", data.id);
+
+    if (vacateError) return { error: vacateError.message };
 
     const { data: bed } = await supabase
       .from("beds")
@@ -532,6 +542,15 @@ export async function changeResidentBed(
       });
     }
   } else {
+    // No target bed — just vacate any active beds for this resident.
+    const { error: vacateError } = await supabase
+      .from("bed_assignments")
+      .update({ end_date: today })
+      .eq("resident_id", residentId)
+      .is("end_date", null);
+
+    if (vacateError) return { error: vacateError.message };
+
     await logActivity({
       houseId,
       residentId,
