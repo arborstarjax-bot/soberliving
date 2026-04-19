@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MoreVertical } from "lucide-react";
 import type { UserRole } from "@/lib/types";
+import { SobrietyChip } from "@/components/sobriety-chip";
 import {
   deleteRideShare,
   reserveRideSeat,
@@ -28,6 +29,7 @@ interface Ride {
   author_id: string;
   author_name: string;
   author_role: string;
+  author_sobriety_date: string | null;
   house_id: string;
   house_name: string | null;
   created_at: string;
@@ -182,6 +184,7 @@ function RideCard({
               <span className="font-semibold text-sm">
                 {ride.author_name}
               </span>
+              <SobrietyChip sobrietyDate={ride.author_sobriety_date} />
               {ride.house_name && (
                 <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold leading-none text-amber-700">
                   {ride.house_name}

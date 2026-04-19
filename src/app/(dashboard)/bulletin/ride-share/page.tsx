@@ -79,7 +79,7 @@ export default async function RideSharePage({
          house_id,
          created_at,
          post_type,
-         author:users!author_id(full_name, user_roles(role)),
+         author:users!author_id(full_name, user_roles(role), residents(sobriety_date, status)),
          house:houses(name)
        )`
     )
@@ -142,18 +142,28 @@ export default async function RideSharePage({
     const bp = Array.isArray(r.bulletin_posts)
       ? (r.bulletin_posts as unknown as Array<Record<string, unknown>>)[0]
       : (r.bulletin_posts as unknown as Record<string, unknown>);
-    const authorRaw = bp.author as
-      | Array<{
-          full_name: string;
-          user_roles: Array<{ role: string }> | { role: string } | null;
-        }>
-      | { full_name: string; user_roles: Array<{ role: string }> | { role: string } | null }
-      | null;
+    type AuthorShape = {
+      full_name: string;
+      user_roles: Array<{ role: string }> | { role: string } | null;
+      residents:
+        | Array<{ sobriety_date: string | null; status: string | null }>
+        | { sobriety_date: string | null; status: string | null }
+        | null;
+    };
+    const authorRaw = bp.author as AuthorShape | Array<AuthorShape> | null;
     const authorData = Array.isArray(authorRaw) ? authorRaw[0] : authorRaw;
     const roleRaw = authorData?.user_roles;
     const authorRole = Array.isArray(roleRaw)
       ? roleRaw[0]?.role ?? "resident"
       : (roleRaw as { role: string } | null)?.role ?? "resident";
+    const residentsRaw = authorData?.residents;
+    const residentsList = Array.isArray(residentsRaw)
+      ? residentsRaw
+      : residentsRaw
+        ? [residentsRaw]
+        : [];
+    const authorSobrietyDate =
+      residentsList.find((r) => r?.status === "active")?.sobriety_date ?? null;
     const houseRaw = bp.house as
       | Array<{ name: string }>
       | { name: string }
@@ -174,6 +184,7 @@ export default async function RideSharePage({
       author_id: bp.author_id as string,
       author_name: authorData?.full_name ?? "Unknown",
       author_role: authorRole,
+      author_sobriety_date: authorSobrietyDate,
       house_id: bp.house_id as string,
       house_name: houseName ?? null,
       created_at: bp.created_at as string,
