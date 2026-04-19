@@ -18,6 +18,7 @@ import { ForcePhotoToggle } from "./force-photo-toggle";
 import { EditResidentForm } from "./edit-resident-form";
 import { DischargeDialog } from "./discharge-dialog";
 import { ChangeBedDialog, type BedOption } from "./change-bed-dialog";
+import { TransferHouseDialog } from "./transfer-house-dialog";
 import { DocumentsList } from "@/components/documents-list";
 import { ResidentPaymentsPanel } from "./payments-panel";
 
@@ -331,6 +332,14 @@ export default async function ResidentDetailPage(
               isAdmin={user.role === "admin"}
               houses={(allHouses ?? []).map((h) => ({ id: h.id, name: h.name }))}
               assignedHouseIds={assignedHouseIds}
+            />
+          )}
+          {user.role === "admin" && resident.status === "active" && (
+            <TransferHouseDialog
+              residentId={id}
+              currentHouseId={resident.house_id}
+              residentName={resident.full_name}
+              houses={(allHouses ?? []).map((h) => ({ id: h.id, name: h.name }))}
             />
           )}
           {isStaff && (

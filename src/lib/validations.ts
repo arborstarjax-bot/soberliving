@@ -96,6 +96,14 @@ export const createBedAssignmentSchema = z.object({
   bed_id: z.string().uuid(),
 });
 
+// --- Transfer resident ---
+
+export const transferResidentSchema = z.object({
+  resident_id: z.string().uuid(),
+  target_house_id: z.string().uuid("Select a target house"),
+  target_bed_id: z.string().uuid().optional().or(z.literal("")),
+});
+
 // --- Chores ---
 
 const dayOfWeekEnum = z.enum([
