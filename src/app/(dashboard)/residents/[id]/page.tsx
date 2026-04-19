@@ -61,12 +61,24 @@ export default async function ResidentDetailPage(
     .order("created_at", { ascending: false });
   const choreAssignments = choreAssignmentsRaw ?? [];
 
-  // Incidents
-  const { data: incidents } = await supabase
-    .from("incidents")
-    .select("*")
+  // Discipline data for this resident — shown in the Discipline tab.
+  // Demerits are point-bearing incidents; warnings are point-free
+  // records kept separately. Restrictions (below) round out the tab.
+  const { data: demerits } = await supabase
+    .from("demerits")
+    .select(
+      "id, reason, notes, category, status, auto_generated, created_at, resolved_at, resolution_note, photo_url"
+    )
     .eq("resident_id", id)
-    .order("occurred_at", { ascending: false });
+    .order("created_at", { ascending: false });
+
+  const { data: warnings } = await supabase
+    .from("warnings")
+    .select(
+      "id, reason, notes, category, photo_url, signoff_id, created_at, issuer:users!issued_by(full_name)"
+    )
+    .eq("resident_id", id)
+    .order("created_at", { ascending: false });
 
   // Leave requests
   const { data: leaveRequests } = await supabase
@@ -470,14 +482,14 @@ export default async function ResidentDetailPage(
         </Card>
       )}
 
-      <Tabs defaultValue="timeline">
+      <Tabs defaultValue="chores">
         <TabsList>
-          <TabsTrigger value="timeline">Timeline</TabsTrigger>
           <TabsTrigger value="chores">
             Chores ({choreAssignments?.length ?? 0})
           </TabsTrigger>
-          <TabsTrigger value="incidents">
-            Incidents ({incidents?.length ?? 0})
+          <TabsTrigger value="discipline">
+            Discipline (
+            {(demerits?.length ?? 0) + (warnings?.length ?? 0)})
           </TabsTrigger>
           <TabsTrigger value="leave">
             Leave ({leaveRequests?.length ?? 0})
@@ -494,11 +506,8 @@ export default async function ResidentDetailPage(
             Documents ({documents?.length ?? 0})
           </TabsTrigger>
           <TabsTrigger value="details">Details</TabsTrigger>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="timeline" className="mt-4">
-          <ResidentTimeline activity={activity ?? []} />
-        </TabsContent>
 
         <TabsContent value="chores" className="mt-4">
           {choreAssignments && choreAssignments.length > 0 ? (
@@ -539,44 +548,150 @@ export default async function ResidentDetailPage(
           )}
         </TabsContent>
 
-        <TabsContent value="incidents" className="mt-4">
-          {incidents && incidents.length > 0 ? (
+        <TabsContent value="discipline" className="mt-4 space-y-6">
+          {/* Active restrictions — surfaced first because they shape
+              what the resident can / can't do today. */}
+          {restrictions && restrictions.length > 0 && (
             <div className="space-y-2">
-              {incidents.map((inc) => (
-                <Card key={inc.id}>
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                Active Restrictions ({restrictions.length})
+              </h3>
+              {restrictions.map((r) => (
+                <Card key={r.id} className="border-red-200 bg-red-50">
                   <CardContent className="py-3">
                     <div className="flex items-center justify-between mb-1">
-                      <Badge
-                        variant={
-                          inc.severity === "critical"
-                            ? "destructive"
-                            : inc.severity === "major"
-                              ? "secondary"
-                              : "outline"
-                        }
-                        className="capitalize"
-                      >
-                        {inc.severity}
+                      <Badge variant="destructive" className="capitalize">
+                        {(r.restriction_type as string)?.replace(/_/g, " ") ??
+                          "restriction"}
                       </Badge>
                       <span className="text-xs text-muted-foreground">
-                        {formatDateOnly(inc.occurred_at)}
+                        {formatDateOnly(r.start_date as string)}
+                        {r.end_date
+                          ? ` → ${formatDateOnly(r.end_date as string)}`
+                          : " → ongoing"}
                       </span>
                     </div>
-                    <p className="text-sm mt-1">{inc.description}</p>
-                    {inc.category && (
+                    {r.description && (
+                      <p className="text-sm mt-1">{r.description as string}</p>
+                    )}
+                    {r.notes && (
                       <p className="text-xs text-muted-foreground mt-1">
-                        Category: {inc.category}
+                        {r.notes as string}
                       </p>
                     )}
                   </CardContent>
                 </Card>
               ))}
             </div>
-          ) : (
-            <p className="text-muted-foreground py-8 text-center">
-              No incidents
-            </p>
           )}
+
+          {/* Demerits — point-bearing disciplinary records. Status
+              distinguishes active from worked-off. */}
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+              Demerits ({demerits?.length ?? 0})
+            </h3>
+            {demerits && demerits.length > 0 ? (
+              demerits.map((d) => (
+                <Card key={d.id}>
+                  <CardContent className="py-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={
+                            d.status === "active"
+                              ? "destructive"
+                              : "secondary"
+                          }
+                          className="capitalize"
+                        >
+                          {(d.status as string)?.replace(/_/g, " ")}
+                        </Badge>
+                        {d.auto_generated && (
+                          <Badge variant="outline" className="text-xs">
+                            Auto
+                          </Badge>
+                        )}
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {formatDateOnly(d.created_at as string)}
+                      </span>
+                    </div>
+                    <p className="text-sm mt-1">{d.reason as string}</p>
+                    {d.category && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Category: {d.category as string}
+                      </p>
+                    )}
+                    {d.notes && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {d.notes as string}
+                      </p>
+                    )}
+                    {d.resolution_note && d.status === "worked_off" && (
+                      <p className="text-xs text-green-700 mt-1">
+                        Worked off: {d.resolution_note as string}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              ))
+            ) : (
+              <p className="text-muted-foreground text-sm py-2">
+                No demerits
+              </p>
+            )}
+          </div>
+
+          {/* Warnings — point-free disciplinary records. */}
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+              Warnings ({warnings?.length ?? 0})
+            </h3>
+            {warnings && warnings.length > 0 ? (
+              warnings.map((w) => {
+                const issuer = Array.isArray(w.issuer)
+                  ? w.issuer[0]
+                  : w.issuer;
+                const issuerName =
+                  (issuer as { full_name?: string } | null)?.full_name ?? null;
+                return (
+                  <Card key={w.id}>
+                    <CardContent className="py-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <Badge variant="outline" className="capitalize">
+                          Warning
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {formatDateOnly(w.created_at as string)}
+                        </span>
+                      </div>
+                      <p className="text-sm mt-1">{w.reason as string}</p>
+                      {w.category && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Category: {w.category as string}
+                        </p>
+                      )}
+                      {w.notes && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {w.notes as string}
+                        </p>
+                      )}
+                      {issuerName && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Issued by {issuerName}
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })
+            ) : (
+              <p className="text-muted-foreground text-sm py-2">
+                No warnings
+              </p>
+            )}
+          </div>
         </TabsContent>
 
         <TabsContent value="payments" className="mt-4">
@@ -855,6 +970,10 @@ export default async function ResidentDetailPage(
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="activity" className="mt-4">
+          <ResidentTimeline activity={activity ?? []} />
         </TabsContent>
       </Tabs>
     </div>
