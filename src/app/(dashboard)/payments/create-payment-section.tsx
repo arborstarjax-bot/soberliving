@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getCachedActiveHouses } from "@/lib/cached-dropdowns";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import type { SessionUser } from "@/lib/types";
 import { CreatePaymentDialog } from "./create-payment-dialog";
@@ -13,13 +14,6 @@ import { CreatePaymentDialog } from "./create-payment-dialog";
 export async function CreatePaymentSection({ user }: { user: SessionUser }) {
   const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
-
-  let housesQuery = supabase
-    .from("houses")
-    .select("id, name")
-    .eq("is_active", true)
-    .order("name");
-  if (houseFilter) housesQuery = housesQuery.in("id", houseFilter);
 
   let residentsQuery = supabase
     .from("residents")
@@ -37,8 +31,16 @@ export async function CreatePaymentSection({ user }: { user: SessionUser }) {
     .order("due_date", { ascending: true });
   if (houseFilter) openChargesQuery = openChargesQuery.in("house_id", houseFilter);
 
-  const [{ data: houses }, { data: residents }, { data: openCharges }] =
-    await Promise.all([housesQuery, residentsQuery, openChargesQuery]);
+  const [allHouses, { data: residents }, { data: openCharges }] =
+    await Promise.all([
+      getCachedActiveHouses(),
+      residentsQuery,
+      openChargesQuery,
+    ]);
+
+  const houses = houseFilter
+    ? allHouses.filter((h) => houseFilter.includes(h.id))
+    : allHouses;
 
   return (
     <CreatePaymentDialog

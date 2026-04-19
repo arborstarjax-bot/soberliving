@@ -1,5 +1,6 @@
 import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { getCachedActiveHouses } from "@/lib/cached-dropdowns";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,13 +41,15 @@ export default async function IncidentsPage({ searchParams }: IncidentsPageProps
   const meta = buildPaginationMeta(count ?? 0, page, pageSize);
 
   // Get houses and residents for the create dialog
-  let housesQuery = supabase.from("houses").select("id, name").eq("is_active", true).order("name");
-  if (houseFilter) housesQuery = housesQuery.in("id", houseFilter);
-  const { data: houses } = await housesQuery;
-
   let residentsQuery = supabase.from("residents").select("id, full_name, house_id").eq("status", "active").order("full_name");
   if (houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
-  const { data: residents } = await residentsQuery;
+  const [allHouses, { data: residents }] = await Promise.all([
+    getCachedActiveHouses(),
+    residentsQuery,
+  ]);
+  const houses = houseFilter
+    ? allHouses.filter((h) => houseFilter.includes(h.id))
+    : allHouses;
 
   return (
     <div className="space-y-6">

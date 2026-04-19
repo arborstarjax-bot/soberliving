@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { getCachedActiveHouses } from "@/lib/cached-dropdowns";
 import type { SessionUser } from "@/lib/types";
 import { NewBlockerForm } from "./new-blocker-form";
 
@@ -11,15 +12,6 @@ import { NewBlockerForm } from "./new-blocker-form";
 export async function NewBlockerSection({ user }: { user: SessionUser }) {
   const admin = createAdminClient();
 
-  let housesQuery = admin
-    .from("houses")
-    .select("id, name")
-    .eq("is_active", true)
-    .order("name");
-  if (user.role === "manager") {
-    housesQuery = housesQuery.in("id", user.assigned_house_ids);
-  }
-
   let residentsQuery = admin
     .from("residents")
     .select(
@@ -30,10 +22,15 @@ export async function NewBlockerSection({ user }: { user: SessionUser }) {
     residentsQuery = residentsQuery.in("house_id", user.assigned_house_ids);
   }
 
-  const [{ data: houses }, { data: residentRows }] = await Promise.all([
-    housesQuery,
+  const [allHouses, { data: residentRows }] = await Promise.all([
+    getCachedActiveHouses(),
     residentsQuery,
   ]);
+
+  const houses =
+    user.role === "manager"
+      ? allHouses.filter((h) => user.assigned_house_ids.includes(h.id))
+      : allHouses;
 
   const residents = (residentRows ?? [])
     .map((r) => {

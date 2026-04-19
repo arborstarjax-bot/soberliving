@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/server";
+import { getCachedActiveHouses } from "@/lib/cached-dropdowns";
 import { CursorPager } from "@/components/cursor-pager";
 import {
   DEFAULT_PAGE_SIZE,
@@ -46,13 +47,9 @@ export async function UsersListSection({ searchParams }: UsersListSectionProps) 
     direction: "asc",
   });
 
-  const [{ data: rawUsers, error }, { data: houses }] = await Promise.all([
+  const [{ data: rawUsers, error }, houses] = await Promise.all([
     query,
-    supabase
-      .from("houses")
-      .select("id, name")
-      .eq("is_active", true)
-      .order("name"),
+    getCachedActiveHouses(),
   ]);
 
   if (error) {
