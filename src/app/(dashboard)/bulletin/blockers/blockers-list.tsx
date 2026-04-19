@@ -56,10 +56,10 @@ export function BlockersList({
   return (
     <div className="space-y-6">
       <section className="space-y-2">
-        <h2 className="text-lg font-semibold">Active Blockers</h2>
+        <h2 className="text-lg font-semibold">Active Notices</h2>
         {active.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No active blockers.
+            No active notices.
           </p>
         ) : (
           active.map((item) => (
