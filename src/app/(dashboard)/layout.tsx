@@ -1,8 +1,10 @@
+import { Suspense } from "react";
 import { requireAuth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
-import { createAdminClient } from "@/lib/supabase/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { NotificationBadge } from "./notification-badge";
+import { BulletinBadge } from "./bulletin-badge";
 
 export default async function DashboardLayout({
   children,
@@ -42,111 +44,61 @@ export default async function DashboardLayout({
     redirect(`/acknowledge/${user.pending_blocker_id}`);
   }
 
-  // Redirect ANY user who has a pending check-in (blocking task).
-  // This covers admins/managers who are also residents.
-  {
-    const adminClient = createAdminClient();
-    const { data: pendingCheckIn } = await adminClient
-      .from("check_in_responses")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("status", "pending")
-      .limit(1)
-      .maybeSingle();
+  // Critical-path queries that can influence the rendered shell:
+  //   • pendingCheckIn can redirect the request entirely
+  //   • hasNoLeaveRestriction controls whether the Overnight Request
+  //     nav link is filtered out (must be known before the sidebar
+  //     renders, otherwise the link would flash in then disappear)
+  //
+  // Run them in parallel — previously this was two sequential
+  // awaits which added a full round-trip on every resident
+  // navigation. The unread-count work has moved into Suspense
+  // islands (NotificationBadge / BulletinBadge) so it no longer
+  // blocks the shell at all.
+  const adminClient = createAdminClient();
 
-    if (pendingCheckIn) {
-      redirect(`/check-in/${pendingCheckIn.id}`);
-    }
-  }
+  const pendingCheckInPromise = adminClient
+    .from("check_in_responses")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("status", "pending")
+    .limit(1)
+    .maybeSingle();
 
-  // Fetch unread notification count for sidebar badge
-  let unreadNotificationCount = 0;
-  {
-    const supabase = await createClient();
-    const { count } = await supabase
-      .from("notifications")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", user.id)
-      .eq("is_read", false);
-    unreadNotificationCount = count ?? 0;
-  }
+  const noLeavePromise =
+    user.role === "resident"
+      ? (async () => {
+          const supabase = await createClient();
+          const { data: myResident } = await supabase
+            .from("residents")
+            .select("id")
+            .eq("user_id", user.id)
+            .eq("status", "active")
+            .maybeSingle();
+          if (!myResident) return false;
+          const { data: noLeave } = await supabase
+            .from("restrictions")
+            .select("id")
+            .eq("resident_id", myResident.id)
+            .eq("is_active", true)
+            .in("restriction_type", [
+              "no_leave",
+              "no_overnight",
+              "house_commitment",
+            ])
+            .limit(1)
+            .maybeSingle();
+          return !!noLeave;
+        })()
+      : Promise.resolve(false);
 
-  // Unread bulletin count — posts visible to this user created after
-  // their last /bulletin visit. Mirrors the visibility filter in
-  // bulletin/page.tsx (own-house + global for residents, assigned
-  // houses + global for managers, all for admins). NULL last_seen
-  // means "never visited" so everything visible counts.
-  let unreadBulletinCount = 0;
-  {
-    const adminClient = createAdminClient();
+  const [pendingCheckInRes, hasNoLeaveRestriction] = await Promise.all([
+    pendingCheckInPromise,
+    noLeavePromise,
+  ]);
 
-    const { data: meRow } = await adminClient
-      .from("users")
-      .select("last_seen_bulletin_at")
-      .eq("id", user.id)
-      .maybeSingle();
-    const lastSeen =
-      (meRow?.last_seen_bulletin_at as string | null) ?? null;
-
-    let visibleHouseIds: string[] | null = null; // null = all houses
-    if (user.role === "resident") {
-      const { data: resident } = await adminClient
-        .from("residents")
-        .select("house_id")
-        .eq("user_id", user.id)
-        .eq("status", "active")
-        .maybeSingle();
-      visibleHouseIds = resident?.house_id
-        ? [resident.house_id as string]
-        : [];
-    } else if (user.role === "manager") {
-      visibleHouseIds =
-        user.assigned_house_ids.length > 0 ? user.assigned_house_ids : [];
-    }
-
-    let bulletinQuery = adminClient
-      .from("bulletin_posts")
-      .select("id", { count: "exact", head: true });
-
-    if (lastSeen) {
-      bulletinQuery = bulletinQuery.gt("created_at", lastSeen);
-    }
-    if (visibleHouseIds && visibleHouseIds.length > 0) {
-      bulletinQuery = bulletinQuery.or(
-        `house_id.in.(${visibleHouseIds.join(",")}),house_id.is.null`
-      );
-    } else if (visibleHouseIds) {
-      bulletinQuery = bulletinQuery.is("house_id", null);
-    }
-
-    const { count } = await bulletinQuery;
-    unreadBulletinCount = count ?? 0;
-  }
-
-  // Hide the Overnight Request nav link from residents with an
-  // active no_leave or no_overnight restriction — they can't leave
-  // the house overnight so the whole flow is off-limits.
-  let hasNoLeaveRestriction = false;
-  if (user.role === "resident") {
-    const supabase = await createClient();
-    const { data: myResident } = await supabase
-      .from("residents")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("status", "active")
-      .maybeSingle();
-
-    if (myResident) {
-      const { data: noLeave } = await supabase
-        .from("restrictions")
-        .select("id")
-        .eq("resident_id", myResident.id)
-        .eq("is_active", true)
-        .in("restriction_type", ["no_leave", "no_overnight", "house_commitment"])
-        .limit(1)
-        .maybeSingle();
-      hasNoLeaveRestriction = !!noLeave;
-    }
+  if (pendingCheckInRes.data) {
+    redirect(`/check-in/${pendingCheckInRes.data.id}`);
   }
 
   return (
@@ -161,7 +113,25 @@ export default async function DashboardLayout({
     // mobile the top bar would be treated as a narrow left-column
     // flex item instead of a full-width sticky header.
     <div className="flex flex-col lg:flex-row h-dvh overflow-hidden">
-      <Sidebar role={user.role} userName={user.full_name} hasNoLeaveRestriction={hasNoLeaveRestriction} unreadNotificationCount={unreadNotificationCount} unreadBulletinCount={unreadBulletinCount} />
+      <Sidebar
+        role={user.role}
+        userName={user.full_name}
+        hasNoLeaveRestriction={hasNoLeaveRestriction}
+        notificationBadge={
+          <Suspense fallback={null}>
+            <NotificationBadge userId={user.id} />
+          </Suspense>
+        }
+        bulletinBadge={
+          <Suspense fallback={null}>
+            <BulletinBadge
+              userId={user.id}
+              userRole={user.role}
+              assignedHouseIds={user.assigned_house_ids}
+            />
+          </Suspense>
+        }
+      />
       <main className="flex-1 overflow-y-auto min-w-0">
         {/* Safe-area insets so the main scroll region respects the
             iPhone notch, Dynamic Island, and home-indicator rail. No
