@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { requireAuth } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/server";
+import { getCachedActiveHouses } from "@/lib/cached-dropdowns";
 import { ListSkeleton } from "@/components/ui/skeleton";
 import { NewRideForm } from "./new-ride-form";
 import { RideListSection } from "./ride-list-section";
@@ -23,21 +24,12 @@ export default async function RideSharePage({
   let postableHouses: { id: string; name: string }[] = [];
   let myHouseId: string | null = null;
   if (user.role === "admin") {
-    const { data } = await admin
-      .from("houses")
-      .select("id, name")
-      .eq("is_active", true)
-      .order("name");
-    postableHouses = data ?? [];
+    postableHouses = await getCachedActiveHouses();
   } else if (user.role === "manager") {
     if (user.assigned_house_ids.length > 0) {
-      const { data } = await admin
-        .from("houses")
-        .select("id, name")
-        .in("id", user.assigned_house_ids)
-        .eq("is_active", true)
-        .order("name");
-      postableHouses = data ?? [];
+      const assigned = new Set(user.assigned_house_ids);
+      const all = await getCachedActiveHouses();
+      postableHouses = all.filter((h) => assigned.has(h.id));
     }
   } else {
     const { data: resident } = await admin

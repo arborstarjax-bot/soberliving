@@ -1,5 +1,6 @@
 import { requireAuth } from "@/lib/auth";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { getCachedActiveHouses } from "@/lib/cached-dropdowns";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { CreateRestrictionDialog } from "./create-restriction-dialog";
 import { DemeritMatrix } from "./demerit-matrix";
@@ -63,14 +64,6 @@ export default async function DisciplinePage() {
   await expireQuery;
 
   // Build the five independent read queries, then await them all at once.
-  let housesQuery = adminClient
-    .from("houses")
-    .select("id, name")
-    .eq("is_active", true)
-    .order("name");
-  if (houseFilter && houseFilter.length > 0) housesQuery = housesQuery.in("id", houseFilter);
-  if (residentHouseId) housesQuery = housesQuery.eq("id", residentHouseId);
-
   let residentsQuery = adminClient
     .from("residents")
     .select("id, full_name, house_id")
@@ -118,20 +111,26 @@ export default async function DisciplinePage() {
   if (residentRecordId) pastRestrictionsQuery = pastRestrictionsQuery.eq("resident_id", residentRecordId);
 
   const [
-    { data: houses },
+    allHouses,
     { data: residents },
     { data: demerits },
     { data: warnings },
     { data: activeRestrictions },
     { data: pastRestrictions },
   ] = await Promise.all([
-    housesQuery,
+    getCachedActiveHouses(),
     residentsQuery,
     demeritsQuery,
     warningsQuery,
     activeRestrictionsQuery,
     pastRestrictionsQuery,
   ]);
+
+  const houses = allHouses.filter((h) => {
+    if (residentHouseId) return h.id === residentHouseId;
+    if (houseFilter && houseFilter.length > 0) return houseFilter.includes(h.id);
+    return true;
+  });
 
   // Normalize warnings: flatten the joined resident / house / issuer arrays
   // (Supabase returns them as single-element arrays on some joins) so the

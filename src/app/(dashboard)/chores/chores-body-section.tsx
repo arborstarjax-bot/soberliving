@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ClipboardCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { getCachedActiveHouses } from "@/lib/cached-dropdowns";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import type { SessionUser } from "@/lib/types";
 import { RotationBoard } from "./rotation-board";
@@ -38,13 +39,6 @@ export async function ChoresBodySection({ user }: { user: SessionUser }) {
       // Non-critical — don't block page render.
     }
   }
-
-  let housesQuery = supabase
-    .from("houses")
-    .select("id, name")
-    .eq("is_active", true)
-    .order("name");
-  if (houseFilter) housesQuery = housesQuery.in("id", houseFilter);
 
   let choresQuery = supabase
     .from("chores")
@@ -101,7 +95,7 @@ export async function ChoresBodySection({ user }: { user: SessionUser }) {
     .limit(100);
 
   const [
-    { data: houses },
+    allHouses,
     { data: chores },
     { data: rotations },
     { data: residents },
@@ -111,7 +105,7 @@ export async function ChoresBodySection({ user }: { user: SessionUser }) {
     { data: pendingSignoffs },
     { data: missedSignoffs },
   ] = await Promise.all([
-    housesQuery,
+    getCachedActiveHouses(),
     choresQuery,
     rotationsQuery,
     residentsQuery,
@@ -121,6 +115,10 @@ export async function ChoresBodySection({ user }: { user: SessionUser }) {
     pendingSignoffsQuery,
     missedSignoffsQuery,
   ]);
+
+  const houses = houseFilter
+    ? allHouses.filter((h) => houseFilter.includes(h.id))
+    : allHouses;
 
   const accessibleChoreIds = new Set((chores ?? []).map((c) => c.id));
   const normalizedExclusions = (exclusions ?? [])

@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { getCachedActiveHouses } from "@/lib/cached-dropdowns";
 import type { UserRole } from "@/lib/types";
 import { NewPostForm } from "./new-post-form";
 
@@ -16,27 +17,17 @@ export async function NewPostSection({
   userRole: UserRole;
   assignedHouseIds: string[];
 }) {
-  const supabase = createAdminClient();
-
   let postableHouses: { id: string; name: string }[] = [];
   if (userRole === "admin") {
-    const { data } = await supabase
-      .from("houses")
-      .select("id, name")
-      .eq("is_active", true)
-      .order("name");
-    postableHouses = data ?? [];
+    postableHouses = await getCachedActiveHouses();
   } else if (userRole === "manager") {
     if (assignedHouseIds.length > 0) {
-      const { data } = await supabase
-        .from("houses")
-        .select("id, name")
-        .in("id", assignedHouseIds)
-        .eq("is_active", true)
-        .order("name");
-      postableHouses = data ?? [];
+      const assignedSet = new Set(assignedHouseIds);
+      const all = await getCachedActiveHouses();
+      postableHouses = all.filter((h) => assignedSet.has(h.id));
     }
   } else {
+    const supabase = createAdminClient();
     const { data: resident } = await supabase
       .from("residents")
       .select("house_id, house:houses!inner(id, name)")

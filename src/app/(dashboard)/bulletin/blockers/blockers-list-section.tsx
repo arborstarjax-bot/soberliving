@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { getCachedActiveHouses } from "@/lib/cached-dropdowns";
 import type { BlockerTargetType, SessionUser } from "@/lib/types";
 import { BlockersList } from "./blockers-list";
 
@@ -10,15 +11,6 @@ import { BlockersList } from "./blockers-list";
  */
 export async function BlockersListSection({ user }: { user: SessionUser }) {
   const admin = createAdminClient();
-
-  let housesQuery = admin
-    .from("houses")
-    .select("id, name")
-    .eq("is_active", true)
-    .order("name");
-  if (user.role === "manager") {
-    housesQuery = housesQuery.in("id", user.assigned_house_ids);
-  }
 
   let residentsQuery = admin
     .from("residents")
@@ -39,8 +31,17 @@ export async function BlockersListSection({ user }: { user: SessionUser }) {
     blockersQuery = blockersQuery.eq("created_by", user.id);
   }
 
-  const [{ data: houses }, { data: residentRows }, { data: blockers }] =
-    await Promise.all([housesQuery, residentsQuery, blockersQuery]);
+  const [allHouses, { data: residentRows }, { data: blockers }] =
+    await Promise.all([
+      getCachedActiveHouses(),
+      residentsQuery,
+      blockersQuery,
+    ]);
+
+  const houses =
+    user.role === "manager"
+      ? allHouses.filter((h) => user.assigned_house_ids.includes(h.id))
+      : allHouses;
 
   const residents = (residentRows ?? []).map((r) => ({
     user_id: r.user_id as string,

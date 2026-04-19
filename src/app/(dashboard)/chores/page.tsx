@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { requireAuth } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedActiveHouses } from "@/lib/cached-dropdowns";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { ListSkeleton } from "@/components/ui/skeleton";
 import type { SessionUser } from "@/lib/types";
@@ -41,21 +41,16 @@ export default async function ChoresPage() {
 }
 
 async function StaffActions({ user }: { user: SessionUser }) {
-  const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
-
-  let housesQuery = supabase
-    .from("houses")
-    .select("id, name")
-    .eq("is_active", true)
-    .order("name");
-  if (houseFilter) housesQuery = housesQuery.in("id", houseFilter);
-  const { data: houses } = await housesQuery;
+  const all = await getCachedActiveHouses();
+  const houses = houseFilter
+    ? all.filter((h) => houseFilter.includes(h.id))
+    : all;
 
   return (
     <div className="flex gap-2">
-      <CreateChoreDialog houses={houses ?? []} />
-      <StartRotationDialog houses={houses ?? []} />
+      <CreateChoreDialog houses={houses} />
+      <StartRotationDialog houses={houses} />
     </div>
   );
 }

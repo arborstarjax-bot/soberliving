@@ -1,6 +1,7 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { HOUSES_ACTIVE_TAG } from "@/lib/cached-dropdowns";
 import { redirect } from "next/navigation";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { requireAuth, requireRole } from "@/lib/auth";
@@ -52,6 +53,7 @@ export async function createHouse(
   });
 
   revalidatePath("/houses");
+  revalidateTag(HOUSES_ACTIVE_TAG, "max");
   redirect(`/houses/${data.id}`);
 }
 
@@ -89,6 +91,7 @@ export async function updateHouse(houseId: string, formData: FormData) {
 
   revalidatePath(`/houses/${houseId}`);
   revalidatePath("/houses");
+  revalidateTag(HOUSES_ACTIVE_TAG, "max");
   return {};
 }
 
@@ -113,6 +116,7 @@ export async function archiveHouse(houseId: string) {
   });
 
   revalidatePath("/houses");
+  revalidateTag(HOUSES_ACTIVE_TAG, "max");
   redirect("/houses");
 }
 
