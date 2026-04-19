@@ -283,7 +283,7 @@ export async function generateMissedChoreDemerits(houseId?: string) {
   const { data: missedSignoffs } = await supabase
     .from("chore_signoffs")
     .select(
-      "id, sign_off_date, created_at, rotation_assignment:chore_rotation_assignments(chore:chores(house_id))"
+      "id, sign_off_date, day_of_week, created_at, rotation_assignment:chore_rotation_assignments(chore:chores(house_id, days_of_week))"
     )
     .eq("status", "pending")
     .lte("sign_off_date", yesterdayStr);
@@ -296,13 +296,30 @@ export async function generateMissedChoreDemerits(houseId?: string) {
   const missedSignoffRows = missedSignoffs as unknown as Array<{
     id: string;
     sign_off_date: string;
+    day_of_week: string;
     created_at: string | null;
-    rotation_assignment: { chore: { house_id: string } | null } | null;
+    rotation_assignment: {
+      chore: { house_id: string; days_of_week: string[] | null } | null;
+    } | null;
   }>;
   for (const signoff of missedSignoffRows) {
     const ra = signoff.rotation_assignment;
     if (!ra?.chore) continue;
     if (ra.chore.house_id !== houseId) continue;
+
+    // Defense-in-depth: skip signoffs whose `day_of_week` is no
+    // longer part of the chore's current schedule. These are orphan
+    // rows from a pre-regeneration schedule edit — flipping them to
+    // `missed` would auto-issue a demerit for a day the resident was
+    // never supposed to do the chore.
+    const choreDays = ra.chore.days_of_week;
+    if (
+      choreDays &&
+      choreDays.length > 0 &&
+      !choreDays.includes(signoff.day_of_week)
+    ) {
+      continue;
+    }
 
     const createdDate = signoff.created_at
       ? isoDateInTz(signoff.created_at as string, houseTz)
