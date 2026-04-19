@@ -10,6 +10,7 @@ import {
   getDaysSober,
   isSobrietyDateFuture,
 } from "@/lib/milestones";
+import { milestoneBadgeClasses } from "@/components/sobriety-chip";
 import { formatDateOnly, getHouseToday } from "@/lib/timezone";
 import { ResidentTimeline } from "./timeline";
 import { ResidentNotes } from "./notes";
@@ -467,16 +468,25 @@ export default async function ResidentDetailPage(
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
-              {milestones.map((m) => (
-                <Badge
-                  key={m.label}
-                  variant={m.reached ? "default" : "outline"}
-                  className={m.reached ? "" : "opacity-40"}
-                >
-                  {m.label}
-                  {m.reached && " ✓"}
-                </Badge>
-              ))}
+              {milestones.map((m) => {
+                const tierClass = m.reached
+                  ? milestoneBadgeClasses(m.days)
+                  : null;
+                return (
+                  <Badge
+                    key={m.label}
+                    variant={m.reached ? "default" : "outline"}
+                    className={
+                      m.reached
+                        ? tierClass ?? ""
+                        : "opacity-40"
+                    }
+                  >
+                    {m.label}
+                    {m.reached && " ✓"}
+                  </Badge>
+                );
+              })}
             </div>
           </CardContent>
         </Card>

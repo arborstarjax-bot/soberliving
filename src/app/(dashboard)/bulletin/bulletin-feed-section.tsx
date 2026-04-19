@@ -23,18 +23,17 @@ type AuthorWithSobriety = {
 
 /**
  * From the residents rows joined onto a users author, pick the
- * sobriety_date of the currently active resident row.
+ * sobriety_date of the currently *active* resident row.
  *
- * Only returns a date when the author's current role is `resident`.
- * Staff (admin / manager) sometimes have a legacy residents row from
- * prior use of the app; returning their stale sobriety_date would
- * paint their avatar a recovery-tier color, which is misleading.
+ * Returns the date regardless of the author's role — staff who also
+ * have an active residents row (e.g. a house manager who is
+ * themselves in recovery) should still see their sobriety tier on
+ * the avatar. The `status === "active"` filter already excludes any
+ * archived / discharged legacy rows.
  */
 function pickActiveSobrietyDate(
-  residents: AuthorWithSobriety["residents"] | undefined,
-  role: string | null
+  residents: AuthorWithSobriety["residents"] | undefined
 ): string | null {
-  if (role !== "resident") return null;
   if (!residents) return null;
   const list = Array.isArray(residents) ? residents : [residents];
   const active = list.find((r) => r?.status === "active");
@@ -210,7 +209,7 @@ export async function BulletinFeedSection({
         created_at: c.created_at as string,
         author_name: authorData?.full_name ?? "Unknown",
         author_role: role,
-        author_sobriety_date: pickActiveSobrietyDate(authorData?.residents, role),
+        author_sobriety_date: pickActiveSobrietyDate(authorData?.residents),
       };
       const pid = c.post_id as string;
       if (!commentsMap[pid]) commentsMap[pid] = [];
@@ -240,7 +239,7 @@ export async function BulletinFeedSection({
       created_at: post.created_at as string,
       author_name: authorData?.full_name ?? "Unknown",
       author_role: authorRole,
-      author_sobriety_date: pickActiveSobrietyDate(authorData?.residents, authorRole),
+      author_sobriety_date: pickActiveSobrietyDate(authorData?.residents),
       house_name: houseName ?? null,
       like_count: likesMap[pid] ?? 0,
       user_liked: userLikedSet.has(pid),
