@@ -1,12 +1,12 @@
 import { Suspense } from "react";
 import { requireAuth } from "@/lib/auth";
-import { createAdminClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
-import { NewPostForm } from "./new-post-form";
+import { createAdminClient } from "@/lib/supabase/server";
 import { BulletinFeedSection } from "./bulletin-feed-section";
-import { ListSkeleton } from "@/components/ui/skeleton";
+import { NewPostSection } from "./new-post-section";
+import { BulletinSideEffects } from "./bulletin-side-effects";
+import { ListSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { RefreshOnMount } from "@/components/refresh-on-mount";
-import { ensureMilestonePosts } from "@/lib/sobriety-milestones";
 
 interface BulletinPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -14,65 +14,26 @@ interface BulletinPageProps {
 
 export default async function BulletinPage({ searchParams }: BulletinPageProps) {
   const user = await requireAuth();
-  const supabase = createAdminClient();
-  const houseFilter = getAccessibleHouseFilter(user);
   const params = await searchParams;
 
-  // Bump this user's last_seen_bulletin_at so the sidebar unread
-  // badge clears on the next layout render. `<RefreshOnMount />`
-  // below invalidates the router cache client-side so the sidebar
-  // re-renders with the fresh count.
-  await supabase
-    .from("users")
-    .update({ last_seen_bulletin_at: new Date().toISOString() })
-    .eq("id", user.id);
-
-  // Post auto-congrats for any resident who has crossed a new
-  // sobriety milestone since the last time we checked. No-op inside
-  // the in-memory debounce window and safe to call unconditionally —
-  // UNIQUE(resident_user_id, milestone_days) prevents duplicates
-  // across concurrent renders.
-  await ensureMilestonePosts(supabase);
-
-  // Determine which houses the user can post to. Kept in the shell
-  // (not Suspense'd) because NewPostForm renders above the feed and
-  // is small — a couple of fast indexed lookups by role.
-  let postableHouses: { id: string; name: string }[] = [];
-  if (user.role === "admin") {
-    const { data } = await supabase
-      .from("houses")
-      .select("id, name")
-      .eq("is_active", true)
-      .order("name");
-    postableHouses = data ?? [];
-  } else if (user.role === "manager") {
-    if (user.assigned_house_ids.length > 0) {
-      const { data } = await supabase
-        .from("houses")
-        .select("id, name")
-        .in("id", user.assigned_house_ids)
-        .eq("is_active", true)
-        .order("name");
-      postableHouses = data ?? [];
-    }
-  } else {
+  // Resolve the visible-house scope for the feed. Residents need a
+  // live residents lookup (same filter the sidebar unread count
+  // uses); managers use their cached assigned_house_ids; admins see
+  // everything. Kept in the shell because it's one indexed lookup
+  // at most and the feed Suspense key needs it.
+  const houseFilter = getAccessibleHouseFilter(user);
+  let visibleHouseIds: string[] | null = null; // null = all
+  if (user.role === "resident") {
+    const supabase = createAdminClient();
     const { data: resident } = await supabase
       .from("residents")
-      .select("house_id, house:houses!inner(id, name)")
+      .select("house_id")
       .eq("user_id", user.id)
       .eq("status", "active")
       .maybeSingle();
-    if (resident) {
-      const house = resident.house as unknown as { id: string; name: string };
-      postableHouses = [{ id: house.id, name: house.name }];
-    }
-  }
-
-  // Determine which house IDs the user can see posts from.
-  let visibleHouseIds: string[] | null = null; // null = all
-  if (user.role === "resident") {
-    visibleHouseIds =
-      postableHouses.length > 0 ? postableHouses.map((h) => h.id) : [];
+    visibleHouseIds = resident?.house_id
+      ? [resident.house_id as string]
+      : [];
   } else if (user.role === "manager") {
     visibleHouseIds = houseFilter && houseFilter.length > 0 ? houseFilter : [];
   }
@@ -88,11 +49,23 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
   return (
     <div className="space-y-6">
       <RefreshOnMount />
-      <NewPostForm
-        houses={postableHouses}
-        userRole={user.role}
-        singleHouse={user.role === "resident" && postableHouses.length === 1}
-      />
+
+      {/* Fire-and-forget side effects (unread-badge bump, milestone
+          auto-posts) — wrapped in Suspense with null fallback so the
+          shell streams without waiting on them. */}
+      <Suspense fallback={null}>
+        <BulletinSideEffects userId={user.id} />
+      </Suspense>
+
+      {/* NewPostForm needs a role-dependent houses lookup — defer it
+          so it doesn't block the feed from streaming. */}
+      <Suspense fallback={<Skeleton className="h-20 w-full" />}>
+        <NewPostSection
+          userId={user.id}
+          userRole={user.role}
+          assignedHouseIds={user.assigned_house_ids ?? []}
+        />
+      </Suspense>
 
       <Suspense
         key={suspenseKey}
