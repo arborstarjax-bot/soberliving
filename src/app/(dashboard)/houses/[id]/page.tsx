@@ -1,27 +1,32 @@
+import { Suspense } from "react";
 import { requireAuth } from "@/lib/auth";
-import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { canAccessHouse } from "@/lib/permissions";
 import { redirect } from "next/navigation";
-import { getDaysSober } from "@/lib/milestones";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ListSkeleton, Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
-import { OccupancyGrid } from "./occupancy-grid";
-import { AddRoomDialog } from "./add-room-dialog";
 import { EditHouseDialog } from "../edit-house-dialog";
 import { DeleteHouseDialog } from "../delete-house-dialog";
-import { SupplyList, type SupplyItem } from "./supply-list";
-import { DocumentsList, type HouseDocument } from "./documents-list";
-import { StateOfHouseView } from "./state-of-house";
-import { loadStateOfHouseData, resolveRange } from "./state-of-house-data";
-import {
-  SafetyList,
-  type SafetyAssessmentRow,
-} from "./safety/safety-list";
-import type { SafetyChecklistResponses } from "@/lib/safety-checklist";
-import { formatDateOnly, getHouseFirstOfMonth } from "@/lib/timezone";
+import { BedCountBadge } from "./bed-count-badge";
+import { OccupancySection } from "./occupancy-section";
+import { ResidentsSection } from "./residents-section";
+import { SuppliesSection } from "./supplies-section";
+import { DocumentsSection } from "./documents-section";
+import { SafetySection } from "./safety-section";
+import { StateSection } from "./state-section";
+import { ActivitySection } from "./activity-section";
 
+/**
+ * House detail shell. The house record + manager names paint
+ * immediately; the bed-count badge, and the selected tab body,
+ * each stream in behind their own `<Suspense>` boundary.
+ *
+ * Only the active tab's data fetches — switching tabs triggers a
+ * fresh server render with the new `?tab=` param, and each tab
+ * section fetches only what it needs. No more single-gather-holds-
+ * up-everything.
+ */
 export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) {
   const { id } = await props.params;
   const searchParams = await props.searchParams;
@@ -32,209 +37,33 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
     redirect("/dashboard");
   }
 
-  // All of these are independent once we have the house id — batch them
-  // into a single Promise.all so the detail page renders in one DB
-  // round-trip instead of seven sequential ones.
-  const [
-    { data: house },
-    { data: rooms },
-    { data: residents },
-    { data: managerAssignments },
-    { data: activity },
-    { data: supplies },
-    { data: documents },
-    { data: safetyAssessmentsRaw },
-  ] = await Promise.all([
+  const [{ data: house }, { data: managerAssignments }] = await Promise.all([
     supabase.from("houses").select("*").eq("id", id).single(),
     supabase
-      .from("rooms")
-      .select(
-        "*, beds(*, bed_assignments(*, resident:residents(id, full_name, status)))"
-      )
-      .eq("house_id", id)
-      .eq("is_active", true)
-      .order("sort_order")
-      .order("name"),
-    supabase
-      .from("residents")
-      .select("id, full_name, status, move_in_date, sobriety_date")
-      .eq("house_id", id)
-      .eq("status", "active")
-      .order("full_name"),
-    supabase
       .from("manager_house_assignments")
-      .select("user_id, users(full_name, email)")
+      .select("users!inner(full_name), unassigned_at")
       .eq("house_id", id)
       .is("unassigned_at", null),
-    supabase
-      .from("activity_log")
-      .select("id, event_type, description, created_at")
-      .eq("house_id", id)
-      .order("created_at", { ascending: false })
-      .limit(20),
-    supabase
-      .from("supply_items")
-      .select("id, name, is_in_stock, updated_at")
-      .eq("house_id", id)
-      .order("name"),
-    supabase
-      .from("house_documents")
-      .select(
-        "id, name, description, file_path, mime_type, size_bytes, created_at, uploader:users!uploaded_by(full_name)"
-      )
-      .eq("house_id", id)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("safety_assessments")
-      .select(
-        "id, assessment_date, person_completing_name, created_at, document_id, checklist, completer:users!completed_by(full_name)"
-      )
-      .eq("house_id", id)
-      .order("assessment_date", { ascending: false })
-      .limit(50),
   ]);
 
   if (!house) redirect("/houses");
 
   const canManage = user.role === "admin" || user.role === "manager";
 
-  const roomsData = rooms ?? [];
-  let totalBeds = 0;
-  let occupiedBeds = 0;
-  // Not-Available beds count as occupied per house policy: they still
-  // hold the bed off the available pool and can't be filled until they're
-  // marked available again. We don't expose a separate "not available"
-  // count in the header.
-  for (const room of roomsData) {
-    for (const bed of room.beds ?? []) {
-      if (!bed.is_active) continue;
-      totalBeds++;
-      const hasActive = (bed.bed_assignments ?? []).some(
-        (ba: { end_date: string | null }) => !ba.end_date
-      );
-      const isUnavailable =
-        bed.label.endsWith(" [Not Available]") ||
-        bed.label.endsWith(" [Empty]");
-      if (hasActive || isUnavailable) occupiedBeds++;
-    }
-  }
-
-  // State-of-house params (controlled via URL so tabs work with server components)
-  const tabParam = typeof searchParams?.tab === "string" ? searchParams.tab : "occupancy";
-  const rangeParam =
-    typeof searchParams?.range === "string" ? searchParams.range : "all_time";
-  const startParam =
-    typeof searchParams?.start === "string" ? searchParams.start : "";
-  const endParam = typeof searchParams?.end === "string" ? searchParams.end : "";
-  const houseTimezone =
-    (house as { timezone?: string | null }).timezone || undefined;
-  const dateRange = resolveRange(rangeParam, startParam, endParam, houseTimezone);
-  const stateData = await loadStateOfHouseData(id, dateRange);
-
-  const supplyItems: SupplyItem[] = (supplies ?? []).map((s) => ({
-    id: s.id,
-    name: s.name,
-    is_in_stock: s.is_in_stock,
-    updated_at: s.updated_at,
-  }));
-
-  const houseDocuments: HouseDocument[] = ((documents ?? []) as Array<{
-    id: string;
-    name: string;
-    description: string | null;
-    file_path: string;
-    mime_type: string | null;
-    size_bytes: number | null;
-    created_at: string;
-    uploader: { full_name: string } | { full_name: string }[] | null;
-  }>).map((d) => {
-    const uploader = Array.isArray(d.uploader) ? d.uploader[0] ?? null : d.uploader;
-    return {
-      id: d.id,
-      name: d.name,
-      description: d.description,
-      file_path: d.file_path,
-      mime_type: d.mime_type,
-      size_bytes: d.size_bytes,
-      created_at: d.created_at,
-      uploader_name: uploader?.full_name ?? null,
-    };
-  });
-
-  // Pre-sign every house document URL so Open/Download render as real
-  // anchor tags on the client. Otherwise the old click-then-await-then-
-  // window.open flow fails on mobile Safari because the user-gesture
-  // context is gone by the time the URL comes back.
-  const adminClient = createAdminClient();
-  const houseDocumentUrls: Record<string, string> = {};
-  await Promise.all(
-    houseDocuments.map(async (d) => {
-      const { data } = await adminClient.storage
-        .from("house-documents")
-        .createSignedUrl(d.file_path, 3600);
-      if (data?.signedUrl) houseDocumentUrls[d.id] = data.signedUrl;
-    })
-  );
-
   const managerNames: string[] = (managerAssignments ?? [])
     .map((ma) => (ma.users as unknown as { full_name: string } | null)?.full_name)
     .filter((n): n is string => Boolean(n));
 
-  // --- Safety assessments ---
-  // Shape the raw join into the row type the list component expects,
-  // pre-sign every linked document URL so the View PDF button is a
-  // real anchor (same pattern as house documents above), and decide
-  // whether the house is "up to date" for the current calendar month.
-  const safetyRawTyped = (safetyAssessmentsRaw ?? []) as Array<{
-    id: string;
-    assessment_date: string;
-    person_completing_name: string;
-    created_at: string;
-    document_id: string | null;
-    checklist: SafetyChecklistResponses | null;
-    completer:
-      | { full_name: string }
-      | { full_name: string }[]
-      | null;
-  }>;
-  const safetyAssessments: SafetyAssessmentRow[] = safetyRawTyped.map((r) => {
-    const completer = Array.isArray(r.completer)
-      ? r.completer[0] ?? null
-      : r.completer;
-    return {
-      id: r.id,
-      assessment_date: r.assessment_date,
-      person_completing_name: r.person_completing_name,
-      created_at: r.created_at,
-      document_id: r.document_id,
-      checklist: (r.checklist ?? {}) as SafetyChecklistResponses,
-      completed_by_name: completer?.full_name ?? null,
-    };
-  });
-
-  const safetyDocumentIds = safetyAssessments
-    .map((a) => a.document_id)
-    .filter((id): id is string => Boolean(id));
-  const safetyDocumentUrls: Record<string, string> = {};
-  if (safetyDocumentIds.length > 0) {
-    const { data: safetyDocs } = await adminClient
-      .from("house_documents")
-      .select("id, file_path")
-      .in("id", safetyDocumentIds);
-    await Promise.all(
-      (safetyDocs ?? []).map(async (d) => {
-        const { data } = await adminClient.storage
-          .from("house-documents")
-          .createSignedUrl(d.file_path as string, 3600);
-        if (data?.signedUrl) safetyDocumentUrls[d.id as string] = data.signedUrl;
-      })
-    );
-  }
-
-  const firstOfMonth = getHouseFirstOfMonth(houseTimezone);
-  const latestAssessmentThisMonth = safetyAssessments.some(
-    (a) => a.assessment_date >= firstOfMonth
-  );
+  const tabParam =
+    typeof searchParams?.tab === "string" ? searchParams.tab : "occupancy";
+  const rangeParam =
+    typeof searchParams?.range === "string" ? searchParams.range : "all_time";
+  const startParam =
+    typeof searchParams?.start === "string" ? searchParams.start : "";
+  const endParam =
+    typeof searchParams?.end === "string" ? searchParams.end : "";
+  const houseTimezone =
+    (house as { timezone?: string | null }).timezone || undefined;
 
   return (
     <div className="space-y-6">
@@ -264,13 +93,19 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
               {managerNames.length > 0 ? managerNames.join(", ") : "—"}
             </dd>
             <dt className="font-medium text-foreground/70">Created</dt>
-            <dd>{new Date(house.created_at).toLocaleDateString("en-US", { timeZone: "America/New_York" })}</dd>
+            <dd>
+              {new Date(house.created_at).toLocaleDateString("en-US", {
+                timeZone: "America/New_York",
+              })}
+            </dd>
           </dl>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <Badge variant="outline" className="text-base">
-            {occupiedBeds}/{totalBeds} beds occupied
-          </Badge>
+          <Suspense
+            fallback={<Skeleton className="h-6 w-32 rounded-full" />}
+          >
+            <BedCountBadge houseId={id} />
+          </Suspense>
         </div>
       </div>
 
@@ -279,7 +114,8 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
           after init" warning that fires when the user navigates between
           tab-stated URLs for this page. Each trigger is rendered as a Link
           so switching tabs updates the URL (and preserves state-of-house
-          query params). */}
+          query params). Each tab body is its own `<Suspense>` island; only
+          the active tab's data fetches. */}
       <Tabs value={tabParam}>
         <TabsList className="w-full overflow-x-auto justify-start no-scrollbar [&>a]:flex-none [&>a]:whitespace-nowrap [&>button]:flex-none [&>button]:whitespace-nowrap">
           <TabsTrigger
@@ -294,28 +130,28 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
             nativeButton={false}
             render={<Link href={`/houses/${id}?tab=residents`} />}
           >
-            Residents ({residents?.length ?? 0})
+            Residents
           </TabsTrigger>
           <TabsTrigger
             value="supplies"
             nativeButton={false}
             render={<Link href={`/houses/${id}?tab=supplies`} />}
           >
-            Supplies ({supplyItems.length})
+            Supplies
           </TabsTrigger>
           <TabsTrigger
             value="documents"
             nativeButton={false}
             render={<Link href={`/houses/${id}?tab=documents`} />}
           >
-            Documents ({houseDocuments.length})
+            Documents
           </TabsTrigger>
           <TabsTrigger
             value="safety"
             nativeButton={false}
             render={<Link href={`/houses/${id}?tab=safety`} />}
           >
-            Safety ({safetyAssessments.length})
+            Safety
           </TabsTrigger>
           <TabsTrigger
             value="state"
@@ -333,113 +169,83 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="occupancy" className="space-y-4 mt-4">
-          <div className="flex justify-end">
-            <AddRoomDialog houseId={id} />
-          </div>
-          <OccupancyGrid
-            rooms={roomsData}
-            houseId={id}
-            residents={residents ?? []}
-            userRole={user.role}
-          />
+        <TabsContent value="occupancy" className="mt-4">
+          {tabParam === "occupancy" && (
+            <Suspense
+              fallback={<ListSkeleton rows={3} rowClassName="h-32 w-full" />}
+            >
+              <OccupancySection houseId={id} userRole={user.role} />
+            </Suspense>
+          )}
         </TabsContent>
 
         <TabsContent value="residents" className="mt-4">
-          {residents && residents.length > 0 ? (
-            <div className="space-y-2">
-              {residents.map((r) => (
-                <Link key={r.id} href={`/residents/${r.id}`}>
-                  <Card className="hover:bg-muted/50 transition-colors">
-                    <CardContent className="flex items-center justify-between py-3">
-                      <div>
-                        <p className="font-medium">{r.full_name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Moved in:{" "}
-                          {formatDateOnly(r.move_in_date)}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {r.sobriety_date && (
-                          <span className="text-xs text-muted-foreground">
-                            {getDaysSober(r.sobriety_date)} days sober
-                          </span>
-                        )}
-                        <Badge variant="outline" className="capitalize">
-                          {r.status}
-                        </Badge>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <p className="text-muted-foreground py-8 text-center">
-              No active residents in this house
-            </p>
+          {tabParam === "residents" && (
+            <Suspense
+              fallback={<ListSkeleton rows={5} rowClassName="h-16 w-full" />}
+            >
+              <ResidentsSection houseId={id} />
+            </Suspense>
           )}
         </TabsContent>
 
         <TabsContent value="supplies" className="mt-4">
-          <SupplyList
-            houseId={id}
-            items={supplyItems}
-            canManage={canManage}
-          />
+          {tabParam === "supplies" && (
+            <Suspense
+              fallback={<ListSkeleton rows={5} rowClassName="h-14 w-full" />}
+            >
+              <SuppliesSection houseId={id} canManage={canManage} />
+            </Suspense>
+          )}
         </TabsContent>
 
         <TabsContent value="documents" className="mt-4">
-          <DocumentsList
-            houseId={id}
-            documents={houseDocuments}
-            canManage={canManage}
-            signedUrls={houseDocumentUrls}
-          />
+          {tabParam === "documents" && (
+            <Suspense
+              fallback={<ListSkeleton rows={4} rowClassName="h-20 w-full" />}
+            >
+              <DocumentsSection houseId={id} canManage={canManage} />
+            </Suspense>
+          )}
         </TabsContent>
 
         <TabsContent value="safety" className="mt-4">
-          <SafetyList
-            houseId={id}
-            canManage={canManage}
-            assessments={safetyAssessments}
-            documentUrls={safetyDocumentUrls}
-            latestThisMonth={latestAssessmentThisMonth}
-          />
+          {tabParam === "safety" && (
+            <Suspense
+              fallback={<ListSkeleton rows={4} rowClassName="h-20 w-full" />}
+            >
+              <SafetySection
+                houseId={id}
+                canManage={canManage}
+                houseTimezone={houseTimezone}
+              />
+            </Suspense>
+          )}
         </TabsContent>
 
         <TabsContent value="state" className="mt-4">
-          <StateOfHouseView
-            houseId={id}
-            range={rangeParam}
-            customStart={startParam}
-            customEnd={endParam}
-            rangeLabel={dateRange.label}
-            data={stateData}
-          />
+          {tabParam === "state" && (
+            <Suspense
+              fallback={<ListSkeleton rows={6} rowClassName="h-24 w-full" />}
+            >
+              <StateSection
+                houseId={id}
+                rangeParam={rangeParam}
+                startParam={startParam}
+                endParam={endParam}
+                houseTimezone={houseTimezone}
+              />
+            </Suspense>
+          )}
         </TabsContent>
 
         <TabsContent value="activity" className="mt-4">
-          {activity && activity.length > 0 ? (
-            <div className="space-y-3">
-              {activity.map((entry) => (
-                <div
-                  key={entry.id}
-                  className="flex items-start gap-3 text-sm border-b pb-3 last:border-0"
-                >
-                  <div className="flex-1">
-                    <p>{entry.description}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(entry.created_at).toLocaleString("en-US", { timeZone: "America/New_York" })}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-muted-foreground py-8 text-center">
-              No activity yet
-            </p>
+          {tabParam === "activity" && (
+            <Suspense
+              fallback={<ListSkeleton rows={8} rowClassName="h-10 w-full" />}
+            >
+              <ActivitySection houseId={id} />
+            </Suspense>
           )}
         </TabsContent>
       </Tabs>
