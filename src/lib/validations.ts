@@ -272,8 +272,26 @@ export const createDemeritSchema = z.object({
 export const createWarningSchema = z.object({
   resident_id: z.string().uuid("Resident is required"),
   house_id: z.string().uuid("House is required"),
-  reason: z.string().min(1, "Reason is required"),
-  category: z.string().optional(),
+  reason: z.string().min(1, "Reason is required").max(2000, "Reason too long"),
+  category: z.string().max(100).optional(),
+});
+
+export const editWarningSchema = z.object({
+  reason: z
+    .string()
+    .min(1, "Reason is required")
+    .max(2000, "Reason too long")
+    .optional(),
+  notes: z.string().max(5000, "Notes too long").nullish(),
+});
+
+export const editDemeritSchema = z.object({
+  reason: z
+    .string()
+    .min(1, "Reason is required")
+    .max(2000, "Reason too long")
+    .optional(),
+  notes: z.string().max(5000, "Notes too long").nullish(),
 });
 
 export const resolveDemeritSchema = z.object({

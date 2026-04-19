@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
-import { createWarningSchema } from "@/lib/validations";
+import { createWarningSchema, editWarningSchema } from "@/lib/validations";
 import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 
 export async function createWarning(
@@ -101,13 +101,16 @@ export async function editWarning(
   if (user.role === "resident") return { error: "Not authorized" };
   if (!warningId) return { error: "Warning ID is required" };
 
+  const parsed = editWarningSchema.safeParse({ reason, notes });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
   const supabase = await createClient();
 
   const { data: warning } = await supabase
     .from("warnings")
     .select("house_id")
     .eq("id", warningId)
-    .single();
+    .maybeSingle();
 
   if (!warning) return { error: "Warning not found" };
   if (user.role !== "admin" && !canAccessHouse(user, warning.house_id)) {
@@ -115,8 +118,9 @@ export async function editWarning(
   }
 
   const updates: Record<string, unknown> = {};
-  if (reason !== undefined) updates.reason = reason;
-  if (notes !== undefined) updates.notes = notes || null;
+  if (parsed.data.reason !== undefined) updates.reason = parsed.data.reason;
+  if (parsed.data.notes !== undefined)
+    updates.notes = parsed.data.notes || null;
   updates.updated_at = new Date().toISOString();
 
   const { error } = await supabase

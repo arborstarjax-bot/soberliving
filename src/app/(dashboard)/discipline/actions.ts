@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
-import { createDemeritSchema } from "@/lib/validations";
+import { createDemeritSchema, editDemeritSchema } from "@/lib/validations";
 import { getHouseToday, getHouseYesterday, isoDateInTz, DEFAULT_TIMEZONE } from "@/lib/timezone";
 import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 
@@ -113,13 +113,16 @@ export async function editDemerit(
 
   if (!demeritId) return { error: "Demerit ID is required" };
 
+  const parsed = editDemeritSchema.safeParse({ reason, notes });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
   const supabase = await createClient();
 
   const { data: demerit } = await supabase
     .from("demerits")
     .select("house_id")
     .eq("id", demeritId)
-    .single();
+    .maybeSingle();
 
   if (!demerit) return { error: "Demerit not found" };
   if (user.role !== "admin" && !canAccessHouse(user, demerit.house_id)) {
@@ -127,8 +130,9 @@ export async function editDemerit(
   }
 
   const updates: Record<string, unknown> = {};
-  if (reason !== undefined) updates.reason = reason;
-  if (notes !== undefined) updates.notes = notes || null;
+  if (parsed.data.reason !== undefined) updates.reason = parsed.data.reason;
+  if (parsed.data.notes !== undefined)
+    updates.notes = parsed.data.notes || null;
   updates.updated_at = new Date().toISOString();
 
   const { error } = await supabase
