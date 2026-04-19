@@ -71,6 +71,92 @@ export default async function SignCommitmentPage() {
 
   const isAmendment = Boolean(parentId);
 
+  // Surface move-in context on the contract itself so the resident
+  // sees exactly what was collected, any outstanding balance, and
+  // any house restrictions placed on them at check-in. Mirrors the
+  // paper contract where all of this is recorded inline on page 1.
+
+  // Restrictions created at intake for this resident/house. Uses
+  // the `is_house_commitment` flag that intake-review/actions.ts
+  // sets when inserting check-in restrictions.
+  const residentId = commitment.resident_id as string | null;
+  let restrictions: Array<{
+    restriction_type: string;
+    description: string;
+    end_date: string | null;
+  }> = [];
+  if (residentId) {
+    const { data: rows } = await adminClient
+      .from("restrictions")
+      .select("restriction_type, description, end_date")
+      .eq("resident_id", residentId)
+      .eq("is_house_commitment", true)
+      .order("created_at", { ascending: true });
+    restrictions = (rows ?? []).map((r) => ({
+      restriction_type: r.restriction_type as string,
+      description: r.description as string,
+      end_date: (r.end_date as string | null) ?? null,
+    }));
+  }
+
+  // Move-in payment summary. Look for the single payments row the
+  // move-in flow records (payment_type='deposit', recorded at intake)
+  // and its apportioned allocations against admin_fee + rent charges.
+  let moveInSummary: {
+    totalCollected: number;
+    adminFeeApplied: number;
+    rentApplied: number;
+    partialReason: string | null;
+    paidAt: string;
+    method: string;
+  } | null = null;
+  if (residentId) {
+    const { data: moveInPayment } = await adminClient
+      .from("payments")
+      .select("id, amount, payment_method, note, paid_at, due_date")
+      .eq("resident_id", residentId)
+      .eq("payment_type", "deposit")
+      .eq("due_date", commitment.commitment_start_date)
+      .order("paid_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (moveInPayment) {
+      const { data: charges } = await adminClient
+        .from("payment_charges")
+        .select("charge_type, paid_amount, amount")
+        .eq("resident_id", residentId)
+        .eq("commitment_id", commitment.id)
+        .eq("due_date", commitment.commitment_start_date)
+        .in("charge_type", ["admin_fee", "rent"]);
+
+      let adminFeeApplied = 0;
+      let rentApplied = 0;
+      for (const c of charges ?? []) {
+        const paid = Number(c.paid_amount ?? 0);
+        if ((c.charge_type as string) === "admin_fee") {
+          adminFeeApplied = paid;
+        } else if ((c.charge_type as string) === "rent") {
+          rentApplied = paid;
+        }
+      }
+
+      moveInSummary = {
+        totalCollected: Number(moveInPayment.amount ?? 0),
+        adminFeeApplied,
+        rentApplied,
+        partialReason: (moveInPayment.note as string | null) ?? null,
+        paidAt: moveInPayment.paid_at as string,
+        method: moveInPayment.payment_method as string,
+      };
+    }
+  }
+
+  const skipInitialAdminFee =
+    (commitment.skip_initial_admin_fee as boolean | null) === true;
+  const isExistingTenant =
+    (commitment.billing_anchor_date as string | null) !== null;
+
   return (
     <div className="space-y-6">
       <div className="text-center">
@@ -104,6 +190,10 @@ export default async function SignCommitmentPage() {
           (commitment.amendment_reason as string | null) ?? null
         }
         parentTerms={parentTerms}
+        skipInitialAdminFee={skipInitialAdminFee}
+        isExistingTenant={isExistingTenant}
+        restrictions={restrictions}
+        moveInSummary={moveInSummary}
       />
     </div>
   );

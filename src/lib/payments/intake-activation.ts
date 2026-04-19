@@ -52,6 +52,10 @@ export interface InitialChargesInput {
   adminFee: number;
   frequency: PaymentFrequency;
   existingTenant: boolean;
+  // When true, the admin-fee charge is not opened. Used for both
+  // new intakes where the fee was paid prior to move-in or waived,
+  // and existing-tenant activations (caught up on everything).
+  skipAdminFee?: boolean;
 }
 
 export interface InitialChargeRow {
@@ -72,7 +76,7 @@ export function buildInitialCharges(
 
   const rows: InitialChargeRow[] = [];
 
-  if (input.adminFee > 0) {
+  if (input.adminFee > 0 && !input.skipAdminFee) {
     rows.push({
       resident_id: input.residentId,
       house_id: input.houseId,

@@ -61,6 +61,19 @@ describe("buildInitialCharges", () => {
     expect(rows[0].charge_type).toBe("rent");
   });
 
+  it("omits admin-fee row when skipAdminFee is true (paid prior / waived)", () => {
+    const rows = buildInitialCharges({ ...base, skipAdminFee: true });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].charge_type).toBe("rent");
+    expect(rows[0].amount).toBe(225);
+  });
+
+  it("emits admin-fee row when skipAdminFee is false (default)", () => {
+    const rows = buildInitialCharges({ ...base, skipAdminFee: false });
+    expect(rows).toHaveLength(2);
+    expect(rows[0].charge_type).toBe("admin_fee");
+  });
+
   it("emits admin-fee + rent rows for normal new-intake", () => {
     const rows = buildInitialCharges(base);
     expect(rows).toHaveLength(2);

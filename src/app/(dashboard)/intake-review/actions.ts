@@ -217,8 +217,10 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
         data.existingTenant && data.nextRentDueDate
           ? data.nextRentDueDate
           : null,
-      skip_initial_admin_fee:
-        data.existingTenant && data.skipInitialAdminFee ? true : false,
+      // Admin-fee-paid-prior applies to both new intakes (resident
+      // paid the admin fee before move-in, or the fee was waived)
+      // and existing-tenant activations (already caught up).
+      skip_initial_admin_fee: data.skipInitialAdminFee === true,
     })
     .select("id")
     .single();
@@ -273,6 +275,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     adminFee: data.adminFee,
     frequency,
     existingTenant: data.existingTenant ?? false,
+    skipAdminFee: data.skipInitialAdminFee === true,
   });
 
   if (initialCharges.length > 0) {
