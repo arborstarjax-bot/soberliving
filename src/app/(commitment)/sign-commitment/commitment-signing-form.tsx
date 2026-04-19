@@ -79,6 +79,42 @@ export function CommitmentSigningForm({
   const frequencyLabel = isWeekly ? "Weekly" : "Monthly";
   const cycleLower = isWeekly ? "weekly" : "monthly";
   const perCycle = isWeekly ? "/wk" : "/mo";
+
+  // Page-2 paper-contract rate clause needs the day-of-month (for
+  // monthly) or the weekday name (for weekly) derived from the
+  // commitment start date. We also render a long-form date for the
+  // "commencing …" phrase so the printed contract reads naturally.
+  // commitmentStartDate is an ISO date string (YYYY-MM-DD) in the
+  // house timezone; parse manually to avoid UTC drift.
+  const [csYear, csMonth, csDay] = (commitmentStartDate || "")
+    .split("-")
+    .map((n) => Number(n));
+  const startDateObj =
+    Number.isFinite(csYear) && Number.isFinite(csMonth) && Number.isFinite(csDay)
+      ? new Date(csYear, (csMonth ?? 1) - 1, csDay ?? 1)
+      : null;
+  const weekdayName = startDateObj
+    ? startDateObj.toLocaleDateString("en-US", { weekday: "long" })
+    : "the anchor weekday";
+  const dayOfMonth = startDateObj ? startDateObj.getDate() : null;
+  const dayOfMonthOrdinal = (() => {
+    if (dayOfMonth == null) return "the agreed";
+    const n = dayOfMonth;
+    const mod100 = n % 100;
+    if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+    const mod10 = n % 10;
+    if (mod10 === 1) return `${n}st`;
+    if (mod10 === 2) return `${n}nd`;
+    if (mod10 === 3) return `${n}rd`;
+    return `${n}th`;
+  })();
+  const startDateLong = startDateObj
+    ? startDateObj.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
+    : commitmentStartDate;
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -284,17 +320,32 @@ export function CommitmentSigningForm({
     drawText("FINANCIAL & HOUSE TERMS:", 50, y, 12, true);
     y -= 18;
 
+    // Rate clause — mirrors page 2 of the paper JSL contract.
+    // Monthly and weekly are parallel phrasings; the amendment flow
+    // lets staff switch frequency via /payments → Edit Terms, which
+    // re-renders this block at the chosen cadence on the next
+    // commitment PDF.
+    const rateClause = isWeekly
+      ? `1. SOBER LIVING FEE: The Sober Living Fee shall be at the weekly rate of $${rentAmount.toFixed(2)} per week, payable every ${weekdayName} of each week, commencing ${startDateLong}. Rent is collected on the day before each weekly cycle begins.`
+      : `1. SOBER LIVING FEE: The Sober Living Fee shall be at the monthly rate of $${rentAmount.toFixed(2)} per month, payable on the ${dayOfMonthOrdinal} day of each month, commencing ${startDateLong}. Rent is collected on the day before each monthly cycle begins.`;
+    drawParagraph(rateClause);
     drawParagraph(
-      `1. RENT: The ${cycleLower} sober living fee is $${rentAmount.toFixed(2)}, due ${rentDueDate}. Rent is collected on the day before each ${cycleLower} cycle begins. Payment frequency: ${frequencyLabel}.`
+      `2. ADMINISTRATIVE FEE: The Sober Living Administrative Fee (nonrefundable) shall be $${adminFee.toFixed(2)}, payable upon entering JSL. This one-time fee is charged once at the start of the resident's tenancy and is never re-charged by a payment-terms amendment.`
+    );
+    drawParagraph("3. TERMINATION OF RESIDENCY:", { spacingAfter: 2 });
+    for (const item of [
+      "A 30-day written notice is required prior to terminating services.",
+      "This must be done at the beginning of the 6th month or the beginning of any month after the 6-month commitment is completed.",
+      "Upon leaving, Resident's bedroom should be thoroughly cleaned.",
+    ]) {
+      drawParagraph(`\u2022 ${item}`, { indent: 14, spacingAfter: 2 });
+    }
+    y -= 4;
+    drawParagraph(
+      "4. EARLY MOVE-OUT: Leaving prior to the end of the 6-month commitment requires a 48 hours' notice and no refunds will be issued."
     );
     drawParagraph(
-      `2. ADMINISTRATIVE MOVE-IN FEE: A one-time, non-refundable administrative fee of $${adminFee.toFixed(2)} is due upon move-in. It is charged once at the start of the resident's tenancy and is never re-charged by a payment-terms amendment.`
-    );
-    drawParagraph(
-      "3. EARLY MOVE-OUT: Resident must provide at least 48 hours written notice prior to early departure."
-    );
-    drawParagraph(
-      "4. HOUSE RULES: Resident agrees to abide by all house rules, including but not limited to:",
+      "5. HOUSE RULES: Resident agrees to abide by all house rules, including but not limited to:",
       { spacingAfter: 2 }
     );
     for (const rule of [
@@ -309,10 +360,10 @@ export function CommitmentSigningForm({
     }
     y -= 4;
     drawParagraph(
-      "5. VIOLATIONS: Any violation of house rules may result in demerits, fines, or discharge."
+      "6. VIOLATIONS: Any violation of house rules may result in demerits, fines, or discharge."
     );
     drawParagraph(
-      "6. DISCHARGE: Management reserves the right to discharge any resident for rule violations, non-payment of fees, or behavior deemed harmful to the recovery community."
+      "7. DISCHARGE: Management reserves the right to discharge any resident for rule violations, non-payment of fees, or behavior deemed harmful to the recovery community."
     );
 
     if (notes) {
@@ -712,25 +763,60 @@ export function CommitmentSigningForm({
           <h3 className="text-sm font-semibold">Financial &amp; House Terms</h3>
           <ol className="space-y-2 text-sm">
             <li>
-              <strong>RENT:</strong> The {cycleLower} sober living fee is $
-              {rentAmount.toFixed(2)}, due {rentDueDate}. Rent is collected
-              on the day before each {cycleLower} cycle begins. Payment
-              frequency: {frequencyLabel}.
+              <strong>SOBER LIVING FEE:</strong>{" "}
+              {isWeekly ? (
+                <>
+                  The Sober Living Fee shall be at the weekly rate of $
+                  {rentAmount.toFixed(2)} per week, payable every{" "}
+                  {weekdayName} of each week, commencing {startDateLong}.
+                  Rent is collected on the day before each weekly cycle
+                  begins.
+                </>
+              ) : (
+                <>
+                  The Sober Living Fee shall be at the monthly rate of $
+                  {rentAmount.toFixed(2)} per month, payable on the{" "}
+                  {dayOfMonthOrdinal} day of each month, commencing{" "}
+                  {startDateLong}. Rent is collected on the day before each
+                  monthly cycle begins.
+                </>
+              )}
             </li>
             <li>
-              <strong>ADMINISTRATIVE MOVE-IN FEE:</strong> A one-time,
-              non-refundable administrative fee of ${adminFee.toFixed(2)} is
-              due upon move-in. It is charged once at the start of tenancy
-              and is never re-charged by a payment-terms amendment.
+              <strong>ADMINISTRATIVE FEE:</strong> The Sober Living
+              Administrative Fee (nonrefundable) shall be $
+              {adminFee.toFixed(2)}, payable upon entering JSL. This
+              one-time fee is charged once at the start of the
+              resident&apos;s tenancy and is never re-charged by a
+              payment-terms amendment.
             </li>
             <li>
-              <strong>EARLY MOVE-OUT:</strong> Resident must provide at
-              least 48 hours written notice prior to early departure.
+              <strong>TERMINATION OF RESIDENCY:</strong>
+              <ul className="mt-1 space-y-1 list-disc pl-5">
+                <li>
+                  A 30-day written notice is required prior to terminating
+                  services.
+                </li>
+                <li>
+                  This must be done at the beginning of the 6th month or
+                  the beginning of any month after the 6-month commitment
+                  is completed.
+                </li>
+                <li>
+                  Upon leaving, Resident&apos;s bedroom should be
+                  thoroughly cleaned.
+                </li>
+              </ul>
+            </li>
+            <li>
+              <strong>EARLY MOVE-OUT:</strong> Leaving prior to the end of
+              the 6-month commitment requires a 48 hours&apos; notice and
+              no refunds will be issued.
             </li>
             <li>
               <strong>HOUSE RULES:</strong> Resident agrees to abide by all
               house rules, including but not limited to:
-              <ul className="mt-1 space-y-1">
+              <ul className="mt-1 space-y-1 list-disc pl-5">
                 <li>Maintain sobriety at all times while on the premises</li>
                 <li>Attend required house meetings and programs</li>
                 <li>Complete assigned chores on schedule</li>
