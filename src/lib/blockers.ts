@@ -51,7 +51,18 @@ export async function maybeAutoArchiveBlocker(
       .in("house_id", hids);
     targetUserIds = (rows ?? []).map((r) => r.user_id as string);
   } else if (targetType === "residents") {
-    targetUserIds = (blocker.target_user_ids as string[] | null) ?? [];
+    // Filter against currently active residents so inactive users
+    // (departed residents, deactivated accounts) don't permanently
+    // pin the notice as unarchived. Inactive users can't ack anyway
+    // — the blocker gate only fires for active residents.
+    const rawIds = (blocker.target_user_ids as string[] | null) ?? [];
+    if (rawIds.length === 0) return { archived: false };
+    const { data: rows } = await admin
+      .from("residents")
+      .select("user_id")
+      .eq("status", "active")
+      .in("user_id", rawIds);
+    targetUserIds = (rows ?? []).map((r) => r.user_id as string);
   } else {
     return { archived: false };
   }
