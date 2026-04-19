@@ -15,6 +15,20 @@ import {
 import { sendNotification } from "@/lib/notifications";
 import { getHouseToday } from "@/lib/timezone";
 
+// Shapes returned by PostgREST joins. TS can't parse the select string,
+// so we narrow the joined rows centrally instead of casting at each access.
+type RoomJoin = { house_id?: string; name?: string } | null;
+type BedWithRoom = {
+  id?: string;
+  label?: string | null;
+  room: RoomJoin;
+} | null;
+type BedAssignmentWithBed = {
+  resident_id: string;
+  bed_id: string;
+  bed: { label?: string | null; room: { name?: string; house_id?: string } | null } | null;
+} | null;
+
 // --- Residents ---
 
 export async function createResident(
@@ -417,14 +431,14 @@ export async function transferResident(
   // 23505 catch on the insert at the bottom.
   const cleanTargetBedId = targetBedId || null;
   if (cleanTargetBedId) {
-    const { data: bed } = await supabase
+    const { data: rawBed } = await supabase
       .from("beds")
       .select("id, label, room:rooms(house_id, name)")
       .eq("id", cleanTargetBedId)
       .maybeSingle();
 
-    const bedHouseId = (bed?.room as unknown as { house_id: string } | null)
-      ?.house_id;
+    const bed = rawBed as unknown as BedWithRoom;
+    const bedHouseId = bed?.room?.house_id;
     if (!bed || bedHouseId !== targetHouseId) {
       return { error: "Selected bed does not belong to the target house" };
     }
@@ -711,11 +725,12 @@ export async function assignBed(
   }
 
   // Get bed details for logging
-  const { data: bed } = await supabase
+  const { data: rawBed } = await supabase
     .from("beds")
     .select("label, room:rooms(name)")
     .eq("id", bedId)
     .maybeSingle();
+  const bed = rawBed as unknown as BedWithRoom;
 
   const { data: resident } = await supabase
     .from("residents")
@@ -730,7 +745,7 @@ export async function assignBed(
     eventType: "bed_assigned",
     entityType: "bed_assignment",
     entityId: data.id,
-    description: `${resident?.full_name} assigned to ${(bed?.room as unknown as { name: string } | null)?.name} / ${bed?.label} by ${user.full_name}`,
+    description: `${resident?.full_name} assigned to ${bed?.room?.name} / ${bed?.label} by ${user.full_name}`,
     metadata: { bed_id: bedId },
   });
 
@@ -741,7 +756,7 @@ export async function assignBed(
     .maybeSingle();
 
   if (residentUser?.user_id) {
-    const roomName = (bed?.room as unknown as { name: string } | null)?.name ?? "your room";
+    const roomName = bed?.room?.name ?? "your room";
     await sendNotification({
       userId: residentUser.user_id,
       type: "bed_assigned",
@@ -844,11 +859,12 @@ export async function changeResidentBed(
 
     if (vacateError) return { error: vacateError.message };
 
-    const { data: bed } = await supabase
+    const { data: rawBed } = await supabase
       .from("beds")
       .select("label, room:rooms(name)")
       .eq("id", bedId)
       .maybeSingle();
+    const bed = rawBed as unknown as BedWithRoom;
 
     await logActivity({
       houseId,
@@ -857,7 +873,7 @@ export async function changeResidentBed(
       eventType: "bed_assigned",
       entityType: "bed_assignment",
       entityId: data.id,
-      description: `${resident?.full_name} moved to ${(bed?.room as unknown as { name: string } | null)?.name} / ${bed?.label} by ${user.full_name}`,
+      description: `${resident?.full_name} moved to ${bed?.room?.name} / ${bed?.label} by ${user.full_name}`,
       metadata: { bed_id: bedId },
     });
 
@@ -868,7 +884,7 @@ export async function changeResidentBed(
       .maybeSingle();
 
     if (residentUser?.user_id) {
-      const roomName = (bed?.room as unknown as { name: string } | null)?.name ?? "your room";
+      const roomName = bed?.room?.name ?? "your room";
       await sendNotification({
         userId: residentUser.user_id,
         type: "bed_changed",
@@ -909,15 +925,16 @@ export async function vacateBed(assignmentId: string) {
   const user = await requireAuth();
   const supabase = await createClient();
 
-  const { data: assignment } = await supabase
+  const { data: rawAssignment } = await supabase
     .from("bed_assignments")
     .select("resident_id, bed_id, bed:beds(label, room:rooms(name, house_id))")
     .eq("id", assignmentId)
     .maybeSingle();
 
+  const assignment = rawAssignment as unknown as BedAssignmentWithBed;
   if (!assignment) return { error: "Assignment not found" };
 
-  const houseId = (assignment.bed as unknown as { room: { house_id: string } } | null)?.room?.house_id ?? "";
+  const houseId = assignment.bed?.room?.house_id ?? "";
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
     return { error: "Not authorized" };
   }

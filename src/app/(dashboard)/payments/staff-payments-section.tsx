@@ -254,29 +254,36 @@ export async function StaffPaymentsSection({ user }: { user: SessionUser }) {
 
         <TabsContent value="outstanding" className="mt-4">
           <OutstandingByResident
-            charges={dueChargeRows.map((c) => ({
+            charges={dueChargeRows.map((c) => {
+              const resident = Array.isArray(c.resident) ? c.resident[0] : c.resident;
+              const house = Array.isArray(c.house) ? c.house[0] : c.house;
+              return {
               id: c.id as string,
               resident_id: c.resident_id as string,
               resident_name:
-                (c.resident as unknown as { full_name: string } | null)
-                  ?.full_name ?? "Unknown",
+                (resident as { full_name?: string } | null)?.full_name ?? "Unknown",
               house_id: c.house_id as string,
               house_name:
-                (c.house as unknown as { name: string } | null)?.name ?? "",
+                (house as { name?: string } | null)?.name ?? "",
               charge_type: c.charge_type as string,
               amount: Number(c.amount),
               paid_amount: Number(c.paid_amount),
               due_date: c.due_date as string,
               period_start: (c.period_start as string | null) ?? null,
               period_end: (c.period_end as string | null) ?? null,
-            }))}
+              };
+            })}
             todayIso={todayIso}
           />
         </TabsContent>
 
         <TabsContent value="paid" className="mt-4">
           <PaidLedger
-            payments={(payments ?? []).map((p) => ({
+            payments={(payments ?? []).map((p) => {
+              const resident = Array.isArray(p.resident) ? p.resident[0] : p.resident;
+              const house = Array.isArray(p.house) ? p.house[0] : p.house;
+              const recorder = Array.isArray(p.recorder) ? p.recorder[0] : p.recorder;
+              return {
               id: p.id as string,
               amount: Number(p.amount),
               payment_type: (p.payment_type as string | null) ?? null,
@@ -288,14 +295,13 @@ export async function StaffPaymentsSection({ user }: { user: SessionUser }) {
               receipt_storage_path:
                 (p.receipt_storage_path as string | null) ?? null,
               resident_name:
-                (p.resident as unknown as { full_name: string } | null)
-                  ?.full_name ?? "Unknown",
+                (resident as { full_name?: string } | null)?.full_name ?? "Unknown",
               house_name:
-                (p.house as unknown as { name: string } | null)?.name ?? "",
+                (house as { name?: string } | null)?.name ?? "",
               recorder_name:
-                (p.recorder as unknown as { full_name: string } | null)
-                  ?.full_name ?? "",
-            }))}
+                (recorder as { full_name?: string } | null)?.full_name ?? "",
+              };
+            })}
             userRole={user.role}
             todayIso={todayIso}
             monthStartIso={monthStartIso}

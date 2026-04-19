@@ -7,6 +7,38 @@ import { formatDateOnly } from "@/lib/timezone";
 import type { SessionUser } from "@/lib/types";
 import { LeaveReviewActions } from "./leave-review-actions";
 
+// Shapes returned by the PostgREST join on leave_requests. TS can't
+// parse the `.select()` string, so we narrow once here instead of
+// sprinkling `as unknown as` at every access site.
+type LeaveResidentJoin = {
+  id: string;
+  full_name: string;
+  house_id: string;
+  user_id: string | null;
+};
+type LeaveCoverJoin = {
+  id: string;
+  full_name: string;
+  user_id: string | null;
+};
+type LeaveRequestListRow = {
+  id: string;
+  status: string;
+  resident_id: string;
+  covering_resident_id: string | null;
+  departure_date: string | null;
+  expected_return_date: string | null;
+  reason_for_pass: string | null;
+  cover_approved_at: string | null;
+  house_manager_approved_at: string | null;
+  admin_approved_at: string | null;
+  rejection_step: string | null;
+  denial_note: string | null;
+  created_at: string | null;
+  resident: LeaveResidentJoin | null;
+  covering_resident: LeaveCoverJoin | null;
+};
+
 function statusLabel(status: string) {
   switch (status) {
     case "pending_cover":
@@ -90,12 +122,11 @@ export async function LeaveRequestsTabsSection({
 
   const { data: allRequests } = await query;
 
-  let requests = allRequests ?? [];
+  let requests = (allRequests ?? []) as unknown as LeaveRequestListRow[];
   if (houseFilter && user.role !== "resident") {
-    requests = requests.filter((r) => {
-      const resident = r.resident as unknown as { house_id: string } | null;
-      return resident ? houseFilter.includes(resident.house_id) : false;
-    });
+    requests = requests.filter((r) =>
+      r.resident ? houseFilter.includes(r.resident.house_id) : false
+    );
   }
 
   const pendingAll = requests.filter(
@@ -151,12 +182,8 @@ export async function LeaveRequestsTabsSection({
         {pendingAll.length > 0 ? (
           <div className="space-y-3">
             {pendingAll.map((lr) => {
-              const resident = lr.resident as unknown as {
-                full_name: string;
-                house_id: string;
-                user_id: string | null;
-              } | null;
-              const coverResident = lr.covering_resident as unknown as {
+              const resident = lr.resident;
+              const coverResident = lr.covering_resident as {
                 full_name: string;
                 user_id: string | null;
               } | null;
@@ -244,9 +271,7 @@ export async function LeaveRequestsTabsSection({
         {approved.length > 0 ? (
           <div className="space-y-2">
             {approved.map((lr) => {
-              const resident = lr.resident as unknown as {
-                full_name: string;
-              } | null;
+              const resident = lr.resident;
               return (
                 <Card key={lr.id}>
                   <CardContent className="flex items-center justify-between py-3">
@@ -279,9 +304,7 @@ export async function LeaveRequestsTabsSection({
         {others.length > 0 ? (
           <div className="space-y-2">
             {others.map((lr) => {
-              const resident = lr.resident as unknown as {
-                full_name: string;
-              } | null;
+              const resident = lr.resident;
               return (
                 <Card key={lr.id}>
                   <CardContent className="flex items-center justify-between py-3">

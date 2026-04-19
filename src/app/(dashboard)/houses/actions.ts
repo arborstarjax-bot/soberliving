@@ -372,7 +372,10 @@ export async function updateBed(
     .single();
 
   if (!bed) return { error: "Bed not found" };
-  const houseId = (bed.rooms as unknown as { house_id: string })?.house_id;
+  const bedRoom = (Array.isArray(bed.rooms) ? bed.rooms[0] : bed.rooms) as
+    | { house_id: string }
+    | null;
+  const houseId = bedRoom?.house_id ?? "";
 
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
     return { error: "Not authorized" };
@@ -417,7 +420,10 @@ export async function deleteBed(
     .single();
 
   if (!bed) return { error: "Bed not found" };
-  const houseId = (bed.rooms as unknown as { house_id: string })?.house_id;
+  const bedRoom = (Array.isArray(bed.rooms) ? bed.rooms[0] : bed.rooms) as
+    | { house_id: string }
+    | null;
+  const houseId = bedRoom?.house_id ?? "";
 
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
     return { error: "Not authorized" };
@@ -490,7 +496,10 @@ export async function toggleBedEmpty(bedId: string, houseId: string) {
   if (!bed) return { error: "Bed not found" };
 
   // Verify the bed actually belongs to the claimed house
-  const actualHouseId = (bed.rooms as unknown as { house_id: string })?.house_id;
+  const bedRoom = (Array.isArray(bed.rooms) ? bed.rooms[0] : bed.rooms) as
+    | { house_id: string }
+    | null;
+  const actualHouseId = bedRoom?.house_id;
   if (actualHouseId !== houseId) return { error: "Not authorized" };
 
   // Toggle: if label ends with " [Not Available]" or legacy " [Empty]",

@@ -76,7 +76,11 @@ export default async function IncidentsPage({ searchParams }: IncidentsPageProps
       ) : (
         <>
         <div className="space-y-2">
-          {(incidents ?? []).map((inc) => (
+          {(incidents ?? []).map((inc) => {
+            const resident = inc.resident as { full_name?: string } | null;
+            const house = inc.house as { name?: string } | null;
+            const reporter = inc.reporter as { full_name?: string } | null;
+            return (
             <Card key={inc.id}>
               <CardContent className="py-3">
                 <div className="flex items-center justify-between mb-1">
@@ -94,7 +98,7 @@ export default async function IncidentsPage({ searchParams }: IncidentsPageProps
                       {inc.severity}
                     </Badge>
                     <span className="font-medium text-sm">
-                      {(inc.resident as unknown as { full_name: string } | null)?.full_name}
+                      {resident?.full_name}
                     </span>
                   </div>
                   <span className="text-xs text-muted-foreground">
@@ -105,15 +109,16 @@ export default async function IncidentsPage({ searchParams }: IncidentsPageProps
                 <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
                   {inc.category && <span>Category: {inc.category}</span>}
                   <span>
-                    · {(inc.house as unknown as { name: string } | null)?.name}
+                    · {house?.name}
                   </span>
                   <span>
-                    · Reported by {(inc.reporter as unknown as { full_name: string } | null)?.full_name}
+                    · Reported by {reporter?.full_name}
                   </span>
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </div>
         <Pagination
           meta={meta}

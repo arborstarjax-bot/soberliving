@@ -183,7 +183,7 @@ export async function issueChoreWarning(signoffId: string, extraNote?: string) {
 
   const supabase = await createClient();
 
-  const { data: signoff } = await supabase
+  const { data: rawSignoff } = await supabase
     .from("chore_signoffs")
     .select(
       "id, sign_off_date, rotation_assignment:chore_rotation_assignments(resident_id, chore:chores(name, house_id))"
@@ -191,13 +191,17 @@ export async function issueChoreWarning(signoffId: string, extraNote?: string) {
     .eq("id", signoffId)
     .single();
 
+  const signoff = rawSignoff as unknown as {
+    id: string;
+    sign_off_date: string | null;
+    rotation_assignment: {
+      resident_id: string;
+      chore: { name: string; house_id: string } | null;
+    } | null;
+  } | null;
   if (!signoff) return { error: "Signoff not found" };
 
-  const ra = signoff.rotation_assignment as unknown as {
-    resident_id: string;
-    chore: { name: string; house_id: string } | null;
-  } | null;
-
+  const ra = signoff.rotation_assignment;
   if (!ra?.chore) return { error: "Chore not found" };
   if (user.role !== "admin" && !canAccessHouse(user, ra.chore.house_id)) {
     return { error: "Not authorized" };
@@ -287,7 +291,7 @@ export async function issueChoreDemerit(signoffId: string, extraNote?: string) {
 
   const supabase = await createClient();
 
-  const { data: signoff } = await supabase
+  const { data: rawSignoff } = await supabase
     .from("chore_signoffs")
     .select(
       "id, sign_off_date, rotation_assignment:chore_rotation_assignments(resident_id, chore:chores(name, house_id))"
@@ -295,13 +299,17 @@ export async function issueChoreDemerit(signoffId: string, extraNote?: string) {
     .eq("id", signoffId)
     .single();
 
+  const signoff = rawSignoff as unknown as {
+    id: string;
+    sign_off_date: string | null;
+    rotation_assignment: {
+      resident_id: string;
+      chore: { name: string; house_id: string } | null;
+    } | null;
+  } | null;
   if (!signoff) return { error: "Signoff not found" };
 
-  const ra = signoff.rotation_assignment as unknown as {
-    resident_id: string;
-    chore: { name: string; house_id: string } | null;
-  } | null;
-
+  const ra = signoff.rotation_assignment;
   if (!ra?.chore) return { error: "Chore not found" };
   if (user.role !== "admin" && !canAccessHouse(user, ra.chore.house_id)) {
     return { error: "Not authorized" };

@@ -252,14 +252,17 @@ export async function getCheckInBatches() {
       createdAt: b.created_at,
       completedCount: completed,
       totalCount: total,
-      responses: batchResponses.map((r) => ({
+      responses: batchResponses.map((r) => {
+        const rel = Array.isArray(r.resident) ? r.resident[0] : r.resident;
+        return {
         id: r.id,
-        residentName: (r.resident as unknown as { full_name: string })?.full_name ?? "Unknown",
+        residentName: (rel as { full_name?: string } | null)?.full_name ?? "Unknown",
         status: r.status as string,
         completedAt: r.completed_at as string | null,
         formData: r.form_data as Record<string, unknown> | null,
         houseId: r.house_id as string,
-      })),
+        };
+      }),
     };
   });
 
