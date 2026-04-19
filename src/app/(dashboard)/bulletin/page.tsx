@@ -7,6 +7,31 @@ import { Pagination } from "@/components/pagination";
 import { getPageParams, buildPaginationMeta } from "@/lib/pagination";
 import { RefreshOnMount } from "@/components/refresh-on-mount";
 
+type AuthorWithSobriety = {
+  full_name: string;
+  user_roles: Array<{ role: string }> | { role: string } | null;
+  residents:
+    | Array<{ sobriety_date: string | null; status: string | null }>
+    | { sobriety_date: string | null; status: string | null }
+    | null;
+};
+
+/**
+ * From the residents rows joined onto a users author, pick the
+ * sobriety_date of the currently active resident row. A single user
+ * can have multiple historical resident records (past moves between
+ * houses); we always surface the *active* one for the chip. Returns
+ * null when there is no active row or no date set.
+ */
+function pickActiveSobrietyDate(
+  residents: AuthorWithSobriety["residents"] | undefined
+): string | null {
+  if (!residents) return null;
+  const list = Array.isArray(residents) ? residents : [residents];
+  const active = list.find((r) => r?.status === "active");
+  return active?.sobriety_date ?? null;
+}
+
 /** Parse photo_url field — handles both legacy single URL and new JSON array format */
 function parsePhotoUrls(raw: string | null): string[] {
   if (!raw) return [];
@@ -90,7 +115,7 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
   // show at the top regardless of which page the user is on, and only
   // the non-pinned tail is paginated (20 per page).
   const pinnedSelect =
-    "*, author:users!author_id(full_name, user_roles(role)), house:houses(name)";
+    "*, author:users!author_id(full_name, user_roles(role), residents(sobriety_date, status)), house:houses(name)";
 
   // Exclude ride_share posts — those render on their own tab at
   // /bulletin/ride-share. `.or("post_type.eq.standard,post_type.is.null")`
@@ -144,7 +169,7 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
   const postIds = (posts ?? []).map((p) => p.id as string);
   const likesMap: Record<string, number> = {};
   const userLikedSet = new Set<string>();
-  const commentsMap: Record<string, Array<{ id: string; user_id: string; content: string; created_at: string; author_name: string; author_role: string }>> = {};
+  const commentsMap: Record<string, Array<{ id: string; user_id: string; content: string; created_at: string; author_name: string; author_role: string; author_sobriety_date: string | null }>> = {};
 
   if (postIds.length > 0) {
     const { data: likes } = await supabase
@@ -159,14 +184,14 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
 
     const { data: comments } = await supabase
       .from("bulletin_comments")
-      .select("id, post_id, user_id, content, created_at, author:users!user_id(full_name, user_roles(role))")
+      .select("id, post_id, user_id, content, created_at, author:users!user_id(full_name, user_roles(role), residents(sobriety_date, status))")
       .in("post_id", postIds)
       .order("created_at", { ascending: true });
 
     for (const c of comments ?? []) {
       const authorData = Array.isArray(c.author)
-        ? (c.author as Array<{ full_name: string; user_roles: Array<{ role: string }> | { role: string } | null }>)[0]
-        : (c.author as { full_name: string; user_roles: Array<{ role: string }> | { role: string } | null } | null);
+        ? (c.author as Array<AuthorWithSobriety>)[0]
+        : (c.author as AuthorWithSobriety | null);
 
       const roleRaw = authorData?.user_roles;
       const role = Array.isArray(roleRaw) ? roleRaw[0]?.role ?? "resident" : (roleRaw as { role: string } | null)?.role ?? "resident";
@@ -178,6 +203,7 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
         created_at: c.created_at as string,
         author_name: authorData?.full_name ?? "Unknown",
         author_role: role,
+        author_sobriety_date: pickActiveSobrietyDate(authorData?.residents),
       };
       const pid = c.post_id as string;
       if (!commentsMap[pid]) commentsMap[pid] = [];
@@ -188,8 +214,8 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
   // Normalize for client
   const normalizedPosts = (posts ?? []).map((post) => {
     const authorData = Array.isArray(post.author)
-      ? (post.author as Array<{ full_name: string; user_roles: Array<{ role: string }> | { role: string } | null }>)[0]
-      : (post.author as { full_name: string; user_roles: Array<{ role: string }> | { role: string } | null } | null);
+      ? (post.author as Array<AuthorWithSobriety>)[0]
+      : (post.author as AuthorWithSobriety | null);
 
     const roleRaw = authorData?.user_roles;
     const authorRole = Array.isArray(roleRaw) ? roleRaw[0]?.role ?? "resident" : (roleRaw as { role: string } | null)?.role ?? "resident";
@@ -210,6 +236,7 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
       created_at: post.created_at as string,
       author_name: authorData?.full_name ?? "Unknown",
       author_role: authorRole,
+      author_sobriety_date: pickActiveSobrietyDate(authorData?.residents),
       house_name: houseName ?? null,
       like_count: likesMap[pid] ?? 0,
       user_liked: userLikedSet.has(pid),

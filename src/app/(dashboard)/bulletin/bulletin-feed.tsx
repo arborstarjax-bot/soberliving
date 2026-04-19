@@ -26,6 +26,7 @@ import {
   togglePinPost,
 } from "./actions";
 import type { UserRole } from "@/lib/types";
+import { SobrietyChip } from "@/components/sobriety-chip";
 
 interface Comment {
   id: string;
@@ -34,6 +35,7 @@ interface Comment {
   created_at: string;
   author_name: string;
   author_role: string;
+  author_sobriety_date: string | null;
 }
 
 interface Post {
@@ -46,6 +48,7 @@ interface Post {
   created_at: string;
   author_name: string;
   author_role: string;
+  author_sobriety_date: string | null;
   house_name: string | null;
   like_count: number;
   user_liked: boolean;
@@ -167,6 +170,7 @@ function CommentSection({
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-sm">{c.author_name}</span>
                   <RoleBadge role={c.author_role} />
+                  <SobrietyChip sobrietyDate={c.author_sobriety_date} />
                   <span className="text-xs text-muted-foreground">
                     {timeAgo(c.created_at)}
                   </span>
@@ -269,6 +273,7 @@ export function BulletinFeed({
                     {post.author_name}
                   </span>
                   <RoleBadge role={post.author_role} />
+                  <SobrietyChip sobrietyDate={post.author_sobriety_date} />
                   {post.house_name && (
                     <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold leading-none text-amber-700">
                       {post.house_name}
