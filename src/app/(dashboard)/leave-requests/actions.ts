@@ -9,6 +9,8 @@ import { sendNotification, sendNotificationToHouseManagers, sendNotificationToAd
 import { z } from "zod";
 import { getHouseToday } from "@/lib/timezone";
 
+const DATETIME_LOCAL_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/;
+
 const createLeaveRequestSchema = z.object({
   resident_id: z.string().uuid(),
   covering_resident_id: z.string().uuid("You must select a covering resident from your house"),
@@ -16,8 +18,12 @@ const createLeaveRequestSchema = z.object({
   // The date-only `departure_date` / `expected_return_date` columns on the
   // DB are still populated, but we derive them from these datetimes so
   // existing list views and activity descriptions keep rendering.
-  leaving_datetime: z.string().min(1, "Leaving date/time is required"),
-  returning_datetime: z.string().min(1, "Returning date/time is required"),
+  leaving_datetime: z
+    .string()
+    .regex(DATETIME_LOCAL_REGEX, "Leaving date/time is required"),
+  returning_datetime: z
+    .string()
+    .regex(DATETIME_LOCAL_REGEX, "Returning date/time is required"),
   reason: z.string().optional(),
   reason_for_pass: z.string().optional(),
   transportation: z.string().optional(),

@@ -179,6 +179,7 @@ export async function reserveRideSeat(
   }
 
   revalidatePath("/bulletin/ride-share");
+  revalidatePath("/bulletin");
   return { status: status as "ok" | "already" | "full" | "not_found" };
 }
 
@@ -208,6 +209,7 @@ export async function unreserveRideSeat(
   }
 
   revalidatePath("/bulletin/ride-share");
+  revalidatePath("/bulletin");
   return { removed: Boolean(removed) };
 }
 
@@ -248,6 +250,7 @@ export async function deleteRideShare(postId: string): Promise<{ error?: string 
   });
 
   revalidatePath("/bulletin/ride-share");
+  revalidatePath("/bulletin");
   return {};
 }
 

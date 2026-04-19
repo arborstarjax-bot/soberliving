@@ -3,8 +3,34 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/server";
 import { requireAuth, requireRole } from "@/lib/auth";
+import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { z } from "zod";
+
+/**
+ * Return true if the user can see a bulletin post in the given
+ * house (or a null-house global post). Mirrors the visibility rules
+ * used by the bulletin feed:
+ *  - admin: any post
+ *  - manager: any post in an assigned house, plus null-house posts
+ *  - resident: only their own active house, plus null-house posts
+ */
+async function canSeeBulletinHouse(
+  user: Awaited<ReturnType<typeof requireAuth>>,
+  houseId: string | null
+): Promise<boolean> {
+  if (user.role === "admin") return true;
+  if (!houseId) return true;
+  if (user.role === "manager") return canAccessHouse(user, houseId);
+  const adminClient = createAdminClient();
+  const { data: resident } = await adminClient
+    .from("residents")
+    .select("house_id")
+    .eq("user_id", user.id)
+    .eq("status", "active")
+    .maybeSingle();
+  return resident?.house_id === houseId;
+}
 
 const createPostSchema = z.object({
   title: z.string().min(1, "Title is required").max(200),
@@ -87,15 +113,25 @@ export async function deleteBulletinPost(postId: string) {
   const user = await requireAuth();
   const adminClient = createAdminClient();
 
-  // Verify ownership or admin
+  // Verify ownership, admin anywhere, or manager within their assigned
+  // house. Managers can delete posts in houses they manage (including
+  // posts by residents / other staff) but NOT posts outside their
+  // assigned houses.
   const { data: post } = await adminClient
     .from("bulletin_posts")
-    .select("id, author_id, title")
+    .select("id, author_id, title, house_id")
     .eq("id", postId)
-    .single();
+    .maybeSingle();
 
   if (!post) return { error: "Post not found" };
-  if (post.author_id !== user.id && user.role !== "admin" && user.role !== "manager") {
+  const isAuthor = post.author_id === user.id;
+  const isAdmin = user.role === "admin";
+  const postHouseId = (post.house_id as string | null) ?? null;
+  const isManagerForHouse =
+    user.role === "manager" &&
+    postHouseId !== null &&
+    canAccessHouse(user, postHouseId);
+  if (!isAuthor && !isAdmin && !isManagerForHouse) {
     return { error: "Not authorized" };
   }
 
@@ -124,11 +160,20 @@ export async function togglePinPost(postId: string) {
 
   const { data: post } = await adminClient
     .from("bulletin_posts")
-    .select("id, is_pinned, title")
+    .select("id, is_pinned, title, house_id")
     .eq("id", postId)
-    .single();
+    .maybeSingle();
 
   if (!post) return { error: "Post not found" };
+
+  // Managers can only pin/unpin within their assigned houses. Admin
+  // can pin any post (including null-house global posts).
+  const postHouseId = (post.house_id as string | null) ?? null;
+  if (user.role === "manager") {
+    if (!postHouseId || !canAccessHouse(user, postHouseId)) {
+      return { error: "Not authorized" };
+    }
+  }
 
   const newPinned = !post.is_pinned;
 
@@ -192,6 +237,21 @@ export async function addComment(
 
   const adminClient = createAdminClient();
 
+  // Verify the post exists AND is visible to this user before
+  // accepting a comment. Without this a resident could comment on a
+  // post in another house by guessing the UUID.
+  const { data: post } = await adminClient
+    .from("bulletin_posts")
+    .select("id, house_id")
+    .eq("id", postId)
+    .maybeSingle();
+  if (!post) return { error: "Post not found" };
+  const canSee = await canSeeBulletinHouse(
+    user,
+    (post.house_id as string | null) ?? null
+  );
+  if (!canSee) return { error: "Not authorized" };
+
   const { error } = await adminClient.from("bulletin_comments").insert({
     post_id: postId,
     user_id: user.id,
@@ -208,14 +268,26 @@ export async function deleteComment(commentId: string) {
   const user = await requireAuth();
   const adminClient = createAdminClient();
 
+  // Join to bulletin_posts so we can scope managers to their
+  // assigned houses. Any user can delete their own comments; admin
+  // can delete any; manager only within their assigned houses.
   const { data: comment } = await adminClient
     .from("bulletin_comments")
-    .select("id, user_id")
+    .select("id, user_id, post:bulletin_posts(house_id)")
     .eq("id", commentId)
-    .single();
+    .maybeSingle();
 
   if (!comment) return { error: "Comment not found" };
-  if (comment.user_id !== user.id && user.role !== "admin" && user.role !== "manager") {
+  const isAuthor = comment.user_id === user.id;
+  const isAdmin = user.role === "admin";
+  const postHouseId =
+    ((comment.post as unknown as { house_id: string | null } | null)
+      ?.house_id as string | null) ?? null;
+  const isManagerForHouse =
+    user.role === "manager" &&
+    postHouseId !== null &&
+    canAccessHouse(user, postHouseId);
+  if (!isAuthor && !isAdmin && !isManagerForHouse) {
     return { error: "Not authorized" };
   }
 
