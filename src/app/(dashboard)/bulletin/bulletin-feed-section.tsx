@@ -251,7 +251,7 @@ export async function BulletinFeedSection({
       ? cpRaw.split(",").filter(Boolean)
       : [];
 
-  const prevHref = buildPrevHref(searchParams, cpList);
+  const prevHref = buildPrevHref(searchParams, cpList, cursor);
   const nextHref = nextCursor
     ? buildNextHref(searchParams, cpList, cursor, nextCursor)
     : null;
@@ -277,31 +277,47 @@ export async function BulletinFeedSection({
 }
 
 /**
- * Prev walks back the `cp=` back-stack. Landing on an empty stack
- * drops both `c` and `cp`, so Prev from page 2 returns to page 1.
+ * Prev walks back the `cp=` back-stack. On page 1 (`currentCursor`
+ * is null), Prev is disabled. On page 2 (cpList empty) it strips
+ * both `c` and `cp` to return to page 1. Otherwise it pops the last
+ * encoded cursor off the stack, decodes it, and passes it as
+ * `nextCursor` to `buildCursorHref` — the cursor param must travel
+ * through that slot because `buildCursorHref` strips it from
+ * `currentParams` by design.
  */
 function buildPrevHref(
   searchParams: Record<string, string | string[] | undefined>,
-  cpList: string[]
+  cpList: string[],
+  currentCursor: Cursor | null
 ): string | null {
-  if (cpList.length === 0) return null;
-  const newStack = cpList.slice(0, -1);
+  if (!currentCursor) return null;
   const params: Record<string, string | string[] | undefined> = {
     ...searchParams,
   };
-  if (newStack.length === 0) {
-    delete params.c;
-    delete params.cp;
-  } else {
-    params.c = cpList[cpList.length - 1];
-    params.cp = newStack.join(",");
+  if (cpList.length === 0) {
+    return buildCursorHref(
+      "/bulletin",
+      { ...params, cp: undefined, c: undefined },
+      null,
+      "c"
+    );
   }
-  return buildCursorHref("/bulletin", params, null, "c");
+  const newStack = cpList.slice(0, -1);
+  const prevCursorEncoded = cpList[cpList.length - 1];
+  const prevCursor = parseCursor(prevCursorEncoded);
+  return buildCursorHref(
+    "/bulletin",
+    { ...params, cp: newStack.length ? newStack.join(",") : undefined },
+    prevCursor,
+    "c"
+  );
 }
 
 /**
  * Next advances to `nextCursor` and pushes the cursor we arrived
- * with onto the back-stack so Prev returns here.
+ * with onto the back-stack so Prev returns here. On page 1
+ * (`currentCursor` is null) there is nothing to push — Prev on page
+ * 2 handles the empty-stack case by stripping `c`.
  */
 function buildNextHref(
   searchParams: Record<string, string | string[] | undefined>,
@@ -312,10 +328,9 @@ function buildNextHref(
   const params: Record<string, string | string[] | undefined> = {
     ...searchParams,
   };
-  let newStack = cpList;
-  if (currentCursor) {
-    newStack = [...cpList, encodeCursor(currentCursor)];
-    params.cp = newStack.join(",");
-  }
+  const newStack = currentCursor
+    ? [...cpList, encodeCursor(currentCursor)]
+    : cpList;
+  params.cp = newStack.length ? newStack.join(",") : undefined;
   return buildCursorHref("/bulletin", params, nextCursor, "c");
 }

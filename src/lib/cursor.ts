@@ -93,30 +93,45 @@ export function parseCursor(
   }
 }
 
+export interface ApplyCursorOptions {
+  /** Timestamp (or other sort-key) column name. Default: `created_at`. */
+  tsColumn?: string;
+  /** Secondary tie-breaker column. Default: `id`. */
+  idColumn?: string;
+  /**
+   * Sort direction — must match the caller's `.order(...)` clauses.
+   * `"desc"` (default) uses a `<` predicate (newest-first feeds).
+   * `"asc"` uses a `>` predicate (e.g. upcoming ride shares sorted
+   * by departure time ascending).
+   */
+  direction?: "asc" | "desc";
+}
+
 /**
- * Apply a descending `(created_at, id)` cursor to a Supabase query.
- * The query must already include matching `.order(...)` clauses.
+ * Apply a cursor predicate to a Supabase query. The query must
+ * already include matching `.order(...)` clauses. For descending
+ * order this translates to:
  *
- * We translate the cursor to the row-comparison predicate:
+ *   (ts_col, id_col) < (:ts, :id)
+ *   ≡ ts_col < :ts OR (ts_col = :ts AND id_col < :id)
  *
- *   (created_at, id) < (:ts, :id)
- *   ≡ created_at < :ts
- *     OR (created_at = :ts AND id < :id)
- *
- * which PostgREST exposes via `.or("...")`.
+ * which PostgREST exposes via `.or("...")`. For ascending order the
+ * comparison flips to `>`.
  */
 export function applyCursor<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   TBuilder extends PostgrestFilterBuilder<any, any, any, any, any>,
->(query: TBuilder, cursor: Cursor | null): TBuilder {
+>(
+  query: TBuilder,
+  cursor: Cursor | null,
+  options: ApplyCursorOptions = {}
+): TBuilder {
   if (!cursor) return query;
-  const ts = cursor.ts;
-  const id = cursor.id;
-  // Note: PostgREST .or() takes a comma-separated list interpreted as OR
-  // between filters; nesting an and(...) groups two conditions into a
-  // single AND term. No quoting needed — ts is ISO, id is uuid.
+  const tsCol = options.tsColumn ?? "created_at";
+  const idCol = options.idColumn ?? "id";
+  const cmp = (options.direction ?? "desc") === "desc" ? "lt" : "gt";
   return query.or(
-    `created_at.lt.${ts},and(created_at.eq.${ts},id.lt.${id})`
+    `${tsCol}.${cmp}.${cursor.ts},and(${tsCol}.eq.${cursor.ts},${idCol}.${cmp}.${cursor.id})`
   ) as TBuilder;
 }
 
@@ -124,19 +139,31 @@ export function applyCursor<
  * We fetch `pageSize + 1` rows so we can tell whether there's a next
  * page without a separate COUNT query. Returns the trimmed list and
  * a cursor pointing at the last kept row.
+ *
+ * For the default `(created_at desc, id desc)` sort, omit
+ * `extractCursor`. For other sort keys (e.g. ride shares sorted by
+ * `(departure_at asc, post_id asc)`), pass a function that pulls
+ * the cursor fields off the last kept row.
  */
-export function sliceForPage<T extends { id: string; created_at: string }>(
+export function sliceForPage<T>(
   rows: T[],
-  pageSize: number = DEFAULT_PAGE_SIZE
+  pageSize: number = DEFAULT_PAGE_SIZE,
+  extractCursor?: (row: T) => Cursor
 ): { rows: T[]; nextCursor: Cursor | null } {
   if (rows.length <= pageSize) {
     return { rows, nextCursor: null };
   }
   const kept = rows.slice(0, pageSize);
   const last = kept[kept.length - 1];
+  const extract =
+    extractCursor ??
+    ((r: T) => {
+      const row = r as unknown as { id: string; created_at: string };
+      return { ts: row.created_at, id: row.id };
+    });
   return {
     rows: kept,
-    nextCursor: { ts: last.created_at, id: last.id },
+    nextCursor: extract(last),
   };
 }
 
