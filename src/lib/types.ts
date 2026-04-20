@@ -263,6 +263,12 @@ export interface SessionUser {
   // anything else. FIFO order so multiple pending blockers are
   // resolved oldest-first.
   pending_blocker_id: string | null;
+  // True when this user was previously a house resident but their
+  // residents row is currently non-active (discharged, moved out,
+  // etc.). Layouts use this to hard-gate them onto the /discharged
+  // page — login, email, and documents are preserved so they can
+  // return later, but they can't navigate the app while discharged.
+  resident_discharged: boolean;
 }
 
 // --- Blockers ---

@@ -23,6 +23,12 @@ export default async function BlockerLayout({
     redirect("/admin");
   }
 
+  // Discharged residents can't act on blockers — route them to the
+  // lockout page instead of letting them sign anything.
+  if (user.resident_discharged) {
+    redirect("/discharged");
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto p-4 lg:p-6 max-w-4xl">

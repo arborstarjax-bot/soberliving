@@ -13,6 +13,13 @@ export default async function DashboardLayout({
 }) {
   const user = await requireAuth();
 
+  // Discharged residents are locked out of the app entirely. Their
+  // login and documents survive for potential return, but no route
+  // inside (dashboard) is reachable until staff reactivates them.
+  if (user.role === "resident" && user.resident_discharged) {
+    redirect("/discharged");
+  }
+
   // Redirect resident-role users who haven't completed intake
   // Only applies to role=resident, NOT admins/managers who are also marked as residents
   if (user.role === "resident" && !user.intake_completed) {
