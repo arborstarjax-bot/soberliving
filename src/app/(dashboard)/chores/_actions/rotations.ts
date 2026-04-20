@@ -9,8 +9,7 @@ import {
   createRotationSchema,
   assignRotationChoreSchema,
 } from "@/lib/validations";
-import { addDays, format } from "date-fns";
-import { getHouseToday, DEFAULT_TIMEZONE } from "@/lib/timezone";
+import { getHouseToday, DEFAULT_TIMEZONE, addCalendarDays } from "@/lib/timezone";
 import { sendNotification } from "@/lib/notifications";
 
 async function getResidentCurrentRoomId(
@@ -54,8 +53,6 @@ export async function createRotation(
     .eq("house_id", parsed.data.house_id)
     .eq("is_current", true);
 
-  const startDate = new Date(parsed.data.cycle_start_date);
-
   // Determine cycle length from the max cycle_weeks of active chores in this house
   const { data: houseChores } = await supabase
     .from("chores")
@@ -67,14 +64,17 @@ export async function createRotation(
     ? Math.max(...houseChores.map((c) => c.cycle_weeks ?? 2))
     : 2;
 
-  const endDate = addDays(startDate, maxCycleWeeks * 7 - 1);
+  const cycleEndDateStr = addCalendarDays(
+    parsed.data.cycle_start_date,
+    maxCycleWeeks * 7 - 1
+  );
 
   const { data, error } = await supabase
     .from("chore_rotations")
     .insert({
       house_id: parsed.data.house_id,
       cycle_start_date: parsed.data.cycle_start_date,
-      cycle_end_date: format(endDate, "yyyy-MM-dd"),
+      cycle_end_date: cycleEndDateStr,
       is_current: true,
       created_by: user.id,
     })
@@ -201,14 +201,15 @@ export async function assignRotationChore(
     };
 
     const signoffs = [];
-    const startDate = new Date(rotation.cycle_start_date);
     for (let weekNum = 1; weekNum <= choreCycleWeeks; weekNum++) {
       const weekOffset = (weekNum - 1) * 7;
       for (const day of choreDays) {
         const offset = dayToOffset[day];
         if (offset === undefined) continue;
-        const signoffDate = addDays(startDate, weekOffset + offset);
-        const signoffDateStr = format(signoffDate, "yyyy-MM-dd");
+        const signoffDateStr = addCalendarDays(
+          rotation.cycle_start_date,
+          weekOffset + offset
+        );
         // Skip past days (see comment near rotation fetch above).
         if (signoffDateStr < todayStr) continue;
         signoffs.push({
@@ -258,17 +259,21 @@ export async function assignRotationChore(
       sunday: 6,
     };
 
-    // Auto-create signoff records based on chore's schedule
+    // Auto-create signoff records based on chore's schedule. Pure
+    // UTC-string arithmetic so a non-UTC runtime can't shift dates by
+    // a day (which previously produced rows like sign_off_date=Sunday
+    // / day_of_week='monday').
     const signoffs = [];
-    const startDate = new Date(rotation.cycle_start_date);
 
     for (let weekNum = 1; weekNum <= choreCycleWeeks; weekNum++) {
       const weekOffset = (weekNum - 1) * 7;
       for (const day of choreDays) {
         const offset = dayToOffset[day];
         if (offset === undefined) continue;
-        const signoffDate = addDays(startDate, weekOffset + offset);
-        const signoffDateStr = format(signoffDate, "yyyy-MM-dd");
+        const signoffDateStr = addCalendarDays(
+          rotation.cycle_start_date,
+          weekOffset + offset
+        );
         // Skip past days when assigning mid-cycle (see comment near rotation
         // fetch above).
         if (signoffDateStr < todayStr) continue;
@@ -541,8 +546,10 @@ export async function rotateSchedule(rotationId: string) {
       for (const day of choreDays) {
         const offset = dayToOffset[day];
         if (offset === undefined) continue;
-        const signoffDate = addDays(startDate, weekOffset + offset);
-        const signoffDateStr = format(signoffDate, "yyyy-MM-dd");
+        const signoffDateStr = addCalendarDays(
+          rotation.cycle_start_date,
+          weekOffset + offset
+        );
         // Skip past days (see rotateTodayStr comment near rotation fetch).
         if (signoffDateStr < rotateTodayStr) continue;
         signoffs.push({

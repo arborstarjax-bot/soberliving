@@ -225,3 +225,24 @@ export function getHouseFirstOfMonth(
   const today = getHouseToday(timezone); // "YYYY-MM-DD"
   return `${today.slice(0, 7)}-01`;
 }
+
+/**
+ * Adds N calendar days to a YYYY-MM-DD string and returns YYYY-MM-DD.
+ * Pure UTC arithmetic — no dependence on the runtime's local timezone,
+ * so it produces the same result whether called on a Vercel UTC server
+ * or a developer's non-UTC machine.
+ *
+ * Use this when computing a calendar date offset (e.g. rotation cycle
+ * start + N days) instead of `new Date("YYYY-MM-DD")` + date-fns
+ * `addDays` + `format`, which silently shifts the result by a day
+ * whenever the runtime is not UTC.
+ */
+export function addCalendarDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const base = Date.UTC(y, m - 1, d);
+  const next = new Date(base + days * 24 * 60 * 60 * 1000);
+  const yyyy = next.getUTCFullYear();
+  const mm = String(next.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(next.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
