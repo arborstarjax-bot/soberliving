@@ -47,19 +47,30 @@ export function PaymentTermsCard({
   // because date-only strings parse as UTC midnight.
   const dueDay = dayOfMonthLocal(terms.commitment_start_date);
   const isWeekly = terms.payment_frequency === "weekly";
-  // Weekday label for the card's "Due Day" row when the resident
-  // is on weekly cadence. Parse the date-only string as UTC to avoid
-  // the same TZ drift `dayOfMonthLocal` guards against.
-  const weeklyWeekday = (() => {
+  // Policy: rent is due the day BEFORE the cycle anchor. The Due
+  // Day label must render the shifted weekday / day-of-month so
+  // residents and staff see the same date the charge engine will
+  // actually open, and the same wording the signed contract uses.
+  // Parse the date-only string as UTC to avoid the same TZ drift
+  // `dayOfMonthLocal` guards against.
+  const weeklyDueWeekday = (() => {
     const iso = terms.commitment_start_date;
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
     if (!m) return "";
     const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+    d.setUTCDate(d.getUTCDate() - 1);
     return d.toLocaleDateString("en-US", {
       timeZone: "UTC",
       weekday: "long",
     });
   })();
+  // Monthly due day = anchor day − 1. Anchor on the 1st is a
+  // cross-month edge case: due lands on the last day of the
+  // preceding month, which we label without hardcoding 28/30/31.
+  const monthlyDueLabel =
+    dueDay === 1
+      ? "Last day of each preceding month"
+      : `${ordinal(dueDay - 1)} of each month`;
 
   // Legacy fallback for the rare case we didn't manage to pre-sign
   // the URL server-side (e.g. storage transient error). Still uses
@@ -135,10 +146,10 @@ export function PaymentTermsCard({
             <p className="text-xs text-muted-foreground">Due Day</p>
             <p className="font-semibold">
               {isWeekly
-                ? weeklyWeekday
-                  ? `Every ${weeklyWeekday}`
+                ? weeklyDueWeekday
+                  ? `Every ${weeklyDueWeekday}`
                   : "Weekly"
-                : `${ordinal(dueDay)} of each month`}
+                : monthlyDueLabel}
             </p>
           </div>
           <div>
