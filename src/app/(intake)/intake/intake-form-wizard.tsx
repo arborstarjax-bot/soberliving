@@ -828,7 +828,7 @@ function Page5DrugsCriminalAndSign({
         </div>
 
         <div className="border-t pt-4 space-y-4">
-          <p className="text-sm">{APPLICATION_ATTEST_TEXT}</p>
+          <p className="text-sm whitespace-pre-wrap">{APPLICATION_ATTEST_TEXT}</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Resident Print Name" name="application_resident_print_name" data={data} onChange={onChange} required />
             <DateFieldWithToday
