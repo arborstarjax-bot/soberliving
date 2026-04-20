@@ -1,12 +1,40 @@
 "use client";
 
-import { useState, useTransition, useCallback } from "react";
+import { useState, useTransition, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SignaturePad } from "@/components/signature-pad";
 import { signCommitment } from "./actions";
 import { formatDateOnly } from "@/lib/timezone";
+
+// Canonical addresses printed on the paper JSL commitment. The
+// three properties are baked into the contract itself (each one
+// gets an initial blank on page 1). When a resident signs, their
+// typed initials auto-fill ONLY the row whose address matches the
+// commitment's assigned property; the other two rows stay blank.
+// Order and exact punctuation mirror the paper form verbatim.
+const CANONICAL_ADDRESSES = [
+  "4368 Chelsy Harbour Drive, Jacksonville, FL 32224",
+  "2129 Indian Springs Drive, Jacksonville , FL 32246",
+  "2123 Indian Springs Drive, Jacksonville, 32246",
+] as const;
+
+// Loose-match a commitment's stored `property_location` / house
+// address against the three canonical printed addresses. We compare
+// street number + street name only — commas, city, zip vary between
+// the paper form and what staff type into `houses.address`, but the
+// leading "4368 Chelsy" / "2129 Indian Springs" / "2123 Indian
+// Springs" is unique and stable.
+function matchCanonicalAddress(assigned: string | null | undefined): string | null {
+  if (!assigned) return null;
+  const norm = assigned.toLowerCase().replace(/\s+/g, " ").trim();
+  for (const addr of CANONICAL_ADDRESSES) {
+    const head = addr.split(",")[0]?.toLowerCase() ?? "";
+    if (head && norm.includes(head)) return addr;
+  }
+  return null;
+}
 
 interface CommitmentSigningFormProps {
   commitmentId: string;
@@ -24,18 +52,16 @@ interface CommitmentSigningFormProps {
   staffSignedAt: string | null;
   // Amendment context — when present, this commitment is a
   // payment-terms amendment to a previously signed one. We render
-  // an "old vs new" comparison and a banner with the admin's reason.
+  // a small old-vs-new banner above the contract body so the
+  // resident sees what changed before re-signing.
   amendmentReason?: string | null;
   parentTerms?: {
     rent_amount: number;
     admin_fee: number | null;
     commitment_start_date: string;
   } | null;
-  // Move-in context mirrored on the contract so the resident sees
-  // exactly what was collected, any outstanding balance, whether
-  // the admin fee was paid prior / waived, and any restrictions
-  // placed on them at check-in. All optional so existing amendment
-  // flows keep working without these fields.
+  // Retained for API compatibility with page.tsx; no longer rendered
+  // in the contract body (the paper JSL form doesn't include these).
   skipInitialAdminFee?: boolean;
   isExistingTenant?: boolean;
   restrictions?: Array<{
@@ -61,31 +87,21 @@ export function CommitmentSigningForm({
   rentAmount,
   adminFee,
   paymentFrequency,
-  rentDueDate,
   commitmentStartDate,
-  commitmentTerm,
-  notes,
   staffSignature,
   staffSignedAt,
   amendmentReason,
   parentTerms,
-  skipInitialAdminFee = false,
-  isExistingTenant = false,
-  restrictions = [],
-  moveInSummary = null,
 }: CommitmentSigningFormProps) {
   const isAmendment = Boolean(parentTerms);
   const isWeekly = paymentFrequency?.toLowerCase() === "weekly";
-  const frequencyLabel = isWeekly ? "Weekly" : "Monthly";
-  const cycleLower = isWeekly ? "weekly" : "monthly";
   const perCycle = isWeekly ? "/wk" : "/mo";
 
-  // Page-2 paper-contract rate clause needs the day-of-month (for
-  // monthly) or the weekday name (for weekly) derived from the
-  // commitment start date. We also render a long-form date for the
-  // "commencing …" phrase so the printed contract reads naturally.
-  // commitmentStartDate is an ISO date string (YYYY-MM-DD) in the
-  // house timezone; parse manually to avoid UTC drift.
+  // Page-2 rate clause needs the day-of-month (monthly) or weekday
+  // name (weekly) derived from commitment_start_date. We also render
+  // a long-form "commencing …" date so the printed contract reads
+  // naturally. commitmentStartDate is an ISO date (YYYY-MM-DD) in
+  // house time; parse manually to avoid UTC drift.
   const [csYear, csMonth, csDay] = (commitmentStartDate || "")
     .split("-")
     .map((n) => Number(n));
@@ -97,10 +113,6 @@ export function CommitmentSigningForm({
   // computeRentDueDate in src/lib/payments/charges.ts). The paper
   // contract's rate clause therefore references the due weekday /
   // due day-of-month, NOT the anchor itself.
-  //   Weekly:   anchor Thursday → due every Wednesday
-  //   Monthly:  anchor on the 2nd → due on the 1st of each month
-  //   Monthly edge case: anchor on the 1st → due on the last day
-  //                      of each preceding month (variable length)
   const dueDateObj = startDateObj
     ? (() => {
         const d = new Date(startDateObj);
@@ -121,16 +133,15 @@ export function CommitmentSigningForm({
     if (mod10 === 3) return `${n}rd`;
     return `${n}th`;
   };
-  // The human phrase for the monthly due date. When the anchor is
-  // the 1st the due date walks into the prior month, so we use the
-  // "last day of each preceding month" wording to stay accurate
-  // regardless of whether the prior month has 28/29/30/31 days.
-  const monthlyDuePhrase =
+  // Human phrase for the monthly due day. Anchor 1 → "last day of
+  // the preceding month" (variable-length). Every other anchor N →
+  // "the (N-1)th day of each month".
+  const monthlyDueDayPhrase =
     dayOfMonth == null
       ? "the agreed day"
       : dayOfMonth === 1
         ? "the last day of each preceding month"
-        : `the ${ordinalize(dayOfMonth - 1)} day of each month`;
+        : `the ${ordinalize(dayOfMonth - 1)}`;
   const startDateLong = startDateObj
     ? startDateObj.toLocaleDateString("en-US", {
         year: "numeric",
@@ -138,72 +149,111 @@ export function CommitmentSigningForm({
         day: "numeric",
       })
     : commitmentStartDate;
+
+  // Which of the three canonical addresses does this commitment map
+  // to? The initial auto-fills next to that row and leaves the other
+  // two blank — mirroring how a resident initials the paper form.
+  const selectedAddress = useMemo(
+    () => matchCanonicalAddress(propertyLocation) ?? matchCanonicalAddress(houseName),
+    [propertyLocation, houseName]
+  );
+
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [residentSignature, setResidentSignature] = useState<string | null>(null);
-  // Paper contract has a "resident will initial the chosen property
-  // location" step on page 1. We keep that behavior: resident types
-  // initials to confirm they understand the specific address they're
-  // bound to. Required before the full signature is accepted.
   const [residentInitials, setResidentInitials] = useState("");
+  const initialStamp = residentInitials.trim() || "";
 
   const generatePdf = useCallback(async (): Promise<string> => {
     const { PDFDocument, rgb, StandardFonts } = await import("pdf-lib");
     const pdf = await PDFDocument.create();
-    const font = await pdf.embedFont(StandardFonts.Helvetica);
-    const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
+    const font = await pdf.embedFont(StandardFonts.TimesRoman);
+    const fontBold = await pdf.embedFont(StandardFonts.TimesRomanBold);
+    const fontItalic = await pdf.embedFont(StandardFonts.TimesRomanItalic);
 
-    let currentPage = pdf.addPage([612, 792]);
-    const { height } = currentPage.getSize();
-    let y = height - 50;
+    // US Letter at 612x792. Leave generous inner margins to match
+    // the scanned paper form's layout (~60pt left/right, wide
+    // vertical breathing room).
+    const pageWidth = 612;
+    const pageHeight = 792;
+    const marginX = 60;
+    const maxWidth = pageWidth - marginX * 2;
 
-    const newPageIfNeeded = (needed: number) => {
-      if (y - needed < 70) {
-        currentPage = pdf.addPage([612, 792]);
-        y = 792 - 50;
-      }
-    };
-
-    const drawText = (text: string, x: number, yPos: number, size = 10, bold = false) => {
-      currentPage.drawText(text, {
-        x,
-        y: yPos,
-        size,
-        font: bold ? fontBold : font,
+    // Draw bottom-right "INITIAL" label with a short underline
+    // above the resident's typed initials. Appears on every page
+    // of the generated PDF exactly as it appears on the paper form.
+    const drawInitialStamp = (page: Awaited<ReturnType<typeof pdf.addPage>>) => {
+      const rightX = pageWidth - marginX - 80;
+      const baseY = 45;
+      page.drawLine({
+        start: { x: rightX, y: baseY + 16 },
+        end: { x: rightX + 70, y: baseY + 16 },
+        thickness: 0.6,
         color: rgb(0, 0, 0),
+      });
+      if (initialStamp) {
+        page.drawText(initialStamp, {
+          x: rightX + 5,
+          y: baseY + 20,
+          size: 11,
+          font: fontBold,
+          color: rgb(0, 0, 0),
+        });
+      }
+      page.drawText("INITIAL", {
+        x: rightX + 20,
+        y: baseY + 4,
+        size: 8,
+        font,
+        color: rgb(0.25, 0.25, 0.25),
       });
     };
 
-    // Word-wrap helper — the contract body is prose, and the paper
-    // contract uses long binding paragraphs that won't fit on a
-    // single 512px line. Measures actual glyph width via pdf-lib
-    // rather than guessing at a char count so wrapping is exact
-    // across variable-width fonts.
+    let page = pdf.addPage([pageWidth, pageHeight]);
+    let y = pageHeight - 60;
+
+    const drawCenteredText = (
+      text: string,
+      yPos: number,
+      size: number,
+      useFont: typeof font = font
+    ) => {
+      const width = useFont.widthOfTextAtSize(text, size);
+      const x = (pageWidth - width) / 2;
+      page.drawText(text, { x, y: yPos, size, font: useFont, color: rgb(0, 0, 0) });
+    };
+
     const drawParagraph = (
       text: string,
-      opts?: { size?: number; bold?: boolean; indent?: number; spacingAfter?: number }
+      opts?: { size?: number; bold?: boolean; italic?: boolean; indent?: number; spacingAfter?: number; lineHeight?: number }
     ) => {
-      const size = opts?.size ?? 9;
+      const size = opts?.size ?? 11;
       const bold = opts?.bold ?? false;
+      const italic = opts?.italic ?? false;
       const indent = opts?.indent ?? 0;
-      const spacingAfter = opts?.spacingAfter ?? 6;
-      const lineHeight = size + 4;
-      const x = 50 + indent;
-      const maxWidth = 512 - indent;
-      const activeFont = bold ? fontBold : font;
+      const spacingAfter = opts?.spacingAfter ?? 8;
+      const lineHeight = opts?.lineHeight ?? size + 4;
+      const x = marginX + indent;
+      const width = maxWidth - indent;
+      const activeFont = italic ? fontItalic : bold ? fontBold : font;
       const words = text.split(/\s+/);
       let line = "";
       const flush = () => {
         if (!line) return;
-        newPageIfNeeded(lineHeight);
-        drawText(line, x, y, size, bold);
+        page.drawText(line, {
+          x,
+          y,
+          size,
+          font: activeFont,
+          color: rgb(0, 0, 0),
+        });
         y -= lineHeight;
         line = "";
       };
       for (const word of words) {
         const test = line ? `${line} ${word}` : word;
-        if (activeFont.widthOfTextAtSize(test, size) > maxWidth) {
+        if (activeFont.widthOfTextAtSize(test, size) > width) {
           flush();
           line = word;
         } else {
@@ -214,233 +264,298 @@ export function CommitmentSigningForm({
       y -= spacingAfter;
     };
 
-    // Title
-    drawText("JAX SOBER LIVING", 200, y, 16, true);
-    y -= 20;
-    drawText("HOUSE COMMITMENT AGREEMENT", 180, y, 14, true);
-    y -= 30;
+    // ============ PAGE 1 ============
+    // Title block — mirrors the scanned paper contract.
+    drawCenteredText("Jax Sober Living House", y, 18, fontItalic);
+    y -= 28;
+    drawCenteredText("HOUSE COMMITMENT AGREEMENT", y, 16, fontBold);
+    y -= 40;
 
-    // Agreement details
-    drawText(`Resident: ${residentName}`, 50, y, 11);
-    y -= 18;
-    drawText(`Property: ${houseName} — ${propertyLocation}`, 50, y, 11);
-    y -= 18;
-    drawText(`Start Date: ${commitmentStartDate}`, 50, y, 11);
-    drawText(`Term: ${commitmentTerm}`, 350, y, 11);
-    y -= 24;
-
-    // Paper-contract binding paragraphs. These mirror page 1 of the
-    // physical JSL commitment: policies + amendments are binding for
-    // the full residency, utilities included, UA on entry, and the
-    // service-not-lease disclosure. Keep the wording close to the
-    // paper form so a resident signing here is bound to the same
-    // language as one who signed on paper.
     drawParagraph(
-      "All policies and procedures outlined within this contract and any applicable subsequent amendments are in full force and effect during Resident's entire residency at Jax Sober Living Halfway House (JSL) unless specifically defined within a subsection of this contract. Violation of any policy or procedure outlined within this contract and any applicable subsequent amendments will result in disciplinary actions including, but not limited to, fines, fees, House probation/restriction, and possible discharge."
+      "All policies and procedures outlined within this contract and any applicable subsequent amendments are in full force and effect during Resident's entire residency at Jax Sober Living House unless specifically defined within a subsection of this contract. Violation of any policy or procedure outlined within this contract and any applicable subsequent amendments will result in disciplinary actions including, but not limited to, fines, fees, House probation/restriction, and possible discharge."
     );
     drawParagraph(
       "Residents' portion of the premises shall include access to all common living areas, kitchen, laundry, and the like, and shared bedroom and bathroom. Monthly water, trash, electric, cable and internet utilities shall be included in sober living fee."
     );
     drawParagraph(
-      "Upon entering JSL House resident will submit to urine analyst test and/or alcohol test."
+      "Upon entering Jax Sober Living House resident will submit to urine analyst test and/or alcohol test."
     );
     drawParagraph(
-      "Residents of the JSL House program are purchasing a service from JSL House that includes housing. Residents are not renting or leasing any particular apartment or room."
-    );
-    drawParagraph(
-      `Resident shall commit to a ${commitmentTerm} stay at the property listed above, effective ${commitmentStartDate}.`
-    );
-    drawParagraph(
-      `Resident will pay a ${cycleLower} Sober Living Fee for a portion of the premises located at: ${propertyLocation}. Resident initials: ${residentInitials || "________"}`
+      "Residents of the Jax Sober Living House program are purchasing a service from Jax Sober Living House that includes housing. Residents are not renting or leasing any particular apartment or room."
     );
 
-    // Paper-contract intake summary. Mirrors the checkbox grid on
-    // page 1 of the physical form: payment frequency selection,
-    // admin-fee-paid-prior status, new-intake vs existing-tenant
-    // activation, and any money collected at move-in with partial-
-    // reason + restrictions carried over. Amendments skip this
-    // block entirely — the fields describe the original intake and
-    // the amendment PDF already has an old-vs-new terms panel.
-    if (!isAmendment) {
-    y -= 6;
-    newPageIfNeeded(40);
-    drawText("INTAKE SUMMARY:", 50, y, 12, true);
-    y -= 18;
-
-    const checkbox = (checked: boolean) => (checked ? "[X]" : "[ ]");
-    drawParagraph(
-      `Payment Frequency:   ${checkbox(isWeekly)} Weekly    ${checkbox(!isWeekly)} Monthly`,
-      { spacingAfter: 2 }
-    );
-    drawParagraph(
-      `Resident Type:       ${checkbox(!isExistingTenant)} New Intake    ${checkbox(isExistingTenant)} Existing Resident`,
-      { spacingAfter: 2 }
-    );
-    drawParagraph(
-      `Admin Fee ($${adminFee.toFixed(2)}):  ${checkbox(skipInitialAdminFee)} Paid Prior / Waived    ${checkbox(!skipInitialAdminFee)} Due at Move-In`,
-      { spacingAfter: 6 }
-    );
-
-    if (!isExistingTenant) {
-      newPageIfNeeded(40);
-      drawText("MOVE-IN PAYMENT:", 50, y, 11, true);
+    // Resident-name blank + binding clause. Paper form leaves a
+    // long underline for the name; we pre-fill the resident's name
+    // on the PDF so it's unambiguous who is signing.
+    y -= 4;
+    {
+      const size = 11;
+      const nameLineWidth = 320;
+      page.drawLine({
+        start: { x: marginX, y: y - 2 },
+        end: { x: marginX + nameLineWidth, y: y - 2 },
+        thickness: 0.6,
+        color: rgb(0, 0, 0),
+      });
+      page.drawText(residentName, {
+        x: marginX + 4,
+        y,
+        size,
+        font,
+        color: rgb(0, 0, 0),
+      });
+      // Trailing binding language continues on the next line.
+      page.drawText("(Hereinafter referred to as \"Resident\") and James", {
+        x: marginX + nameLineWidth + 4,
+        y,
+        size,
+        font,
+        color: rgb(0, 0, 0),
+      });
       y -= 16;
-      if (moveInSummary) {
-        const adminApplied = moveInSummary.adminFeeApplied;
-        const rentApplied = moveInSummary.rentApplied;
-        const total = moveInSummary.totalCollected;
-        const owed =
-          (skipInitialAdminFee ? 0 : adminFee) + rentAmount;
-        const outstanding = Math.max(0, owed - total);
-        drawParagraph(
-          `Collected: $${total.toFixed(2)} via ${moveInSummary.method} on ${moveInSummary.paidAt}`,
-          { spacingAfter: 2 }
-        );
-        drawParagraph(
-          `   Applied to Admin Fee: $${adminApplied.toFixed(2)}    Applied to Rent: $${rentApplied.toFixed(2)}`,
-          { spacingAfter: 2 }
-        );
-        if (outstanding > 0) {
-          drawParagraph(
-            `Outstanding balance at move-in: $${outstanding.toFixed(2)} (partial payment)`,
-            { spacingAfter: 2, bold: true }
-          );
-          if (moveInSummary.partialReason) {
-            drawParagraph(
-              `Partial-payment reason: ${moveInSummary.partialReason}`,
-              { spacingAfter: 6 }
-            );
-          } else {
-            y -= 4;
-          }
-        } else {
-          drawParagraph("Paid in full at move-in.", { spacingAfter: 6 });
-        }
-      } else {
-        drawParagraph("No payment collected at move-in.", {
-          spacingAfter: 6,
+    }
+    drawParagraph(
+      "Kerr (hereinafter referred to as \"Executive Director\") enter into this agreement as follows: Resident shall commit to a one hundred-eighty-one (181) days stay as indicated below: (Resident will initial below)",
+      { spacingAfter: 14 }
+    );
+
+    // 181-day stay initial line. Blank underline on the left, then
+    // "one hundred-eighty-one (181) day stay" to its right.
+    {
+      const size = 11;
+      const initBlankWidth = 80;
+      page.drawLine({
+        start: { x: marginX, y: y - 2 },
+        end: { x: marginX + initBlankWidth, y: y - 2 },
+        thickness: 0.6,
+        color: rgb(0, 0, 0),
+      });
+      if (initialStamp) {
+        page.drawText(initialStamp, {
+          x: marginX + 10,
+          y,
+          size,
+          font: fontBold,
+          color: rgb(0, 0, 0),
         });
       }
+      page.drawText("one hundred-eighty-one (181) day stay", {
+        x: marginX + initBlankWidth + 8,
+        y,
+        size,
+        font,
+        color: rgb(0, 0, 0),
+      });
+      y -= 28;
     }
 
-    if (restrictions.length > 0) {
-      newPageIfNeeded(40);
-      drawText("HOUSE RESTRICTIONS AT CHECK-IN:", 50, y, 11, true);
-      y -= 16;
-      for (const r of restrictions) {
-        const suffix = r.end_date ? ` (through ${r.end_date})` : "";
-        drawParagraph(`\u2022 ${r.restriction_type}: ${r.description}${suffix}`, {
-          indent: 14,
-          spacingAfter: 2,
+    drawParagraph(
+      "Resident will pay a month to month Sober Living Fee for a portion of the premises located at: (Resident will initial location below)",
+      { spacingAfter: 12 }
+    );
+
+    // Three canonical addresses. Initials auto-fill only on the
+    // selected address row; others stay blank. Row spacing mirrors
+    // the paper form's vertical rhythm.
+    for (const addr of CANONICAL_ADDRESSES) {
+      const size = 11;
+      const initBlankWidth = 80;
+      page.drawLine({
+        start: { x: marginX, y: y - 2 },
+        end: { x: marginX + initBlankWidth, y: y - 2 },
+        thickness: 0.6,
+        color: rgb(0, 0, 0),
+      });
+      if (initialStamp && addr === selectedAddress) {
+        page.drawText(initialStamp, {
+          x: marginX + 10,
+          y,
+          size,
+          font: fontBold,
+          color: rgb(0, 0, 0),
         });
       }
-      y -= 4;
+      page.drawText(addr, {
+        x: marginX + initBlankWidth + 8,
+        y,
+        size,
+        font,
+        color: rgb(0, 0, 0),
+      });
+      y -= 22;
     }
-    } // end: if (!isAmendment)
+
+    drawInitialStamp(page);
+
+    // ============ PAGE 2 ============
+    page = pdf.addPage([pageWidth, pageHeight]);
+    y = pageHeight - 60;
+
+    page.drawText("Page 1 of 2 (continued)", {
+      x: marginX,
+      y,
+      size: 10,
+      font: fontItalic,
+      color: rgb(0, 0, 0),
+    });
+    y -= 32;
+
+    // Rate clause: the ONE authorized variant point in the whole
+    // contract. Switches on the commitment's payment_frequency.
+    // Monthly uses the paper form's exact template (rate + day-of-
+    // month + commencing date). Weekly mirrors the same structure,
+    // reading weekday + commencing date.
+    if (isWeekly) {
+      drawParagraph(
+        `Sober Living Fee shall be at the weekly rate of $${rentAmount.toFixed(
+          2
+        )} per week, payable every ${dueWeekdayName}, commencing ${startDateLong}.`
+      );
+    } else {
+      drawParagraph(
+        `Sober Living Fee shall be at the monthly rate of $${rentAmount.toFixed(
+          2
+        )} per month, payable on ${monthlyDueDayPhrase} day of each month, commencing ${startDateLong}.`
+      );
+    }
 
     y -= 6;
-    newPageIfNeeded(40);
-    drawText("FINANCIAL & HOUSE TERMS:", 50, y, 12, true);
-    y -= 18;
-
-    // Rate clause — mirrors page 2 of the paper JSL contract.
-    // Monthly and weekly are parallel phrasings; the amendment flow
-    // lets staff switch frequency via /payments → Edit Terms, which
-    // re-renders this block at the chosen cadence on the next
-    // commitment PDF.
-    const rateClause = isWeekly
-      ? `1. SOBER LIVING FEE: The Sober Living Fee shall be at the weekly rate of $${rentAmount.toFixed(2)} per week, payable every ${dueWeekdayName} (the day before each weekly cycle begins), commencing ${startDateLong}.`
-      : `1. SOBER LIVING FEE: The Sober Living Fee shall be at the monthly rate of $${rentAmount.toFixed(2)} per month, payable on ${monthlyDuePhrase} (the day before each monthly cycle begins), commencing ${startDateLong}.`;
-    drawParagraph(rateClause);
     drawParagraph(
-      `2. ADMINISTRATIVE FEE: The Sober Living Administrative Fee (nonrefundable) shall be $${adminFee.toFixed(2)}, payable upon entering JSL. This one-time fee is charged once at the start of the resident's tenancy and is never re-charged by a payment-terms amendment.`
+      `Sober Living Administrative Fee (nonrefundable) shall be $${adminFee.toFixed(
+        2
+      )}, payable to James Kerr upon entering Jax Sober Living.`
     );
-    drawParagraph("3. TERMINATION OF RESIDENCY:", { spacingAfter: 2 });
-    for (const item of [
+
+    y -= 6;
+    drawParagraph("TERMINATION OF RESIDENCY", { bold: true, spacingAfter: 6 });
+    for (const [i, item] of [
       "A 30-day written notice is required prior to terminating services.",
-      "This must be done at the beginning of the 6th month or the beginning of any month after the 6-month commitment is completed.",
+      "This must be done at the beginning of the 6th month or the beginning of any month after 6 month commitment is completed.",
       "Upon leaving, Resident's bedroom should be thoroughly cleaned.",
-    ]) {
-      drawParagraph(`\u2022 ${item}`, { indent: 14, spacingAfter: 2 });
+    ].entries()) {
+      drawParagraph(`${i + 1}. ${item}`, { indent: 20, spacingAfter: 4 });
     }
-    y -= 4;
+
+    y -= 6;
+    drawParagraph("EARLY MOVE-OUT", { bold: true, spacingAfter: 6 });
     drawParagraph(
-      "4. EARLY MOVE-OUT: Leaving prior to the end of the 6-month commitment requires a 48 hours' notice and no refunds will be issued."
-    );
-    drawParagraph(
-      "5. HOUSE RULES: Resident agrees to abide by all house rules, including but not limited to:",
-      { spacingAfter: 2 }
-    );
-    for (const rule of [
-      "Maintain sobriety at all times while on the premises",
-      "Attend required house meetings and programs",
-      "Complete assigned chores on schedule",
-      "Respect quiet hours and other residents' privacy",
-      "No overnight guests without prior approval",
-      "Submit to random drug/alcohol testing",
-    ]) {
-      drawParagraph(`\u2022 ${rule}`, { indent: 14, spacingAfter: 2 });
-    }
-    y -= 4;
-    drawParagraph(
-      "6. VIOLATIONS: Any violation of house rules may result in demerits, fines, or discharge."
-    );
-    drawParagraph(
-      "7. DISCHARGE: Management reserves the right to discharge any resident for rule violations, non-payment of fees, or behavior deemed harmful to the recovery community."
+      "1. Leaving prior to the end of the 6 month commitment require a 48 hours' notice and no refunds will be issued.",
+      { indent: 20 }
     );
 
-    if (notes) {
-      y -= 6;
-      newPageIfNeeded(40);
-      drawText("ADDITIONAL NOTES:", 50, y, 11, true);
-      y -= 16;
-      const noteLines = notes.split("\n");
-      for (const line of noteLines) {
-        drawText(line, 50, y, 9);
-        y -= 14;
+    y -= 10;
+    drawParagraph(
+      "Signing below indicates that I agree to the terms listed above and have received a copy of this agreement.",
+      { bold: true, spacingAfter: 16 }
+    );
+
+    // Resident signature row.
+    const signatureRow = (
+      label: string,
+      sigDataUrl: string | null,
+      dateLabel: string
+    ) => {
+      const rowY = y;
+      const labelWidth = 110;
+      page.drawText(`${label}:`, {
+        x: marginX,
+        y: rowY,
+        size: 11,
+        font,
+        color: rgb(0, 0, 0),
+      });
+      const sigLineX0 = marginX + labelWidth;
+      const sigLineX1 = marginX + 340;
+      page.drawLine({
+        start: { x: sigLineX0, y: rowY - 2 },
+        end: { x: sigLineX1, y: rowY - 2 },
+        thickness: 0.6,
+        color: rgb(0, 0, 0),
+      });
+      page.drawText("Date:", {
+        x: sigLineX1 + 16,
+        y: rowY,
+        size: 11,
+        font,
+        color: rgb(0, 0, 0),
+      });
+      const dateLineX0 = sigLineX1 + 50;
+      const dateLineX1 = pageWidth - marginX;
+      page.drawLine({
+        start: { x: dateLineX0, y: rowY - 2 },
+        end: { x: dateLineX1, y: rowY - 2 },
+        thickness: 0.6,
+        color: rgb(0, 0, 0),
+      });
+      if (dateLabel) {
+        page.drawText(dateLabel, {
+          x: dateLineX0 + 4,
+          y: rowY,
+          size: 11,
+          font,
+          color: rgb(0, 0, 0),
+        });
       }
-    }
+      return { sigLineX0, sigLineY: rowY - 2 };
+    };
 
-    // Keep the whole signature block on one page — splitting it
-    // across pages would leave staff signature on page N and
-    // resident signature on page N+1, which reads badly on printed
-    // receipts.
-    y -= 12;
-    newPageIfNeeded(180);
-    drawText("SIGNATURES:", 50, y, 12, true);
-    y -= 25;
+    const today = new Date().toLocaleDateString("en-US", {
+      timeZone: "America/New_York",
+      month: "numeric",
+      day: "numeric",
+      year: "numeric",
+    });
+    const staffDate = staffSignedAt
+      ? new Date(staffSignedAt).toLocaleDateString("en-US", {
+          timeZone: "America/New_York",
+          month: "numeric",
+          day: "numeric",
+          year: "numeric",
+        })
+      : "";
 
-    // Staff signature
-    drawText("Staff Signature:", 50, y, 10, true);
-    if (staffSignature) {
-      try {
-        const sigBytes = Uint8Array.from(atob(staffSignature.split(",")[1] || ""), (c) => c.charCodeAt(0));
-        const sigImage = await pdf.embedPng(sigBytes);
-        currentPage.drawImage(sigImage, { x: 50, y: y - 55, width: 150, height: 40 });
-      } catch {
-        drawText("[Staff signature on file]", 50, y - 15, 9);
-      }
-    }
-    drawText(
-      `Date: ${staffSignedAt ? new Date(staffSignedAt).toLocaleDateString("en-US", { timeZone: "America/New_York" }) : ""}`,
-      250,
-      y - 40,
-      9
-    );
-    y -= 70;
-
-    // Resident signature
-    drawText("Resident Signature:", 50, y, 10, true);
+    const residentRow = signatureRow("Resident's signature", residentSignature, today);
     if (residentSignature) {
       try {
-        const sigBytes = Uint8Array.from(atob(residentSignature.split(",")[1] || ""), (c) => c.charCodeAt(0));
+        const sigBytes = Uint8Array.from(
+          atob(residentSignature.split(",")[1] || ""),
+          (c) => c.charCodeAt(0)
+        );
         const sigImage = await pdf.embedPng(sigBytes);
-        currentPage.drawImage(sigImage, { x: 50, y: y - 55, width: 150, height: 40 });
+        page.drawImage(sigImage, {
+          x: residentRow.sigLineX0 + 4,
+          y: residentRow.sigLineY,
+          width: 200,
+          height: 30,
+        });
       } catch {
-        drawText("[Resident signature on file]", 50, y - 15, 9);
+        // Fall back silently — signature line stays blank if decode
+        // fails. Server action will reject a submit without a real
+        // signature anyway.
       }
     }
-    drawText(`Date: ${new Date().toLocaleDateString("en-US", { timeZone: "America/New_York" })}`, 250, y - 40, 9);
+    y -= 40;
+
+    const staffRow = signatureRow("Staff's signature", staffSignature, staffDate);
+    if (staffSignature) {
+      try {
+        const sigBytes = Uint8Array.from(
+          atob(staffSignature.split(",")[1] || ""),
+          (c) => c.charCodeAt(0)
+        );
+        const sigImage = await pdf.embedPng(sigBytes);
+        page.drawImage(sigImage, {
+          x: staffRow.sigLineX0 + 4,
+          y: staffRow.sigLineY,
+          width: 200,
+          height: 30,
+        });
+      } catch {
+        // No-op.
+      }
+    }
+
+    drawInitialStamp(page);
 
     const pdfBytes = await pdf.save();
     const bytes = new Uint8Array(pdfBytes);
@@ -449,13 +564,24 @@ export function CommitmentSigningForm({
       binary += String.fromCharCode(bytes[i]);
     }
     return btoa(binary);
-  }, [residentName, houseName, propertyLocation, rentAmount, adminFee, paymentFrequency, rentDueDate, commitmentStartDate, commitmentTerm, notes, staffSignature, staffSignedAt, residentSignature, residentInitials, cycleLower, frequencyLabel, isWeekly, skipInitialAdminFee, isExistingTenant, restrictions, moveInSummary]);
+  }, [
+    residentName,
+    rentAmount,
+    adminFee,
+    isWeekly,
+    dueWeekdayName,
+    monthlyDueDayPhrase,
+    startDateLong,
+    staffSignature,
+    staffSignedAt,
+    residentSignature,
+    initialStamp,
+    selectedAddress,
+  ]);
 
   function handleSubmit() {
     if (!residentInitials.trim()) {
-      setError(
-        "Please initial the property location before submitting"
-      );
+      setError("Please type your initials before submitting");
       return;
     }
     if (!residentSignature) {
@@ -480,11 +606,28 @@ export function CommitmentSigningForm({
     });
   }
 
+  // ---------------- On-screen rendering ----------------
+  // The signing form mirrors the two-page paper JSL commitment
+  // verbatim: every paragraph, line break, numbered clause, and
+  // initial/signature position matches the scanned form. The only
+  // content that varies between residents is the rate clause on
+  // page 2 (weekly vs monthly) — driven off payment_frequency.
+
+  const todayLabel = new Date().toLocaleDateString("en-US", {
+    timeZone: "America/New_York",
+  });
+  const staffSignedLabel = staffSignedAt
+    ? new Date(staffSignedAt).toLocaleDateString("en-US", {
+        timeZone: "America/New_York",
+      })
+    : "";
+
   return (
     <div className="space-y-6">
-      {/* Amendment banner — only shown when this is an edit to a
-          previously signed commitment. Reason comes from the admin
-          who drafted the amendment. */}
+      {/* Amendment banner — shown only when this is a payment-terms
+          update to a previously signed commitment. The contract
+          body below still mirrors the paper form; the banner makes
+          the old-vs-new delta obvious before re-signing. */}
       {isAmendment && parentTerms && (
         <Card className="border-amber-400 bg-amber-50">
           <CardHeader>
@@ -530,408 +673,287 @@ export function CommitmentSigningForm({
         </Card>
       )}
 
-      {/* Agreement Card */}
+      {/* Page 1 — mirrors the scanned JSL commitment exactly. */}
       <Card>
-        <CardHeader>
-          <CardTitle>Agreement Details</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 text-sm">
-            <div className="p-3 rounded-lg bg-muted">
-              <p className="text-muted-foreground text-xs">Property</p>
-              <p className="font-medium">{houseName}</p>
-              {propertyLocation && (
-                <p className="text-muted-foreground text-xs mt-1">{propertyLocation}</p>
-              )}
-            </div>
-            <div className="p-3 rounded-lg bg-muted">
-              <p className="text-muted-foreground text-xs">Start Date</p>
-              <p className="font-medium">{formatDateOnly(commitmentStartDate)}</p>
-              <p className="text-muted-foreground text-xs mt-1">Term: {commitmentTerm}</p>
-            </div>
-            <div className="p-3 rounded-lg bg-muted">
-              <p className="text-muted-foreground text-xs">
-                {frequencyLabel} Sober Living Fee
-              </p>
-              <p className="font-medium text-lg">${rentAmount.toFixed(2)}</p>
-              <p className="text-muted-foreground text-xs mt-1">
-                Due {rentDueDate} ({frequencyLabel})
-              </p>
-            </div>
-            <div className="p-3 rounded-lg bg-muted">
-              <p className="text-muted-foreground text-xs">
-                Administrative Move-In Fee
-              </p>
-              <p className="font-medium text-lg">${adminFee.toFixed(2)}</p>
-              <p className="text-muted-foreground text-xs mt-1">
-                One-time, non-refundable, due at move-in
-              </p>
-            </div>
+        <CardContent className="space-y-5 px-8 py-10 font-serif text-[15px] leading-relaxed text-black">
+          <div className="text-center">
+            <p className="italic text-2xl">Jax Sober Living House</p>
+            <p className="mt-4 text-xl font-bold uppercase tracking-wide">
+              House Commitment Agreement
+            </p>
           </div>
 
-          {notes && (
-            <div className="p-3 rounded-lg bg-muted text-sm">
-              <p className="text-muted-foreground text-xs mb-1">Notes</p>
-              <p className="whitespace-pre-wrap">{notes}</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Intake Summary — mirrors the checkbox grid on page 1 of the
-          paper contract: payment frequency, new-intake vs existing-
-          tenant, admin-fee-paid-prior status, money collected at
-          move-in (with partial-reason when applicable), and any
-          restrictions placed on the resident at check-in. */}
-      {!isAmendment && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Intake Summary</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Please confirm these match the terms you discussed with
-              staff before signing.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground mb-2">
-                  Payment Frequency
-                </p>
-                <p>
-                  <span aria-hidden className="font-mono">
-                    {isWeekly ? "[X]" : "[ ]"}
-                  </span>{" "}
-                  Weekly
-                </p>
-                <p>
-                  <span aria-hidden className="font-mono">
-                    {!isWeekly ? "[X]" : "[ ]"}
-                  </span>{" "}
-                  Monthly
-                </p>
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground mb-2">
-                  Resident Type
-                </p>
-                <p>
-                  <span aria-hidden className="font-mono">
-                    {!isExistingTenant ? "[X]" : "[ ]"}
-                  </span>{" "}
-                  New Intake
-                </p>
-                <p>
-                  <span aria-hidden className="font-mono">
-                    {isExistingTenant ? "[X]" : "[ ]"}
-                  </span>{" "}
-                  Existing Resident
-                </p>
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground mb-2">
-                  Admin Fee (${adminFee.toFixed(2)})
-                </p>
-                <p>
-                  <span aria-hidden className="font-mono">
-                    {skipInitialAdminFee ? "[X]" : "[ ]"}
-                  </span>{" "}
-                  Paid Prior / Waived
-                </p>
-                <p>
-                  <span aria-hidden className="font-mono">
-                    {!skipInitialAdminFee ? "[X]" : "[ ]"}
-                  </span>{" "}
-                  Due at Move-In
-                </p>
-              </div>
-            </div>
-
-            {!isExistingTenant && (
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground mb-2 font-semibold">
-                  Move-In Payment
-                </p>
-                {moveInSummary ? (
-                  (() => {
-                    const owed =
-                      (skipInitialAdminFee ? 0 : adminFee) + rentAmount;
-                    const outstanding = Math.max(
-                      0,
-                      owed - moveInSummary.totalCollected
-                    );
-                    const partial = outstanding > 0;
-                    return (
-                      <div className="space-y-1">
-                        <p>
-                          Collected:{" "}
-                          <span className="font-medium">
-                            ${moveInSummary.totalCollected.toFixed(2)}
-                          </span>{" "}
-                          via {moveInSummary.method} on{" "}
-                          {moveInSummary.paidAt}
-                        </p>
-                        <p className="text-muted-foreground">
-                          Applied to Admin Fee: $
-                          {moveInSummary.adminFeeApplied.toFixed(2)}
-                          {"    "}· Applied to Rent: $
-                          {moveInSummary.rentApplied.toFixed(2)}
-                        </p>
-                        {partial ? (
-                          <>
-                            <p className="font-semibold text-amber-800">
-                              Outstanding balance at move-in: $
-                              {outstanding.toFixed(2)} (partial payment)
-                            </p>
-                            {moveInSummary.partialReason && (
-                              <p className="text-muted-foreground">
-                                Partial-payment reason:{" "}
-                                {moveInSummary.partialReason}
-                              </p>
-                            )}
-                          </>
-                        ) : (
-                          <p className="text-green-800">
-                            Paid in full at move-in.
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })()
-                ) : (
-                  <p className="text-muted-foreground">
-                    No payment collected at move-in.
-                  </p>
-                )}
-              </div>
-            )}
-
-            {restrictions.length > 0 && (
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground mb-2 font-semibold">
-                  House Restrictions at Check-In
-                </p>
-                <ul className="list-disc pl-5 space-y-1">
-                  {restrictions.map((r, i) => (
-                    <li key={i}>
-                      <span className="font-medium">{r.restriction_type}:</span>{" "}
-                      {r.description}
-                      {r.end_date && (
-                        <span className="text-muted-foreground">
-                          {" "}
-                          (through {r.end_date})
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Terms — prose block mirrors page 1 of the paper JSL
-          commitment agreement (binding-policies paragraph, premises
-          scope + utilities included, UA on entry, service-not-lease
-          disclosure, commitment term, property location). The
-          financial + house-rules numbered list that follows is the
-          same content as before; it's preserved so the on-screen
-          terms match what gets baked into the generated PDF. */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Terms and Conditions</CardTitle>
-        </CardHeader>
-        <CardContent className="prose prose-sm max-w-none space-y-4 text-sm">
-          <p>
+          <p className="pt-4">
             All policies and procedures outlined within this contract and any
             applicable subsequent amendments are in full force and effect
-            during Resident&apos;s entire residency at Jax Sober Living
-            Halfway House (JSL) unless specifically defined within a
-            subsection of this contract. Violation of any policy or procedure
-            outlined within this contract and any applicable subsequent
-            amendments will result in disciplinary actions including, but
-            not limited to, fines, fees, House probation/restriction, and
-            possible discharge.
+            during Resident&apos;s entire residency at{" "}
+            <span className="italic font-semibold">Jax Sober Living House</span>{" "}
+            unless specifically defined within a subsection of this contract.
+            Violation of any policy or procedure outlined within this contract
+            and any applicable subsequent amendments will result in
+            disciplinary actions including, but not limited to, fines, fees,
+            House probation/restriction, and possible discharge.
           </p>
+
           <p>
             Residents&apos; portion of the premises shall include access to
             all common living areas, kitchen, laundry, and the like, and
-            shared bedroom and bathroom. Monthly water, trash, electric,
-            cable and internet utilities shall be included in sober living
-            fee.
-          </p>
-          <p>
-            Upon entering JSL House resident will submit to urine analyst
-            test and/or alcohol test.
-          </p>
-          <p>
-            Residents of the JSL House program are purchasing a service
-            from JSL House that includes housing. Residents are not renting
-            or leasing any particular apartment or room.
-          </p>
-          <p>
-            Resident shall commit to a <strong>{commitmentTerm}</strong> stay
-            at the property listed above, effective{" "}
-            <strong>{formatDateOnly(commitmentStartDate)}</strong>.
-          </p>
-          <p>
-            Resident will pay a {cycleLower} Sober Living Fee for a portion
-            of the premises located at:{" "}
-            <strong>{propertyLocation}</strong>.
+            shared bedroom and bathroom. Monthly water, trash, electric, cable
+            and internet utilities shall be included in sober living fee.
           </p>
 
-          <hr className="my-2" />
+          <p>
+            Upon entering{" "}
+            <span className="italic font-semibold">Jax Sober Living House</span>{" "}
+            resident will submit to urine analyst test and/or alcohol test.
+          </p>
 
-          <h3 className="text-sm font-semibold">Financial &amp; House Terms</h3>
-          <ol className="space-y-2 text-sm">
-            <li>
-              <strong>SOBER LIVING FEE:</strong>{" "}
-              {isWeekly ? (
-                <>
-                  The Sober Living Fee shall be at the weekly rate of $
-                  {rentAmount.toFixed(2)} per week, payable every{" "}
-                  {dueWeekdayName} (the day before each weekly cycle
-                  begins), commencing {startDateLong}.
-                </>
-              ) : (
-                <>
-                  The Sober Living Fee shall be at the monthly rate of $
-                  {rentAmount.toFixed(2)} per month, payable on{" "}
-                  {monthlyDuePhrase} (the day before each monthly cycle
-                  begins), commencing {startDateLong}.
-                </>
-              )}
-            </li>
-            <li>
-              <strong>ADMINISTRATIVE FEE:</strong> The Sober Living
-              Administrative Fee (nonrefundable) shall be $
-              {adminFee.toFixed(2)}, payable upon entering JSL. This
-              one-time fee is charged once at the start of the
-              resident&apos;s tenancy and is never re-charged by a
-              payment-terms amendment.
-            </li>
-            <li>
-              <strong>TERMINATION OF RESIDENCY:</strong>
-              <ul className="mt-1 space-y-1 list-disc pl-5">
-                <li>
-                  A 30-day written notice is required prior to terminating
-                  services.
-                </li>
-                <li>
-                  This must be done at the beginning of the 6th month or
-                  the beginning of any month after the 6-month commitment
-                  is completed.
-                </li>
-                <li>
-                  Upon leaving, Resident&apos;s bedroom should be
-                  thoroughly cleaned.
-                </li>
-              </ul>
-            </li>
-            <li>
-              <strong>EARLY MOVE-OUT:</strong> Leaving prior to the end of
-              the 6-month commitment requires a 48 hours&apos; notice and
-              no refunds will be issued.
-            </li>
-            <li>
-              <strong>HOUSE RULES:</strong> Resident agrees to abide by all
-              house rules, including but not limited to:
-              <ul className="mt-1 space-y-1 list-disc pl-5">
-                <li>Maintain sobriety at all times while on the premises</li>
-                <li>Attend required house meetings and programs</li>
-                <li>Complete assigned chores on schedule</li>
-                <li>Respect quiet hours and other residents&apos; privacy</li>
-                <li>No overnight guests without prior approval</li>
-                <li>Submit to random drug/alcohol testing</li>
-              </ul>
-            </li>
-            <li>
-              <strong>VIOLATIONS:</strong> Any violation of house rules may
-              result in demerits, fines, or discharge.
-            </li>
-            <li>
-              <strong>DISCHARGE:</strong> Management reserves the right to
-              discharge any resident for rule violations, non-payment of
-              fees, or behavior deemed harmful to the recovery community.
-            </li>
-          </ol>
+          <p>
+            Residents of the{" "}
+            <span className="italic font-semibold">Jax Sober Living House</span>{" "}
+            program are purchasing a service from{" "}
+            <span className="italic font-semibold">Jax Sober Living House</span>{" "}
+            that includes housing. Residents are not renting or leasing any
+            particular apartment or room.
+          </p>
+
+          <p className="pt-2">
+            <span className="inline-block border-b border-black px-2 min-w-[320px] font-semibold">
+              {residentName}
+            </span>{" "}
+            (Hereinafter referred to as &ldquo;Resident&rdquo;) and James Kerr
+            (hereinafter referred to as &ldquo;Executive Director&rdquo;) enter
+            into this agreement as follows: Resident shall commit to a one
+            hundred-eighty-one (181) days stay as indicated below: (Resident
+            will initial below)
+          </p>
+
+          {/* 181-day stay initial row. */}
+          <div className="flex items-center gap-3 pl-2 pt-2">
+            <span className="inline-block border-b border-black min-w-[80px] text-center font-semibold">
+              {initialStamp || "\u00A0"}
+            </span>
+            <span>one hundred-eighty-one (181) day stay</span>
+          </div>
+
+          <p className="pt-3">
+            Resident will pay a month to month Sober Living Fee for a portion
+            of the premises located at: (Resident will initial location below)
+          </p>
+
+          {/* Address initial rows. Only the row that matches the
+              commitment's assigned property receives an initial
+              when the resident types theirs in; other rows stay
+              blank, exactly like the paper form. */}
+          <div className="space-y-3 pl-2">
+            {CANONICAL_ADDRESSES.map((addr) => {
+              const selected = addr === selectedAddress;
+              return (
+                <div key={addr} className="flex items-center gap-3">
+                  <span
+                    className={`inline-block border-b border-black min-w-[80px] text-center font-semibold ${
+                      selected ? "" : "text-transparent"
+                    }`}
+                  >
+                    {selected && initialStamp ? initialStamp : "\u00A0"}
+                  </span>
+                  <span>{addr}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Bottom-right INITIAL stamp, matching the paper page
+              footer. The underline holds the typed initials. */}
+          <div className="flex justify-end pt-6">
+            <div className="w-28 text-center">
+              <span className="block border-b border-black font-semibold">
+                {initialStamp || "\u00A0"}
+              </span>
+              <span className="text-[10px] uppercase tracking-widest text-neutral-500">
+                Initial
+              </span>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Property-location initials — paper contract requires the
-          resident to initial the address on page 1 (separate from
-          the full signature at the end). Required before submit. */}
+      {/* Page 2 — matches the paper form's continuation page. */}
       <Card>
-        <CardHeader>
-          <CardTitle>Initial Your Property Location</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Type your initials to confirm you understand and agree to live
-            at <strong>{propertyLocation}</strong>.
+        <CardContent className="space-y-5 px-8 py-10 font-serif text-[15px] leading-relaxed text-black">
+          <p className="italic text-sm text-neutral-700">
+            Page 1 of 2 (continued)
           </p>
-        </CardHeader>
-        <CardContent>
-          <input
-            type="text"
-            inputMode="text"
-            autoComplete="off"
-            maxLength={8}
-            placeholder="e.g. CS"
-            value={residentInitials}
-            onChange={(e) =>
-              setResidentInitials(e.target.value.toUpperCase())
-            }
-            className="w-32 rounded-md border border-input bg-background px-3 py-2 text-center text-lg font-semibold tracking-widest uppercase focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label="Resident initials"
-          />
-        </CardContent>
-      </Card>
 
-      {/* Staff Signature (read-only) */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Staff Signature</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {staffSignature ? (
-            <div className="space-y-2">
-              <div className="border rounded-md bg-white p-2 w-fit">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={staffSignature}
-                  alt="Staff signature"
-                  className="h-16 w-auto"
-                />
+          <p>
+            {isWeekly ? (
+              <>
+                Sober Living Fee shall be at the weekly rate of{" "}
+                <span className="font-semibold">
+                  ${rentAmount.toFixed(2)}
+                </span>{" "}
+                per week, payable every{" "}
+                <span className="font-semibold">{dueWeekdayName}</span>,
+                commencing{" "}
+                <span className="font-semibold">{startDateLong}</span>.
+              </>
+            ) : (
+              <>
+                Sober Living Fee shall be at the monthly rate of{" "}
+                <span className="font-semibold">
+                  ${rentAmount.toFixed(2)}
+                </span>{" "}
+                per month, payable on{" "}
+                <span className="font-semibold">{monthlyDueDayPhrase}</span>{" "}
+                day of each month, commencing{" "}
+                <span className="font-semibold">{startDateLong}</span>.
+              </>
+            )}
+          </p>
+
+          <p>
+            Sober Living Administrative Fee (nonrefundable) shall be{" "}
+            <span className="font-semibold">${adminFee.toFixed(2)}</span>,
+            payable to James Kerr upon entering Jax Sober Living.
+          </p>
+
+          <div className="space-y-2 pt-2">
+            <p className="font-bold uppercase tracking-wide">
+              Termination of Residency
+            </p>
+            <ol className="list-decimal space-y-1 pl-8">
+              <li>A 30-day written notice is required prior to terminating services.</li>
+              <li>
+                This must be done at the beginning of the 6th month or the
+                beginning of any month after 6 month commitment is completed.
+              </li>
+              <li>Upon leaving, Resident&apos;s bedroom should be thoroughly cleaned.</li>
+            </ol>
+          </div>
+
+          <div className="space-y-2 pt-2">
+            <p className="font-bold uppercase tracking-wide">Early Move-Out</p>
+            <ol className="list-decimal space-y-1 pl-8">
+              <li>
+                Leaving prior to the end of the 6 month commitment require a
+                48 hours&apos; notice and no refunds will be issued.
+              </li>
+            </ol>
+          </div>
+
+          <p className="pt-4 font-semibold">
+            Signing below indicates that I agree to the terms listed above and
+            have received a copy of this agreement.
+          </p>
+
+          {/* Signature rows — resident above staff, date to the
+              right of each signature, matching the paper form. */}
+          <div className="space-y-6 pt-4">
+            <div className="flex items-end gap-3">
+              <span className="shrink-0">Resident&apos;s signature:</span>
+              <div className="flex-1 border-b border-black min-h-[32px] relative">
+                {residentSignature && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={residentSignature}
+                    alt="Resident signature"
+                    className="absolute bottom-0 left-1 h-8 w-auto"
+                  />
+                )}
               </div>
-              <p className="text-xs text-muted-foreground">
-                Signed on {staffSignedAt ? new Date(staffSignedAt).toLocaleDateString("en-US", { timeZone: "America/New_York" }) : "—"}
-              </p>
+              <span className="shrink-0">Date:</span>
+              <span className="shrink-0 min-w-[120px] border-b border-black text-center">
+                {todayLabel}
+              </span>
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">Staff signature pending</p>
-          )}
+
+            <div className="flex items-end gap-3">
+              <span className="shrink-0">Staff&apos;s signature:</span>
+              <div className="flex-1 border-b border-black min-h-[32px] relative">
+                {staffSignature && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={staffSignature}
+                    alt="Staff signature"
+                    className="absolute bottom-0 left-1 h-8 w-auto"
+                  />
+                )}
+              </div>
+              <span className="shrink-0">Date:</span>
+              <span className="shrink-0 min-w-[120px] border-b border-black text-center">
+                {staffSignedLabel}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-8">
+            <div className="w-28 text-center">
+              <span className="block border-b border-black font-semibold">
+                {initialStamp || "\u00A0"}
+              </span>
+              <span className="text-[10px] uppercase tracking-widest text-neutral-500">
+                Initial
+              </span>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
-      {/* Resident Signature */}
+      {/* Resident-input card — collects initials + signature that
+          flow back into the contract body above AND into the
+          generated PDF. Single initial applies to: the 181-day
+          stay row, the matched-address row, and the bottom-right
+          INITIAL stamp on both pages. */}
       <Card>
         <CardHeader>
-          <CardTitle>Your Signature</CardTitle>
+          <CardTitle>Initial &amp; Sign</CardTitle>
           <p className="text-sm text-muted-foreground">
-            By signing below, you agree to the terms and conditions outlined above.
+            Type your initials and sign below to complete the agreement.
+            Your initials will be applied to the 181-day stay line, your
+            assigned address, and the bottom of each page.
           </p>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {error && (
-            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-              {error}
-            </div>
-          )}
+        <CardContent className="space-y-5">
+          <div>
+            <label
+              htmlFor="resident-initials"
+              className="text-sm font-medium block mb-2"
+            >
+              Your Initials
+            </label>
+            <input
+              id="resident-initials"
+              type="text"
+              inputMode="text"
+              autoComplete="off"
+              maxLength={8}
+              placeholder="e.g. CS"
+              value={residentInitials}
+              onChange={(e) =>
+                setResidentInitials(e.target.value.toUpperCase())
+              }
+              className="w-32 rounded-md border border-input bg-background px-3 py-2 text-center text-lg font-semibold tracking-widest uppercase focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="Resident initials"
+            />
+            {!selectedAddress && (
+              <p className="mt-2 text-xs text-amber-700">
+                Note: your assigned address didn&apos;t match any of the three
+                printed addresses on the contract. Please alert staff before
+                signing.
+              </p>
+            )}
+          </div>
 
           <SignaturePad
             onSignatureChange={setResidentSignature}
             label="Resident Signature"
           />
+
+          {error && (
+            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
 
           <div className="flex justify-end">
             <Button
