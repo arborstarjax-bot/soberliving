@@ -53,12 +53,17 @@ function deriveRentDueDate(
   if (!startDate) return "";
   const [y, m, d] = startDate.split("-").map(Number);
   if (!y || !m || !d) return "";
-  // Construct at UTC midnight and read weekday in UTC so the day
-  // name lines up with the stored calendar day no matter which
-  // timezone the caller runs in.
-  const dt = new Date(Date.UTC(y, m - 1, d));
+  // Policy: rent is due the day BEFORE the commitment-start anchor.
+  // Label the due date at anchor-1 so it matches the contract + the
+  // charge engine (and reads the same as the Payment Terms card).
+  const anchor = new Date(Date.UTC(y, m - 1, d));
+  const due = new Date(anchor);
+  due.setUTCDate(due.getUTCDate() - 1);
   if (frequency === "weekly") {
-    const weekday = dt.toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long" });
+    const weekday = due.toLocaleDateString("en-US", {
+      timeZone: "UTC",
+      weekday: "long",
+    });
     return `Every ${weekday}`;
   }
   const ordinal = (n: number) => {
@@ -66,7 +71,8 @@ function deriveRentDueDate(
     const v = n % 100;
     return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
   };
-  return `${ordinal(d)} of each month`;
+  if (d === 1) return "Last day of each preceding month";
+  return `${ordinal(d - 1)} of each month`;
 }
 
 export function EditPendingCommitmentDialog({
