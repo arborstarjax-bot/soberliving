@@ -68,7 +68,10 @@ export function DischargeDialog({ residentId, status }: Props) {
         </DialogHeader>
         <div className="space-y-4 py-2">
           <p className="text-sm text-muted-foreground">
-            This will mark the resident as discharged, vacate all bed assignments, and auto-stamp today as the discharge date.
+            Marks the resident as discharged, vacates their bed, and clears
+            their discipline, chore, leave, check-in, and bulletin records so
+            a returning resident starts with a clean slate. Their login, intake
+            documents, signed commitments, and payment receipts are preserved.
           </p>
           <div className="space-y-1.5">
             <Label htmlFor="discharge_reason">Reason for Discharge</Label>
