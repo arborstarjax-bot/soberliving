@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState, useTransition } from "react";
+import { useActionState, useState, useTransition } from "react";
 import {
   addChoreTask,
   removeChoreTask,
@@ -74,18 +74,14 @@ export function ChoreListManager({
 
   // Keep the internal house selector in sync with the `houses` prop.
   // The parent page narrows `houses` based on the URL's `?house=<id>`
-  // filter tabs — without this effect the internal `selectedHouse`
-  // state sticks to its initial value (usually the first house on
-  // first mount) and filters out every chore that doesn't belong to
-  // that stale house. That was the "chores won't populate in House 3"
-  // bug: page-level tabs scoped the data to house 3, but this
-  // component was still filtering against house 1.
-  useEffect(() => {
-    if (houses.length === 0) return;
-    if (!houses.some((h) => h.id === selectedHouse)) {
-      setSelectedHouse(houses[0].id);
-    }
-  }, [houses, selectedHouse]);
+  // filter tabs — if we leaned on useEffect here the stale house id
+  // would survive one paint, flashing "No chores defined" before the
+  // effect corrected it. Adjusting the state during render (React's
+  // recommended pattern for derived state) lets React re-render
+  // synchronously with the correct value before committing to the DOM.
+  if (houses.length > 0 && !houses.some((h) => h.id === selectedHouse)) {
+    setSelectedHouse(houses[0].id);
+  }
 
   const houseChores = chores.filter((c) => c.house_id === selectedHouse);
   const houseResidents = residents.filter((r) => r.house_id === selectedHouse);
