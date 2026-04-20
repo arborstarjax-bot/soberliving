@@ -256,8 +256,67 @@ export async function generateIntakePdf(
 
   // Label followed by a single underlined value that stretches to the right
   // margin. Used for address lines, sobriety date, etc.
+  //
+  // When the value is textarea-style (contains newlines) or too long to fit
+  // on the inline underline, promote to a multi-line block: label + blank
+  // rule on the first row, then each source line rendered below with
+  // wrapping. Blank source lines render as vertical gaps so users' manual
+  // paragraph breaks are preserved.
   function drawInlineField(label: string, value: string | undefined) {
-    drawInlineRow([{ label, value }]);
+    const trimmed = (value ?? "").replace(/\r\n?/g, "\n");
+    const hasNewline = trimmed.includes("\n");
+    const labelText = `${label}: `;
+    const labelWidth = font.widthOfTextAtSize(labelText, FONT_SIZE);
+    const inlineSlotWidth = PAGE_WIDTH - 2 * MARGIN - labelWidth - 8;
+    const singleLineFits =
+      !hasNewline &&
+      font.widthOfTextAtSize(trimmed, FONT_SIZE) <= inlineSlotWidth;
+
+    if (singleLineFits) {
+      drawInlineRow([{ label, value }]);
+      return;
+    }
+
+    // Multi-line block. Draw the label + empty rule on its own row, then
+    // render each source line (preserving blanks) on subsequent rows.
+    ensureSpace(LINE_HEIGHT + 4);
+    currentPage.drawText(labelText, {
+      x: MARGIN,
+      y,
+      size: FONT_SIZE,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    currentPage.drawLine({
+      start: { x: MARGIN + labelWidth, y: y - 1 },
+      end: { x: PAGE_WIDTH - MARGIN, y: y - 1 },
+      thickness: 0.4,
+      color: UNDERLINE_COLOR,
+    });
+    y -= LINE_HEIGHT + 2;
+
+    const indent = 14;
+    const maxWidth = PAGE_WIDTH - 2 * MARGIN - indent;
+    for (const rawLine of trimmed.split("\n")) {
+      if (rawLine.length === 0) {
+        ensureSpace(LINE_HEIGHT);
+        y -= LINE_HEIGHT;
+        continue;
+      }
+      const wrapped = wrapText(rawLine, font, FONT_SIZE, maxWidth);
+      for (const line of wrapped.length > 0 ? wrapped : [rawLine]) {
+        ensureSpace(LINE_HEIGHT);
+        currentPage.drawText(line, {
+          x: MARGIN + indent,
+          y,
+          size: FONT_SIZE,
+          font,
+          color: rgb(0, 0, 0),
+        });
+        y -= LINE_HEIGHT;
+      }
+    }
+    y -= 4;
   }
 
   // "Do you X? ... ... Yes or No" with the selected option bolded +
@@ -432,7 +491,7 @@ export async function generateIntakePdf(
     const SIG_IMAGE_MAX_HEIGHT = 28;
     const rowHeight = SIG_IMAGE_MAX_HEIGHT + LINE_HEIGHT;
     const hasPrintedName = !!opts.printedName;
-    ensureSpace(rowHeight + (hasPrintedName ? LINE_HEIGHT + 4 : 0) + 6);
+    ensureSpace(rowHeight + (hasPrintedName ? LINE_HEIGHT * 2 + 4 : 0) + 6);
 
     const hasDate = opts.dateValue !== undefined;
     const dateLabelText = "Date: ";
@@ -518,6 +577,9 @@ export async function generateIntakePdf(
     y = sigLineY - 6;
 
     if (hasPrintedName) {
+      // Skip a line so the printed-name underline doesn't read as a
+      // strike-through against the signature image above it.
+      y -= LINE_HEIGHT;
       drawInlineField(opts.printedName!.label, opts.printedName!.value);
     }
     y -= 2;
