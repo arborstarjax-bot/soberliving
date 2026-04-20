@@ -1,15 +1,22 @@
 "use client";
 
-import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { useCallback, useTransition } from "react";
+import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
+import { startTransition, useOptimistic } from "react";
 import { cn } from "@/lib/utils";
 
 /**
  * Horizontal house tabs for the Chores page. Admins get every active
  * house; managers get only the houses they're assigned to. Selection
  * lives in the `?house=<id>` search param so deep-links and refresh
- * both preserve the view. If no `house` param is present yet we show
- * "All" as active (matches the legacy multi-house rendering).
+ * both preserve the view.
+ *
+ * Each tab is a `<Link>` so Next.js auto-prefetches the destination
+ * on hover / when visible, and the click-to-paint feel is instant:
+ * `useOptimistic` flips the "active" border the moment the user
+ * clicks, while the Suspense boundary below streams in the new
+ * data. The previously-rendered tab stays visible during the
+ * transition instead of collapsing to a skeleton.
  */
 interface HouseFilterTabsProps {
   houses: { id: string; name: string }[];
@@ -20,76 +27,74 @@ export function HouseFilterTabs({
   houses,
   selectedHouseId,
 }: HouseFilterTabsProps) {
-  const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  const [isPending, startTransition] = useTransition();
+  const [optimisticHouseId, setOptimisticHouseId] =
+    useOptimistic<string | null>(selectedHouseId);
 
-  const setHouse = useCallback(
-    (id: string | null) => {
-      const next = new URLSearchParams(params.toString());
-      if (id) next.set("house", id);
-      else next.delete("house");
-      const qs = next.toString();
-      startTransition(() => {
-        router.push(qs ? `${pathname}?${qs}` : pathname);
-      });
-    },
-    [params, pathname, router]
-  );
+  const hrefFor = (id: string | null) => {
+    const next = new URLSearchParams(params.toString());
+    if (id) next.set("house", id);
+    else next.delete("house");
+    const qs = next.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+  };
 
-  // Only show tabs when there's more than one house to pick from —
-  // single-house managers don't need a toggle.
+  // Single-house managers don't need a toggle.
   if (houses.length <= 1) return null;
 
   return (
     <div className="flex flex-wrap gap-1 border-b">
-      <TabButton
-        active={selectedHouseId === null}
-        onClick={() => setHouse(null)}
-        disabled={isPending}
+      <TabLink
+        active={optimisticHouseId === null}
+        href={hrefFor(null)}
+        onClick={() =>
+          startTransition(() => setOptimisticHouseId(null))
+        }
       >
         All Houses
-      </TabButton>
+      </TabLink>
       {houses.map((h) => (
-        <TabButton
+        <TabLink
           key={h.id}
-          active={selectedHouseId === h.id}
-          onClick={() => setHouse(h.id)}
-          disabled={isPending}
+          active={optimisticHouseId === h.id}
+          href={hrefFor(h.id)}
+          onClick={() =>
+            startTransition(() => setOptimisticHouseId(h.id))
+          }
         >
           {h.name}
-        </TabButton>
+        </TabLink>
       ))}
     </div>
   );
 }
 
-function TabButton({
+function TabLink({
   active,
+  href,
   onClick,
-  disabled,
   children,
 }: {
   active: boolean;
+  href: string;
   onClick: () => void;
-  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
+    <Link
+      href={href}
+      prefetch
       onClick={onClick}
-      disabled={disabled}
+      scroll={false}
       className={cn(
         "relative -mb-px border-b-2 px-3 py-2 text-sm transition-colors",
         active
           ? "border-primary font-medium text-foreground"
-          : "border-transparent text-muted-foreground hover:text-foreground",
-        disabled && "opacity-60"
+          : "border-transparent text-muted-foreground hover:text-foreground"
       )}
     >
       {children}
-    </button>
+    </Link>
   );
 }
