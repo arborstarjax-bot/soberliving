@@ -1,14 +1,22 @@
 "use client";
 
-import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import { PDFDocument, PDFFont, PDFPage, rgb, StandardFonts } from "pdf-lib";
+import {
+  ALL_POLICIES,
+  APPLICATION_ATTEST_TEXT,
+  DOCUMENT_RECEIPT_TEXT,
+  ROI_INTRO_TEXT,
+  type PolicyPageContent,
+} from "./policy-text";
 
 const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
 const MARGIN = 50;
-const LINE_HEIGHT = 18;
-const FONT_SIZE = 11;
-const TITLE_SIZE = 16;
-const LABEL_SIZE = 9;
+const LINE_HEIGHT = 14;
+const FONT_SIZE = 10;
+const TITLE_SIZE = 15;
+const SECTION_SIZE = 11;
+const LABEL_SIZE = 8;
 
 export async function generateIntakePdf(
   formData: Record<string, string>,
@@ -18,18 +26,22 @@ export async function generateIntakePdf(
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-  let currentPage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  let currentPage: PDFPage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
   let y = PAGE_HEIGHT - MARGIN;
 
+  function newPage() {
+    currentPage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    y = PAGE_HEIGHT - MARGIN;
+  }
+
   function ensureSpace(needed: number) {
-    if (y - needed < MARGIN) {
-      currentPage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-      y = PAGE_HEIGHT - MARGIN;
+    if (y - needed < MARGIN + 30) {
+      newPage();
     }
   }
 
   function drawTitle(text: string) {
-    ensureSpace(40);
+    ensureSpace(TITLE_SIZE + 20);
     currentPage.drawText(text, {
       x: MARGIN,
       y,
@@ -37,19 +49,73 @@ export async function generateIntakePdf(
       font: boldFont,
       color: rgb(0, 0, 0),
     });
-    y -= TITLE_SIZE + 12;
+    y -= TITLE_SIZE + 10;
+  }
+
+  function drawSectionHeading(text: string) {
+    ensureSpace(SECTION_SIZE + 12);
+    currentPage.drawText(text, {
+      x: MARGIN,
+      y,
+      size: SECTION_SIZE,
+      font: boldFont,
+      color: rgb(0, 0, 0),
+    });
+    y -= SECTION_SIZE + 6;
+  }
+
+  function wrapText(text: string, fontToUse: PDFFont, size: number, maxWidth: number): string[] {
+    const lines: string[] = [];
+    for (const rawLine of text.split("\n")) {
+      if (!rawLine) {
+        lines.push("");
+        continue;
+      }
+      const words = rawLine.split(" ");
+      let cur = "";
+      for (const w of words) {
+        const candidate = cur ? `${cur} ${w}` : w;
+        if (fontToUse.widthOfTextAtSize(candidate, size) > maxWidth) {
+          if (cur) lines.push(cur);
+          cur = w;
+        } else {
+          cur = candidate;
+        }
+      }
+      if (cur) lines.push(cur);
+    }
+    return lines;
+  }
+
+  function drawParagraph(text: string, opts?: { bold?: boolean; size?: number; indent?: number }) {
+    const useFont = opts?.bold ? boldFont : font;
+    const size = opts?.size ?? FONT_SIZE;
+    const indent = opts?.indent ?? 0;
+    const maxWidth = PAGE_WIDTH - 2 * MARGIN - indent;
+    const lines = wrapText(text, useFont, size, maxWidth);
+    for (const line of lines) {
+      ensureSpace(LINE_HEIGHT);
+      currentPage.drawText(line, {
+        x: MARGIN + indent,
+        y,
+        size,
+        font: useFont,
+        color: rgb(0, 0, 0),
+      });
+      y -= LINE_HEIGHT;
+    }
   }
 
   function drawField(label: string, value: string | undefined) {
     ensureSpace(LINE_HEIGHT * 2);
-    currentPage.drawText(label, {
+    currentPage.drawText(label.toUpperCase(), {
       x: MARGIN,
       y,
       size: LABEL_SIZE,
       font: boldFont,
-      color: rgb(0.4, 0.4, 0.4),
+      color: rgb(0.35, 0.35, 0.35),
     });
-    y -= 14;
+    y -= 11;
     currentPage.drawText(value || "—", {
       x: MARGIN,
       y,
@@ -57,7 +123,7 @@ export async function generateIntakePdf(
       font,
       color: rgb(0, 0, 0),
     });
-    y -= LINE_HEIGHT;
+    y -= LINE_HEIGHT + 2;
   }
 
   function drawFieldRow(fields: { label: string; value: string | undefined }[]) {
@@ -65,106 +131,123 @@ export async function generateIntakePdf(
     const colWidth = (PAGE_WIDTH - 2 * MARGIN) / fields.length;
     for (let i = 0; i < fields.length; i++) {
       const x = MARGIN + i * colWidth;
-      currentPage.drawText(fields[i].label, {
+      currentPage.drawText(fields[i].label.toUpperCase(), {
         x,
         y,
         size: LABEL_SIZE,
         font: boldFont,
-        color: rgb(0.4, 0.4, 0.4),
+        color: rgb(0.35, 0.35, 0.35),
       });
       currentPage.drawText(fields[i].value || "—", {
         x,
-        y: y - 14,
+        y: y - 11,
         size: FONT_SIZE,
         font,
         color: rgb(0, 0, 0),
       });
     }
-    y -= LINE_HEIGHT + 14;
+    y -= LINE_HEIGHT * 2;
   }
 
-  function drawBullets(items: string[]) {
-    for (const item of items) {
-      ensureSpace(LINE_HEIGHT);
-      const text = `• ${item}`;
-      // Wrap long text
-      const words = text.split(" ");
-      let line = "";
-      for (const word of words) {
-        const testLine = line ? `${line} ${word}` : word;
-        const width = font.widthOfTextAtSize(testLine, FONT_SIZE);
-        if (width > PAGE_WIDTH - 2 * MARGIN - 10) {
-          ensureSpace(LINE_HEIGHT);
-          currentPage.drawText(line, {
-            x: MARGIN + 10,
-            y,
-            size: FONT_SIZE,
-            font,
-            color: rgb(0, 0, 0),
-          });
-          y -= LINE_HEIGHT;
-          line = word;
-        } else {
-          line = testLine;
-        }
-      }
-      if (line) {
-        ensureSpace(LINE_HEIGHT);
-        currentPage.drawText(line, {
-          x: MARGIN + 10,
-          y,
-          size: FONT_SIZE,
-          font,
-          color: rgb(0, 0, 0),
-        });
-        y -= LINE_HEIGHT;
-      }
+  function drawLongAnswer(label: string, value: string | undefined) {
+    ensureSpace(LINE_HEIGHT * 3);
+    currentPage.drawText(label.toUpperCase(), {
+      x: MARGIN,
+      y,
+      size: LABEL_SIZE,
+      font: boldFont,
+      color: rgb(0.35, 0.35, 0.35),
+    });
+    y -= 11;
+    if (!value) {
+      currentPage.drawText("—", { x: MARGIN, y, size: FONT_SIZE, font, color: rgb(0, 0, 0) });
+      y -= LINE_HEIGHT + 2;
+      return;
     }
+    const lines = wrapText(value, font, FONT_SIZE, PAGE_WIDTH - 2 * MARGIN);
+    for (const line of lines) {
+      ensureSpace(LINE_HEIGHT);
+      currentPage.drawText(line, { x: MARGIN, y, size: FONT_SIZE, font, color: rgb(0, 0, 0) });
+      y -= LINE_HEIGHT;
+    }
+    y -= 4;
   }
 
-  async function drawSignature(signatureKey: string, dateValue: string | undefined) {
-    const sigData = signatures[signatureKey];
+  async function drawSignatureBlock(opts: {
+    label: string;
+    signatureKey: string;
+    dateValue?: string;
+    printedName?: { label: string; value: string };
+  }) {
+    ensureSpace(95);
+    currentPage.drawText(opts.label.toUpperCase(), {
+      x: MARGIN,
+      y,
+      size: LABEL_SIZE,
+      font: boldFont,
+      color: rgb(0.35, 0.35, 0.35),
+    });
+    y -= 12;
+
+    const sigData = signatures[opts.signatureKey];
     if (sigData) {
-      ensureSpace(80);
       try {
         const sigBytes = await fetch(sigData).then((r) => r.arrayBuffer());
         const sigImage = await pdf.embedPng(new Uint8Array(sigBytes));
-        const sigDims = sigImage.scale(0.3);
-        const drawWidth = Math.min(sigDims.width, 200);
-        const drawHeight = (sigDims.height / sigDims.width) * drawWidth;
+        const drawWidth = 220;
+        const drawHeight = (sigImage.height / sigImage.width) * drawWidth;
         currentPage.drawImage(sigImage, {
           x: MARGIN,
           y: y - drawHeight,
           width: drawWidth,
           height: drawHeight,
         });
-        y -= drawHeight + 5;
+        y -= drawHeight + 4;
       } catch {
         currentPage.drawText("[Signature on file]", {
           x: MARGIN,
           y,
           size: FONT_SIZE,
           font,
-          color: rgb(0.3, 0.3, 0.3),
+          color: rgb(0.4, 0.4, 0.4),
         });
         y -= LINE_HEIGHT;
       }
-    }
-    if (dateValue) {
-      currentPage.drawText(`Date: ${dateValue}`, {
-        x: MARGIN,
-        y,
-        size: FONT_SIZE,
-        font,
-        color: rgb(0, 0, 0),
-      });
+    } else {
+      currentPage.drawText("—", { x: MARGIN, y, size: FONT_SIZE, font, color: rgb(0.4, 0.4, 0.4) });
       y -= LINE_HEIGHT;
     }
-    y -= 10;
+
+    // Draw signature underline
+    currentPage.drawLine({
+      start: { x: MARGIN, y: y + 2 },
+      end: { x: MARGIN + 260, y: y + 2 },
+      thickness: 0.5,
+      color: rgb(0.5, 0.5, 0.5),
+    });
+    y -= 4;
+
+    const info: { label: string; value: string | undefined }[] = [];
+    if (opts.printedName) {
+      info.push({ label: opts.printedName.label, value: opts.printedName.value });
+    }
+    if (opts.dateValue !== undefined) {
+      info.push({ label: "Date", value: opts.dateValue });
+    }
+    if (info.length > 0) {
+      drawFieldRow(info);
+    }
+    y -= 6;
   }
 
-  // ─── Page 1: Resident Application ───────────────────────────
+  // ═══════════════════════════════════════════════════════════════
+  // RESIDENT APPLICATION
+  // ═══════════════════════════════════════════════════════════════
+
   drawTitle("Jax Sober Living Resident Application");
+  y -= 4;
+
+  // — Personal Info —
   drawFieldRow([
     { label: "First Name", value: formData.first_name },
     { label: "Middle Name", value: formData.middle_name },
@@ -176,8 +259,8 @@ export async function generateIntakePdf(
   ]);
   drawField("Gender", formData.gender);
   drawFieldRow([
-    { label: "Phone", value: formData.phone },
-    { label: "Email", value: formData.email },
+    { label: "Phone No.", value: formData.phone },
+    { label: "Email Address", value: formData.email },
   ]);
   drawField("Home Address", formData.home_address);
   drawFieldRow([
@@ -185,166 +268,245 @@ export async function generateIntakePdf(
     { label: "State", value: formData.state },
     { label: "Zip", value: formData.zip },
   ]);
-  drawField("Owns Vehicle", formData.owns_vehicle);
+
+  // — Vehicle —
+  drawSectionHeading("Vehicle");
+  drawField("Do you own a vehicle?", formData.owns_vehicle);
   if (formData.owns_vehicle === "Yes") {
-    drawField("Vehicle Info", formData.vehicle_info);
     drawFieldRow([
-      { label: "License Plate", value: formData.license_plate },
-      { label: "Insurance", value: formData.insurance_info },
+      { label: "Year", value: formData.vehicle_year },
+      { label: "Make", value: formData.vehicle_make },
+      { label: "Model", value: formData.vehicle_model },
+      { label: "Color", value: formData.vehicle_color },
+    ]);
+    drawFieldRow([
+      { label: "Plate State", value: formData.license_plate_state },
+      { label: "Plate Number", value: formData.license_plate_number },
+      { label: "Plate Exp (mo/yr)", value: formData.license_plate_expiration },
+    ]);
+    drawFieldRow([
+      { label: "Insurance Co.", value: formData.insurance_company },
+      { label: "Policy #", value: formData.insurance_policy_number },
+      { label: "Insurance Exp.", value: formData.insurance_expiration_date },
     ]);
   }
 
-  // ─── Page 2: Recovery & Medical ─────────────────────────────
-  currentPage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  y = PAGE_HEIGHT - MARGIN;
-  drawTitle("Recovery & Medical Information");
-  drawField("How did you hear about Jax Sober Living?", formData.referral_source);
-  drawField("Struggles with drugs/alcohol", formData.struggles_with_substances);
-  drawField("Participating in recovery program", formData.in_recovery_program);
-  drawField("Attending IOP", formData.attending_iop);
+  // — Referral & Recovery —
+  drawSectionHeading("Recovery & Medical");
+  drawLongAnswer("How did you hear about Jax Sober Living?", formData.referral_source);
+  drawField(
+    "Do you identify as someone who struggles with drugs and/or alcohol?",
+    formData.struggles_with_substances
+  );
+  drawField(
+    "Plan on working a recovery program while at Jax Sober Living (12 Step based)?",
+    formData.in_recovery_program
+  );
+  drawField("Attending or will be attending an IOP Program?", formData.attending_iop);
   if (formData.attending_iop === "Yes") {
-    drawField("Program Name", formData.iop_program_name);
+    drawField("IOP Program Name", formData.iop_program_name);
   }
-  drawField("Medications", formData.medications);
-  drawField("Medical History / Issues", formData.medical_history);
-  drawField("Mental Illness Diagnosis", formData.mental_illness);
-  drawField("Physical Health Issues", formData.physical_health);
+  drawLongAnswer("Medications", formData.medications);
+  drawLongAnswer("Medical History / Issues", formData.medical_history);
+  drawField("Ever been diagnosed with a mental illness?", formData.has_mental_illness);
+  if (formData.has_mental_illness === "Yes") {
+    drawLongAnswer("Mental Illness Diagnosis", formData.mental_illness_diagnosis);
+  }
+  drawField("Any present or past physical problems?", formData.has_physical_problems);
+  if (formData.has_physical_problems === "Yes") {
+    drawLongAnswer("Physical Problem Diagnosis", formData.physical_problems_diagnosis);
+  }
 
-  // ─── Page 3: Emergency & Financial Contacts ─────────────────
-  currentPage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  y = PAGE_HEIGHT - MARGIN;
-  drawTitle("Emergency & Financial Contacts");
-  drawField("Emergency Contact 1 — Name", formData.emergency_contact_1_name);
+  // — Allergies / Physician / Employment —
+  newPage();
+  drawSectionHeading("Allergies, Physician & Employment");
+  drawField("Any known allergies?", formData.has_allergies);
+  if (formData.has_allergies === "Yes") {
+    drawLongAnswer("Allergy Description (reaction / remedy)", formData.allergies_details);
+  }
+  drawField("Currently under the care of a physician?", formData.under_physician_care);
+  if (formData.under_physician_care === "Yes") {
+    drawLongAnswer("Reason", formData.physician_reason);
+    drawFieldRow([
+      { label: "Physician's Name", value: formData.physician_name },
+      { label: "Phone No.", value: formData.physician_phone },
+    ]);
+  }
+  drawField("Currently working?", formData.currently_working);
+  if (formData.currently_working === "Yes") {
+    drawField("Employer", formData.employer_name);
+    drawField("Employer Address", formData.employer_address);
+    drawField("Employer Phone", formData.employer_phone);
+  }
+
+  // — Emergency + Financial Contacts —
+  drawSectionHeading("Emergency Contacts");
   drawFieldRow([
+    { label: "Name", value: formData.emergency_contact_1_name },
     { label: "Relationship", value: formData.emergency_contact_1_relationship },
-    { label: "Phone", value: formData.emergency_contact_1_phone },
+    { label: "Phone No.", value: formData.emergency_contact_1_phone },
   ]);
-  drawField("Emergency Contact 2 — Name", formData.emergency_contact_2_name);
   drawFieldRow([
+    { label: "Name", value: formData.emergency_contact_2_name },
     { label: "Relationship", value: formData.emergency_contact_2_relationship },
-    { label: "Phone", value: formData.emergency_contact_2_phone },
+    { label: "Phone No.", value: formData.emergency_contact_2_phone },
   ]);
-  drawField("Financial Contact — Name", formData.financial_contact_name);
+  drawSectionHeading("Financial Contact");
   drawFieldRow([
+    { label: "Name", value: formData.financial_contact_name },
     { label: "Relationship", value: formData.financial_contact_relationship },
-    { label: "Phone", value: formData.financial_contact_phone },
+    { label: "Phone No.", value: formData.financial_contact_phone },
   ]);
 
-  // ─── Page 4: Substance & Housing History ────────────────────
-  currentPage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  y = PAGE_HEIGHT - MARGIN;
-  drawTitle("Substance & Housing History");
-  drawField("Facility Name", formData.facility_name);
-  drawFieldRow([
-    { label: "Date Discharged", value: formData.facility_discharge_date },
-    { label: "Length of Stay", value: formData.facility_length_of_stay },
-  ]);
-  drawField("Completed Program", formData.completed_program);
-  if (formData.completed_program === "No") {
-    drawField("Reason", formData.program_not_completed_reason);
+  // — Substance Abuse Facility History —
+  drawSectionHeading("Substance Abuse Facility / Sober Housing History");
+  for (let i = 1; i <= 4; i++) {
+    const name = formData[`facility_${i}_name`];
+    const discharge = formData[`facility_${i}_discharge_date`];
+    const length = formData[`facility_${i}_length_of_stay`];
+    const completed = formData[`facility_${i}_completed`];
+    const reason = formData[`facility_${i}_reason_not_completed`];
+    if (!name && !discharge && !length && !completed) continue;
+    drawFieldRow([
+      { label: `Facility #${i}`, value: name },
+      { label: "Date Discharged", value: discharge },
+      { label: "Length of Stay", value: length },
+    ]);
+    drawField("Successfully completed?", completed);
+    if (completed === "No" && reason) {
+      drawLongAnswer("If no, why not?", reason);
+    }
   }
   drawField("Sobriety Date", formData.sobriety_date);
 
-  // ─── Page 5: Drug Use & Criminal History ────────────────────
-  currentPage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  y = PAGE_HEIGHT - MARGIN;
-  drawTitle("Drug Use & Criminal History");
+  // — Drug Use & Criminal History —
+  newPage();
+  drawSectionHeading("Drug Use");
   drawField("Drug of Choice", formData.drug_of_choice);
-  drawField("Recent Drugs Used & Last Use Dates", formData.recent_drugs);
-  drawField("Convicted of felony/misdemeanor", formData.convicted_felon);
+  for (let i = 1; i <= 4; i++) {
+    const d = formData[`recent_drug_${i}_name`];
+    const dt = formData[`recent_drug_${i}_date`];
+    if (!d && !dt) continue;
+    drawFieldRow([
+      { label: `Drug ${i}`, value: d },
+      { label: "Date of Last Use", value: dt },
+    ]);
+  }
+
+  drawSectionHeading("Criminal History");
+  drawField("Ever convicted of a felony or misdemeanor?", formData.convicted_felon);
   if (formData.convicted_felon === "Yes") {
-    drawField("Explanation", formData.conviction_explanation);
+    drawLongAnswer("Explanation", formData.conviction_explanation);
   }
-  drawField("Sex Offender Status", formData.sex_offender);
-  drawField("Violent/Sexual Crime History", formData.violent_crime_history);
-  if (formData.violent_crime_history === "Yes") {
-    drawField("Explanation", formData.violent_crime_explanation);
+  drawField("Sex Offender / Predator Status?", formData.sex_offender);
+  if (formData.sex_offender === "Yes") {
+    drawLongAnswer("Explanation", formData.sex_offender_explanation);
   }
-
-  // ─── Pages 6-10: Policies ──────────────────────────────────
-  const policies = [
-    {
-      title: "MAT Medication Storage & Use Policy",
-      bullets: [
-        "Residents enrolled in MAT programs will be treated equally. Medications must be secured and turned into staff upon admission.",
-        "All MAT medications will be locked in the manager's office.",
-        "Residents will be given controlled access to medications.",
-        "Abuse or stockpiling will be treated as relapse.",
-      ],
-      sigKey: "mat_policy",
-      dateKey: "mat_policy_date",
-    },
-    {
-      title: "Confidentiality Policy",
-      bullets: [
-        "All resident information is confidential and will be securely stored. Only authorized staff may access this information.",
-        "Information may be released with consent.",
-        "Exceptions include legal orders or emergencies.",
-        "Violation of peer confidentiality may result in discharge.",
-      ],
-      sigKey: "confidentiality_policy",
-      dateKey: "confidentiality_policy_date",
-    },
-    {
-      title: "Good Neighbor Policy",
-      bullets: [
-        "No excessive noise.",
-        "No loitering in front of property.",
-        "Keep property clean.",
-        "Park only in designated areas.",
-      ],
-      sigKey: "good_neighbor_policy",
-      dateKey: "good_neighbor_policy_date",
-    },
-    {
-      title: "Hazardous Items & Search Policy",
-      bullets: [
-        "Drugs, alcohol, and mind-altering substances are prohibited.",
-        "Weapons and paraphernalia are prohibited.",
-        "Searches may occur randomly or upon suspicion.",
-      ],
-      sigKey: "hazardous_items_policy",
-      dateKey: "hazardous_items_policy_date",
-    },
-    {
-      title: "Discharge Policy",
-      bullets: [
-        "Residents may be discharged if criteria are no longer met.",
-        "Lack of progress may result in discharge.",
-        "Emergency contacts may be notified.",
-      ],
-      sigKey: "discharge_policy",
-      dateKey: "discharge_policy_date",
-    },
-  ];
-
-  for (const policy of policies) {
-    currentPage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-    y = PAGE_HEIGHT - MARGIN;
-    drawTitle(policy.title);
-    drawBullets(policy.bullets);
-    y -= 20;
-    await drawSignature(policy.sigKey, formData[policy.dateKey]);
-  }
-
-  // ─── Page 11: Release of Information ────────────────────────
-  currentPage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  y = PAGE_HEIGHT - MARGIN;
-  drawTitle("Release of Information (ROI)");
-  currentPage.drawText(
-    "Residents authorize Jax Sober Living to share information with listed contacts.",
-    { x: MARGIN, y, size: FONT_SIZE, font, color: rgb(0.3, 0.3, 0.3) }
+  drawField(
+    "Convicted of violent/sexual crimes against elderly, children, or disabled?",
+    formData.violent_crime_history
   );
-  y -= LINE_HEIGHT * 2;
-  drawField("Contact Name", formData.roi_contact_name);
-  drawFieldRow([
-    { label: "Relationship", value: formData.roi_contact_relationship },
-    { label: "Phone", value: formData.roi_contact_phone },
-  ]);
-  y -= 10;
-  await drawSignature("release_of_information", formData.roi_date);
+  if (formData.violent_crime_history === "Yes") {
+    drawLongAnswer("Explanation", formData.violent_crime_explanation);
+  }
 
-  // Generate footer on every page
+  // — Attestation + Application signatures —
+  drawSectionHeading("Attestation");
+  drawParagraph(APPLICATION_ATTEST_TEXT);
+  y -= 8;
+  await drawSignatureBlock({
+    label: "Resident Signature",
+    signatureKey: "resident_application",
+    dateValue: formData.application_resident_date,
+    printedName: {
+      label: "Printed Name",
+      value: formData.application_resident_print_name,
+    },
+  });
+  // Staff signature is typed name only at intake (they'll re-sign later if needed)
+  drawFieldRow([
+    { label: "Staff Name", value: formData.application_staff_name },
+    { label: "Staff Date", value: formData.application_staff_date },
+  ]);
+
+  // ═══════════════════════════════════════════════════════════════
+  // POLICY PAGES (each on a fresh page)
+  // ═══════════════════════════════════════════════════════════════
+
+  for (const policy of ALL_POLICIES) {
+    await renderPolicy(policy, formData);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // RELEASE OF INFORMATION
+  // ═══════════════════════════════════════════════════════════════
+
+  newPage();
+  drawTitle("Release of Information (ROI) — Emergency Contact");
+  drawFieldRow([
+    { label: "Resident's Name", value: formData.roi_resident_name },
+    { label: "Date", value: formData.roi_form_date },
+  ]);
+  y -= 4;
+  for (const para of ROI_INTRO_TEXT.split("\n\n")) {
+    drawParagraph(para);
+    y -= 4;
+  }
+
+  drawSectionHeading("Authorized Contacts");
+  for (let i = 1; i <= 6; i++) {
+    const name = formData[`roi_contact_${i}_name`];
+    const rel = formData[`roi_contact_${i}_relationship`];
+    const phone = formData[`roi_contact_${i}_phone`];
+    if (!name && !rel && !phone) continue;
+    drawFieldRow([
+      { label: `Name #${i}`, value: name },
+      { label: "Relationship", value: rel },
+      { label: "Phone No.", value: phone },
+    ]);
+  }
+
+  y -= 6;
+  await drawSignatureBlock({
+    label: "Resident Signature",
+    signatureKey: "release_of_information",
+    dateValue: formData.roi_resident_date,
+    printedName: { label: "Printed Name", value: formData.roi_resident_printed_name },
+  });
+  await drawSignatureBlock({
+    label: "Witness Signature",
+    signatureKey: "release_of_information_witness",
+    dateValue: formData.roi_witness_date,
+    printedName: { label: "Printed Name", value: formData.roi_witness_printed_name },
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // RESIDENT DOCUMENT RECEIPT ACKNOWLEDGMENT
+  // ═══════════════════════════════════════════════════════════════
+
+  newPage();
+  drawTitle("Resident Document Receipt Acknowledgment");
+  drawParagraph(
+    "Form letter to be signed by resident to indicate he or she has received the policy and procedures documents and understands its effect. To be returned to Jax Sober Living Halfway House."
+  );
+  y -= 4;
+  const filledReceipt = DOCUMENT_RECEIPT_TEXT.replace(
+    "____________________",
+    formData.document_receipt_print_name || "____________________"
+  );
+  drawParagraph(filledReceipt);
+  y -= 8;
+  drawField("Print Name", formData.document_receipt_print_name);
+  await drawSignatureBlock({
+    label: "Resident Signature",
+    signatureKey: "document_receipt",
+    dateValue: formData.document_receipt_date,
+  });
+
+  // ───────────────────────────────────────────────────────────────
+  // Footer on every page
+  // ───────────────────────────────────────────────────────────────
+
   const pages = pdf.getPages();
   for (let i = 0; i < pages.length; i++) {
     pages[i].drawText(`Page ${i + 1} of ${pages.length}`, {
@@ -352,7 +514,7 @@ export async function generateIntakePdf(
       y: 20,
       size: 8,
       font,
-      color: rgb(0.6, 0.6, 0.6),
+      color: rgb(0.55, 0.55, 0.55),
     });
     pages[i].drawText(
       `Generated ${new Date().toLocaleDateString("en-US", { timeZone: "America/New_York" })} — Jax Sober Living`,
@@ -361,17 +523,49 @@ export async function generateIntakePdf(
         y: 20,
         size: 8,
         font,
-        color: rgb(0.6, 0.6, 0.6),
+        color: rgb(0.55, 0.55, 0.55),
       }
     );
   }
 
   const pdfBytes = await pdf.save();
-  // Convert to base64
   let binary = "";
   const bytes = new Uint8Array(pdfBytes);
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
+
+  // ────────────────────────────────────────────────────────────────
+  // helpers that close over `pdf` / `drawXYZ`
+  // ────────────────────────────────────────────────────────────────
+
+  async function renderPolicy(policy: PolicyPageContent, formData: Record<string, string>) {
+    newPage();
+    drawTitle(policy.title);
+    y -= 4;
+    for (const section of policy.sections) {
+      if (section.heading) {
+        drawSectionHeading(section.heading);
+      }
+      for (const para of section.body.split("\n\n")) {
+        drawParagraph(para);
+        y -= 4;
+      }
+      y -= 4;
+    }
+    y -= 6;
+    await drawSignatureBlock({
+      label: "Resident Signature",
+      signatureKey: policy.signatureKey,
+      dateValue: formData[`${policy.signatureKey}_date`],
+    });
+    if (policy.witnessKey) {
+      await drawSignatureBlock({
+        label: policy.witnessLabel ?? "Witness Signature",
+        signatureKey: policy.witnessKey,
+        dateValue: formData[`${policy.witnessKey}_date`],
+      });
+    }
+  }
 }
