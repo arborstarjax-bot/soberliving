@@ -191,6 +191,28 @@ export async function dischargeResident(
     .maybeSingle();
   const residentUserId = residentLink?.user_id ?? null;
 
+  // ── Flip status FIRST ────────────────────────────────────────
+  // We intentionally mark the resident as discharged before running
+  // any destructive cleanup. If this update fails (transient DB
+  // hiccup, RLS change, etc.) we bail early with nothing destroyed,
+  // so the retry path is safe and the resident's discipline / chore
+  // / bulletin / activity data stays intact. Preserved regardless:
+  // intake_forms, signed house_commitments (plus their PDFs in the
+  // bucket), payments ledger, auth user (email + password), and the
+  // activity_log audit trail.
+  const { error } = await supabase
+    .from("residents")
+    .update({
+      status: "discharged",
+      move_out_date: dischargeDate,
+      discharge_reason: reason || null,
+      discharge_is_voluntary: isVoluntary ?? false,
+      updated_at: nowIso,
+    })
+    .eq("id", residentId);
+
+  if (error) return { error: error.message };
+
   // End all active bed assignments
   await supabase
     .from("bed_assignments")
@@ -270,13 +292,16 @@ export async function dischargeResident(
     ]);
 
   // ── Void unpaid / future-dated charges ───────────────────────
-  // Paid charges stay (ledger history). Unpaid ones would otherwise
-  // keep surfacing as "past due" forever on reports.
+  // Paid charges stay (ledger history). Open / partially paid ones
+  // would otherwise keep surfacing as "past due" forever on reports.
+  // `status` is constrained to ('open','paid','partial','void') —
+  // we delete the non-closed states so the ledger only retains
+  // settled activity for this discharged resident.
   await supabase
     .from("payment_charges")
     .delete()
     .eq("resident_id", residentId)
-    .in("status", ["unpaid", "partial"]);
+    .in("status", ["open", "partial"]);
 
   // ── Bulletin / social content (linked via user_id) ───────────
   // Posts, comments, likes, ride-share reservations, grievances,
@@ -322,29 +347,6 @@ export async function dischargeResident(
       .eq("user_id", residentUserId);
   }
 
-  // Update resident status with discharge date, optional reason, and
-  // voluntary flag. The boolean is stored so the State of the House report
-  // can reliably split "Discharged" vs "Voluntary departures" instead of
-  // inferring from whether a reason was provided.
-  //
-  // Preserved: residents row itself (so their login still works if
-  // they return), intake_forms (documents + signatures), signed
-  // house_commitments rows (pdf_storage_path + signatures), payments
-  // (ledger receipts), activity_log (audit trail), bed_assignments
-  // history (end-dated, not deleted).
-  const { error } = await supabase
-    .from("residents")
-    .update({
-      status: "discharged",
-      move_out_date: dischargeDate,
-      discharge_reason: reason || null,
-      discharge_is_voluntary: isVoluntary ?? false,
-      updated_at: nowIso,
-    })
-    .eq("id", residentId);
-
-  if (error) return { error: error.message };
-
   const voluntaryText = isVoluntary ? " (voluntary)" : "";
   const reasonText = reason ? ` — Reason: ${reason}` : "";
   await logActivity({
@@ -360,15 +362,9 @@ export async function dischargeResident(
   // Notify the resident about their own discharge. Kept minimal — if the
   // discharge was involuntary and sensitive, the reason is redacted here
   // (staff can still see full details in the activity log).
-  const { data: residentUser } = await supabase
-    .from("residents")
-    .select("user_id")
-    .eq("id", residentId)
-    .maybeSingle();
-
-  if (residentUser?.user_id) {
+  if (residentUserId) {
     await sendNotification({
-      userId: residentUser.user_id,
+      userId: residentUserId,
       type: "discharge",
       title: isVoluntary ? "Departure Recorded" : "Discharge Recorded",
       message: isVoluntary
