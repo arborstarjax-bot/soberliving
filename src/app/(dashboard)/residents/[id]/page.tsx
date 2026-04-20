@@ -153,6 +153,25 @@ export default async function ResidentDetailPage(
       .maybeSingle();
     activeCommitment = latest ?? null;
   }
+  // Last-resort fallback: resident has NO linked user account
+  // (user_id on residents is NULL — staff-only-tracked resident, or
+  // the auth link was never created). All three user_id fallbacks
+  // above short-circuit in that case. We still want the Payment
+  // Terms card to surface, so try the same non-cancelled (including
+  // NULL) status filter keyed on resident_id directly.
+  if (!activeCommitment) {
+    const { data: latestByResident } = await supabase
+      .from("house_commitments")
+      .select(
+        "id, rent_amount, admin_fee, payment_frequency, commitment_start_date, commitment_term, restrictions_notes, notes, status, pdf_storage_path"
+      )
+      .eq("resident_id", id)
+      .or("status.is.null,status.neq.cancelled")
+      .order("commitment_start_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    activeCommitment = latestByResident ?? null;
+  }
 
   // Pending payment-terms amendment awaiting resident signature. Shown
   // as a callout on the Payment Terms card so admins don't propose a
