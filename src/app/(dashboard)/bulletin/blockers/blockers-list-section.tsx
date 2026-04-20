@@ -23,7 +23,7 @@ export async function BlockersListSection({ user }: { user: SessionUser }) {
   let blockersQuery = admin
     .from("blockers")
     .select(
-      "id, title, body, attachment_paths, target_type, target_house_ids, target_user_ids, save_to_docs, created_by, created_at, archived_at, author:users!created_by(full_name)"
+      "id, title, body, attachment_paths, target_type, target_house_ids, target_user_ids, save_to_docs, require_signature, created_by, created_at, archived_at, author:users!created_by(full_name)"
     )
     .order("created_at", { ascending: false })
     .limit(100);
@@ -49,15 +49,35 @@ export async function BlockersListSection({ user }: { user: SessionUser }) {
   }));
 
   const blockerIds = (blockers ?? []).map((b) => b.id as string);
-  const ackByBlocker = new Map<string, number>();
+  type AckEntry = {
+    user_id: string;
+    user_name: string;
+    acknowledged_at: string;
+    has_signature: boolean;
+  };
+  const acksByBlocker = new Map<string, AckEntry[]>();
   if (blockerIds.length > 0) {
     const { data: acks } = await admin
       .from("blocker_acknowledgments")
-      .select("blocker_id")
-      .in("blocker_id", blockerIds);
+      .select(
+        "blocker_id, user_id, acknowledged_at, signature, user:users!user_id(full_name)"
+      )
+      .in("blocker_id", blockerIds)
+      .order("acknowledged_at", { ascending: false });
     for (const a of acks ?? []) {
       const id = a.blocker_id as string;
-      ackByBlocker.set(id, (ackByBlocker.get(id) ?? 0) + 1);
+      const userData = Array.isArray(a.user)
+        ? (a.user as Array<{ full_name: string }>)[0]
+        : (a.user as { full_name: string } | null);
+      const entry: AckEntry = {
+        user_id: a.user_id as string,
+        user_name: userData?.full_name ?? "Unknown",
+        acknowledged_at: a.acknowledged_at as string,
+        has_signature: Boolean(a.signature),
+      };
+      const list = acksByBlocker.get(id);
+      if (list) list.push(entry);
+      else acksByBlocker.set(id, [entry]);
     }
   }
 
@@ -92,11 +112,13 @@ export async function BlockersListSection({ user }: { user: SessionUser }) {
       target_house_ids: (b.target_house_ids as string[] | null) ?? [],
       target_user_ids: (b.target_user_ids as string[] | null) ?? [],
       save_to_docs: Boolean(b.save_to_docs),
+      require_signature: b.require_signature !== false,
       created_by: b.created_by as string,
       created_at: b.created_at as string,
       archived_at: (b.archived_at as string | null) ?? null,
       author_name: authorData?.full_name ?? "Unknown",
-      ack_count: ackByBlocker.get(b.id as string) ?? 0,
+      acknowledgments: acksByBlocker.get(b.id as string) ?? [],
+      ack_count: (acksByBlocker.get(b.id as string) ?? []).length,
       target_count: countsByBlocker.get(b.id as string) ?? 0,
     };
   });

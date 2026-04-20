@@ -59,6 +59,7 @@ interface CreateBlockerInput {
   targetUserIds: string[];
   attachmentPaths: string[];
   saveToDocs: boolean;
+  requireSignature: boolean;
 }
 
 export async function createBlocker(input: CreateBlockerInput) {
@@ -142,6 +143,7 @@ export async function createBlocker(input: CreateBlockerInput) {
       target_house_ids: houseIds,
       target_user_ids: userIds,
       save_to_docs: input.saveToDocs,
+      require_signature: input.requireSignature,
       created_by: user.id,
     })
     .select("id")

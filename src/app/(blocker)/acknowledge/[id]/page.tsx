@@ -18,7 +18,7 @@ export default async function AcknowledgePage({ params }: PageProps) {
   const { data: blocker } = await admin
     .from("blockers")
     .select(
-      "id, title, body, attachment_paths, save_to_docs, target_type, target_house_ids, target_user_ids, archived_at, created_at, created_by, author:users!created_by(full_name)"
+      "id, title, body, attachment_paths, save_to_docs, require_signature, target_type, target_house_ids, target_user_ids, archived_at, created_at, created_by, author:users!created_by(full_name)"
     )
     .eq("id", id)
     .maybeSingle();
@@ -116,6 +116,7 @@ export default async function AcknowledgePage({ params }: PageProps) {
         body={blocker.body as string}
         attachmentPaths={paths}
         saveToDocs={Boolean(blocker.save_to_docs)}
+        requireSignature={blocker.require_signature !== false}
         residentName={user.full_name}
       />
     </div>

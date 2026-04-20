@@ -295,23 +295,38 @@ export async function generateIntakePdf(
     });
     y -= LINE_HEIGHT + 2;
 
+    // Each source line (including user-entered blanks) renders with a
+    // full-width underline so the block reads like lined paper. Text,
+    // when present, sits on top of the rule. This makes the wrapped
+    // area feel like a natural hand-written form entry instead of
+    // floating paragraphs.
     const indent = 14;
-    const maxWidth = PAGE_WIDTH - 2 * MARGIN - indent;
-    for (const rawLine of trimmed.split("\n")) {
-      if (rawLine.length === 0) {
+    const underlineStart = MARGIN + indent;
+    const underlineEnd = PAGE_WIDTH - MARGIN;
+    const maxWidth = underlineEnd - underlineStart;
+    const sourceLines = trimmed.split("\n");
+    for (const rawLine of sourceLines) {
+      const wrapped =
+        rawLine.length === 0
+          ? [""]
+          : wrapText(rawLine, font, FONT_SIZE, maxWidth);
+      const renderedLines = wrapped.length > 0 ? wrapped : [""];
+      for (const line of renderedLines) {
         ensureSpace(LINE_HEIGHT);
-        y -= LINE_HEIGHT;
-        continue;
-      }
-      const wrapped = wrapText(rawLine, font, FONT_SIZE, maxWidth);
-      for (const line of wrapped.length > 0 ? wrapped : [rawLine]) {
-        ensureSpace(LINE_HEIGHT);
-        currentPage.drawText(line, {
-          x: MARGIN + indent,
-          y,
-          size: FONT_SIZE,
-          font,
-          color: rgb(0, 0, 0),
+        if (line.length > 0) {
+          currentPage.drawText(line, {
+            x: underlineStart,
+            y,
+            size: FONT_SIZE,
+            font,
+            color: rgb(0, 0, 0),
+          });
+        }
+        currentPage.drawLine({
+          start: { x: underlineStart, y: y - 1 },
+          end: { x: underlineEnd, y: y - 1 },
+          thickness: 0.4,
+          color: UNDERLINE_COLOR,
         });
         y -= LINE_HEIGHT;
       }
