@@ -1,6 +1,5 @@
-import { addDays, format } from "date-fns";
 import type { createClient } from "@/lib/supabase/server";
-import { getHouseToday, DEFAULT_TIMEZONE } from "@/lib/timezone";
+import { getHouseToday, DEFAULT_TIMEZONE, addCalendarDays } from "@/lib/timezone";
 
 // Day-of-week → offset from the rotation's cycle_start_date.
 // Rotations start on Monday by convention (enforced by the start
@@ -103,14 +102,12 @@ export async function regenerateFutureSignoffsForChore(
       (existing ?? []).map((e) => e.sign_off_date as string)
     );
 
-    // Match rotations.ts `assignRotationChore` / `rotateSchedule`
-    // exactly: parse the YYYY-MM-DD string as UTC midnight. On a
-    // UTC server (Vercel prod) this produces the right calendar
-    // day; more importantly, it produces the SAME calendar day as
-    // the original signoff creation did, so completed-rotation
-    // signoffs and freshly-regenerated ones can't end up labelled
-    // for different days on a non-UTC dev box.
-    const startDate = new Date(cycleStartDate);
+    // Pure UTC-string date arithmetic. Previously used `new Date(str)` +
+    // date-fns `addDays` + `format`, which silently shifted the result
+    // by a day whenever the runtime's local TZ was not UTC — producing
+    // rows like { sign_off_date: '2026-04-19', day_of_week: 'monday' }
+    // where Apr 19 was actually a Sunday. `addCalendarDays` is
+    // TZ-independent so the string and the name always agree.
     const signoffs: Array<{
       rotation_assignment_id: string;
       sign_off_date: string;
@@ -124,8 +121,10 @@ export async function regenerateFutureSignoffsForChore(
       for (const day of choreDays) {
         const offset = DAY_TO_OFFSET[day];
         if (offset === undefined) continue;
-        const signoffDate = addDays(startDate, weekOffset + offset);
-        const signoffDateStr = format(signoffDate, "yyyy-MM-dd");
+        const signoffDateStr = addCalendarDays(
+          cycleStartDate,
+          weekOffset + offset
+        );
         // Never create signoffs for past days — see the comment in
         // assignRotationChore. Today is fair game.
         if (signoffDateStr < todayStr) continue;
