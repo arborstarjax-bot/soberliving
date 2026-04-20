@@ -844,15 +844,6 @@ function Page5DrugsCriminalAndSign({
             initialValue={signatures.resident_application ?? null}
             onSignatureChange={(v) => onSignatureChange("resident_application", v)}
           />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-            <Field label="Staff Name" name="application_staff_name" data={data} onChange={onChange} />
-            <DateFieldWithToday
-              label="Staff Date"
-              name="application_staff_date"
-              data={data}
-              onChange={onChange}
-            />
-          </div>
           <p className="text-xs text-muted-foreground">
             Staff will sign on their end after reviewing your submission.
           </p>
@@ -911,19 +902,9 @@ function PolicyPage({
         </div>
 
         {content.witnessKey && (
-          <div className="border-t pt-4 space-y-4">
-            <SignaturePad
-              label={content.witnessLabel ?? "Witness Signature"}
-              initialValue={signatures[content.witnessKey] ?? null}
-              onSignatureChange={(v) => onSignatureChange(content.witnessKey!, v)}
-            />
-            <DateFieldWithToday
-              label="Date"
-              name={`${content.witnessKey}_date`}
-              data={data}
-              onChange={onChange}
-            />
-          </div>
+          <p className="text-xs text-muted-foreground border-t pt-4">
+            {(content.witnessLabel ?? "Witness Signature")} will be added by staff after review.
+          </p>
         )}
       </CardContent>
     </Card>
@@ -998,17 +979,9 @@ function PageROI({
           </div>
         </div>
 
-        <div className="border-t pt-4 space-y-4">
-          <SignaturePad
-            label="Witness Signature"
-            initialValue={signatures.release_of_information_witness ?? null}
-            onSignatureChange={(v) => onSignatureChange("release_of_information_witness", v)}
-          />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Witness Printed Name" name="roi_witness_printed_name" data={data} onChange={onChange} />
-            <DateFieldWithToday label="Date" name="roi_witness_date" data={data} onChange={onChange} />
-          </div>
-        </div>
+        <p className="text-xs text-muted-foreground border-t pt-4">
+          Witness signature will be added by staff after review.
+        </p>
       </CardContent>
     </Card>
   );

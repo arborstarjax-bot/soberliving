@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, CheckCircle2, ChevronDown, ChevronUp, FileText } from "lucide-react";
+import { ArrowRight, CheckCircle2, ChevronDown, ChevronUp, FileText, Lock } from "lucide-react";
 import { IntakeReviewForm } from "./intake-review-form";
 import { DenyButton } from "./deny-button";
+import { StaffSignoffForm } from "./staff-signoff-form";
 
 interface House {
   id: string;
@@ -22,6 +23,9 @@ interface Props {
   houses: House[];
   isAdmin: boolean;
   formData: Record<string, unknown>;
+  signatures: Record<string, string>;
+  /** ISO timestamp stored on form_data.staff_signed_off_at when staff has signed. */
+  staffSignedOffAt: string | null;
 }
 
 /**
@@ -49,8 +53,14 @@ export function ApplicationReview({
   houses,
   isAdmin,
   formData: fd,
+  signatures,
+  staffSignedOffAt,
 }: Props) {
-  const [step, setStep] = useState<"review" | "assign">("review");
+  const [step, setStep] = useState<"review" | "signoff" | "assign">("review");
+  const [signedOffLocal, setSignedOffLocal] = useState<boolean>(
+    Boolean(staffSignedOffAt)
+  );
+  const hasSignedOff = signedOffLocal;
   // Collapse the full PDF packet by default so the Approve/Deny actions
   // stay above the fold — especially on phones where the packet pushes
   // the decision buttons many screens down.
@@ -59,20 +69,42 @@ export function ApplicationReview({
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <StepPill active={step === "review"} done={step === "assign"} label="1. Review application" />
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <StepPill active={step === "review"} done={step !== "review"} label="1. Review" />
           <ArrowRight className="h-3.5 w-3.5" />
-          <StepPill active={step === "assign"} done={false} label="2. Assign housing & rent" />
+          <StepPill
+            active={step === "signoff"}
+            done={hasSignedOff}
+            label="2. Staff sign-off"
+          />
+          <ArrowRight className="h-3.5 w-3.5" />
+          <StepPill active={step === "assign"} done={false} label="3. Assign housing & rent" />
         </div>
         <div className="flex items-center gap-2">
           {step === "review" && (
             <>
               {isAdmin && <DenyButton userId={userId} userName={userName} />}
-              <Button size="sm" onClick={() => setStep("assign")}>
-                <CheckCircle2 className="mr-1 h-4 w-4" />
-                Approve &amp; Assign
-              </Button>
+              {hasSignedOff ? (
+                <Button size="sm" onClick={() => setStep("assign")}>
+                  <CheckCircle2 className="mr-1 h-4 w-4" />
+                  Approve &amp; Assign
+                </Button>
+              ) : (
+                <Button size="sm" onClick={() => setStep("signoff")}>
+                  <CheckCircle2 className="mr-1 h-4 w-4" />
+                  Continue to Staff Sign-Off
+                </Button>
+              )}
             </>
+          )}
+          {step === "signoff" && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setStep("review")}
+            >
+              Back to Review
+            </Button>
           )}
           {step === "assign" && (
             <Button
@@ -86,13 +118,14 @@ export function ApplicationReview({
         </div>
       </div>
 
-      {step === "review" ? (
+      {step === "review" && (
         <div className="space-y-3">
           <ApplicantSummary
             userName={userName}
             email={email}
             phone={phone}
             submittedAt={submittedAt}
+            staffSignedOffAt={staffSignedOffAt}
           />
           <Button
             variant="outline"
@@ -120,12 +153,65 @@ export function ApplicationReview({
             />
           )}
         </div>
-      ) : (
-        <IntakeReviewForm
-          userId={userId}
-          userName={userName}
-          houses={houses}
-        />
+      )}
+
+      {step === "signoff" && (
+        hasSignedOff ? (
+          <div className="rounded-lg border bg-green-50/60 p-4 text-sm">
+            <p className="font-medium text-green-800 flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4" /> Staff sign-off complete
+            </p>
+            <p className="text-muted-foreground mt-1">
+              You can now proceed to assign housing &amp; rent.
+            </p>
+            <Button className="mt-3" size="sm" onClick={() => setStep("assign")}>
+              Continue to Approve &amp; Assign
+            </Button>
+          </div>
+        ) : (
+          <StaffSignoffForm
+            userId={userId}
+            userName={userName}
+            formData={fd}
+            signatures={signatures}
+            onSigned={() => {
+              setSignedOffLocal(true);
+              setStep("assign");
+            }}
+          />
+        )
+      )}
+
+      {step === "assign" && (
+        hasSignedOff ? (
+          <IntakeReviewForm
+            userId={userId}
+            userName={userName}
+            houses={houses}
+          />
+        ) : (
+          <div className="rounded-lg border border-yellow-300 bg-yellow-50/60 p-4 text-sm flex items-start gap-2">
+            <Lock className="h-4 w-4 text-yellow-700 mt-0.5" />
+            <div>
+              <p className="font-medium text-yellow-900">
+                Staff sign-off required
+              </p>
+              <p className="text-muted-foreground mt-1">
+                Before you can assign housing and rent for this applicant, a staff
+                member must sign off on the submitted application (one signature
+                fills all staff and witness slots in the packet).
+              </p>
+              <Button
+                className="mt-3"
+                size="sm"
+                variant="outline"
+                onClick={() => setStep("signoff")}
+              >
+                Go to Staff Sign-Off
+              </Button>
+            </div>
+          </div>
+        )
       )}
     </div>
   );
@@ -136,15 +222,24 @@ function ApplicantSummary({
   email,
   phone,
   submittedAt,
+  staffSignedOffAt,
 }: {
   userName: string;
   email: string | null;
   phone: string | null;
   submittedAt: string | null;
+  staffSignedOffAt?: string | null;
 }) {
   return (
     <div className="rounded-lg border bg-muted/30 p-4">
-      <p className="text-lg font-semibold">{userName}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-lg font-semibold">{userName}</p>
+        {staffSignedOffAt && (
+          <Badge variant="outline" className="border-green-300 text-green-800 bg-green-50">
+            Staff Signed
+          </Badge>
+        )}
+      </div>
       <p className="text-sm text-muted-foreground break-words">
         {email ?? "\u2014"}
         {phone ? ` \u2022 ${phone}` : ""}
@@ -152,6 +247,11 @@ function ApplicantSummary({
       {submittedAt && (
         <p className="text-xs text-muted-foreground mt-1">
           Submitted {new Date(submittedAt).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+        </p>
+      )}
+      {staffSignedOffAt && (
+        <p className="text-xs text-muted-foreground">
+          Staff signed off {new Date(staffSignedOffAt).toLocaleDateString("en-US", { timeZone: "America/New_York" })}
         </p>
       )}
     </div>

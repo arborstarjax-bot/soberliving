@@ -788,6 +788,147 @@ export async function reopenIntakeApplication(userId: string) {
   return {};
 }
 
+const staffSignoffSchema = z.object({
+  userId: z.string().uuid(),
+  signature: z.string().min(1, "Staff signature is required"),
+  printedName: z.string().min(1, "Printed name is required"),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date"),
+  pdfBase64: z.string().min(1, "Regenerated PDF is required"),
+});
+
+/**
+ * Staff sign-off on a resident's submitted intake application.
+ *
+ * One signature + printed name + date fills every staff/witness slot
+ * across the packet:
+ *   - application page staff signature + name + date
+ *   - each policy page's witness/staff signature + date
+ *   - ROI witness signature + printed name + date
+ *
+ * The client re-runs `generateIntakePdf` with the staff sign-off arg
+ * and sends us the resulting bytes; we merge the new keys into the
+ * stored `form_data` / `signatures` (so any future regeneration is
+ * already complete), replace the intake packet file in storage, and
+ * mark the sign-off timestamp. Only then does the "Approve & Assign"
+ * button unlock for this applicant.
+ */
+export async function submitStaffSignoff(
+  input: z.infer<typeof staffSignoffSchema>
+) {
+  await requireRole("admin");
+  const adminClient = createAdminClient();
+
+  const parsed = staffSignoffSchema.safeParse(input);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0].message };
+  }
+  const { userId, signature, printedName, date, pdfBase64 } = parsed.data;
+
+  const { data: intakeRow, error: intakeErr } = await adminClient
+    .from("intake_forms")
+    .select("form_data, signatures")
+    .eq("user_id", userId)
+    .eq("status", "completed")
+    .maybeSingle();
+  if (intakeErr) return { error: intakeErr.message };
+  if (!intakeRow) return { error: "Intake form not found for this applicant" };
+
+  const formData = { ...(intakeRow.form_data as Record<string, unknown>) };
+  const signatures = { ...(intakeRow.signatures as Record<string, string>) };
+
+  // Fill every staff/witness slot with the single sign-off values.
+  // Key list mirrors generate-pdf.ts so a regeneration from the
+  // stored payload produces identical output.
+  formData.staff_signed_off_at = new Date().toISOString();
+  formData.application_staff_name = printedName;
+  formData.application_staff_date = date;
+  signatures.application_staff = signature;
+
+  const witnessKeys = [
+    "mat_policy_witness",
+    "good_neighbor_policy_witness",
+    "confidentiality_policy_witness",
+    "discharge_policy_witness",
+    "hazardous_items_policy_witness",
+    "medication_storage_policy_witness",
+  ];
+  for (const k of witnessKeys) {
+    signatures[k] = signature;
+    formData[`${k}_date`] = date;
+  }
+  signatures.release_of_information_witness = signature;
+  formData.roi_witness_printed_name = printedName;
+  formData.roi_witness_date = date;
+
+  const { error: updateErr } = await adminClient
+    .from("intake_forms")
+    .update({
+      form_data: formData,
+      signatures,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId);
+  if (updateErr) return { error: updateErr.message };
+
+  // Replace the intake packet in storage with the regenerated PDF
+  // that includes the staff sign-off. Keep the original storage
+  // path if there is one so the `documents` row stays valid.
+  const { data: existingDoc } = await adminClient
+    .from("documents")
+    .select("id, storage_path")
+    .eq("user_id", userId)
+    .eq("document_type", "intake_packet")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const pdfBuffer = Buffer.from(pdfBase64, "base64");
+  const fileName =
+    existingDoc?.storage_path ??
+    `${userId}/intake-packet-${Date.now()}.pdf`;
+
+  const { error: uploadErr } = await adminClient.storage
+    .from("documents")
+    .upload(fileName, pdfBuffer, {
+      contentType: "application/pdf",
+      upsert: true,
+    });
+  if (uploadErr) {
+    console.error("[submitStaffSignoff] PDF upload failed:", uploadErr.message);
+    return { error: `Could not upload signed packet: ${uploadErr.message}` };
+  }
+
+  if (existingDoc) {
+    await adminClient
+      .from("documents")
+      .update({
+        file_size: pdfBuffer.length,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", existingDoc.id);
+  } else {
+    await adminClient.from("documents").insert({
+      user_id: userId,
+      name: "Jax Sober Living Intake Packet",
+      document_type: "intake_packet",
+      storage_path: fileName,
+      file_size: pdfBuffer.length,
+    });
+  }
+
+  const actor = await requireAuth();
+  await logActivity({
+    actorId: actor.id,
+    eventType: "intake_staff_signoff",
+    entityType: "user",
+    entityId: userId,
+    description: `Staff signed off on intake packet`,
+  });
+
+  revalidatePath("/intake-review");
+  return { ok: true as const };
+}
+
 export type RoomWithAvailability = {
   id: string;
   name: string;

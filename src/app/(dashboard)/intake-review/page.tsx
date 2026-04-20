@@ -112,7 +112,7 @@ export default async function IntakeReviewPage({
   const visibleIds = visibleUsers.map((u) => u.id);
   const { data: intakeForms } = await adminClient
     .from("intake_forms")
-    .select("user_id, form_data, completed_at")
+    .select("user_id, form_data, signatures, completed_at")
     .in("user_id", visibleIds.length > 0 ? visibleIds : ["none"])
     .eq("status", "completed");
 
@@ -172,6 +172,11 @@ export default async function IntakeReviewPage({
         visibleUsers.map((user) => {
           const intake = intakeMap.get(user.id);
           const fd = (intake?.form_data ?? {}) as Record<string, unknown>;
+          const sigs = (intake?.signatures ?? {}) as Record<string, string>;
+          const staffSignedOffAt =
+            typeof fd.staff_signed_off_at === "string"
+              ? (fd.staff_signed_off_at as string)
+              : null;
           return (
             <Card key={user.id}>
               <CardContent className="pt-6">
@@ -184,6 +189,8 @@ export default async function IntakeReviewPage({
                   houses={houses}
                   isAdmin={isAdmin}
                   formData={fd}
+                  signatures={sigs}
+                  staffSignedOffAt={staffSignedOffAt}
                 />
               </CardContent>
             </Card>
