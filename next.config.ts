@@ -6,6 +6,27 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "5mb",
     },
   },
+  // Serve the service worker with headers that guarantee browsers
+  // re-check it on every navigation instead of using the default
+  // static-asset cache (which can pin a stale SW for hours). Without
+  // this, a SW version bump doesn't reach installed clients until
+  // their cached /sw.js expires — which is how PWA users ended up
+  // stuck on a pre-fix SW that was replaying redirect loops from
+  // its runtime cache.
+  async headers() {
+    return [
+      {
+        source: "/sw.js",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=0, must-revalidate",
+          },
+          { key: "Service-Worker-Allowed", value: "/" },
+        ],
+      },
+    ];
+  },
   // Next.js 16 blocks cross-origin requests to dev resources (HMR
   // websocket, /_next/*) by default. When testing the app on a phone
   // connected to the same Wi-Fi as the dev machine, the phone hits
