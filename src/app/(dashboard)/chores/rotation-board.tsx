@@ -366,31 +366,44 @@ function AssignResidentInline({
   choreId: string;
   residents: Array<{ id: string; full_name: string }>;
 }) {
-  const [, action, pending] = useActionState(
+  // `useActionState` was previously destructured as `[, action, pending]`
+  // which threw away the state, so any `{ error: "..." }` the server
+  // action returned was silently swallowed — staff would click Assign
+  // and nothing would happen, with no indication why. Keep the state
+  // and render its error so the real cause (RLS, room-exclusion guard,
+  // FK failure, etc.) is visible inline.
+  const [state, action, pending] = useActionState(
     assignRotationChore,
     undefined
   );
 
   return (
-    <form action={action} className="flex items-center gap-1">
-      <input type="hidden" name="rotation_id" value={rotationId} />
-      <input type="hidden" name="chore_id" value={choreId} />
-      <select
-        name="resident_id"
-        required
-        className="h-7 rounded border border-input bg-transparent px-1 text-xs flex-1"
-      >
-        <option value="">Assign…</option>
-        {residents.map((r) => (
-          <option key={r.id} value={r.id}>
-            {r.full_name}
-          </option>
-        ))}
-      </select>
-      <Button type="submit" size="sm" variant="ghost" disabled={pending} className="h-7 px-2 text-xs">
-        {pending ? "…" : "→"}
-      </Button>
-    </form>
+    <div className="flex flex-col gap-1">
+      <form action={action} className="flex items-center gap-1">
+        <input type="hidden" name="rotation_id" value={rotationId} />
+        <input type="hidden" name="chore_id" value={choreId} />
+        <select
+          name="resident_id"
+          required
+          className="h-7 rounded border border-input bg-transparent px-1 text-xs flex-1"
+        >
+          <option value="">Assign…</option>
+          {residents.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.full_name}
+            </option>
+          ))}
+        </select>
+        <Button type="submit" size="sm" variant="ghost" disabled={pending} className="h-7 px-2 text-xs">
+          {pending ? "…" : "→"}
+        </Button>
+      </form>
+      {state?.error && (
+        <p className="text-[10px] text-destructive leading-tight">
+          {state.error}
+        </p>
+      )}
+    </div>
   );
 }
 
