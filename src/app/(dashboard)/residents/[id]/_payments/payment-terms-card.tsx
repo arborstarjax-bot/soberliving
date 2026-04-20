@@ -4,12 +4,12 @@ import { useState, useTransition } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { CheckCircle2, ClipboardList, FileText } from "lucide-react";
+import { CheckCircle2, ClipboardList, FileEdit, FileText } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { dayOfMonthLocal } from "@/lib/local-date";
 import { getDocumentUrl } from "@/app/(intake)/actions";
 import { cn } from "@/lib/utils";
-import { EditTermsDialog } from "@/app/(dashboard)/payments/edit-terms-dialog";
 import { cancelPendingAmendment } from "@/app/(dashboard)/payments/actions";
 import type { PaymentTerms, PendingAmendment } from "./types";
 import { formatDate, formatMoney, ordinal } from "./helpers";
@@ -17,16 +17,20 @@ import { formatDate, formatMoney, ordinal } from "./helpers";
 export function PaymentTermsCard({
   terms,
   isAdmin,
+  residentId,
   residentUserId,
-  residentName,
   pendingAmendment,
   isUpToDate,
   nextCycleDate,
 }: {
   terms: PaymentTerms;
   isAdmin: boolean;
+  // Resident record id (residents.id) — used to link into the
+  // full-page Amend Commitment workflow. Distinct from
+  // residentUserId, which is the auth users.id used by the server
+  // action that drafts the amendment.
+  residentId: string;
   residentUserId: string | null;
-  residentName: string;
   pendingAmendment: PendingAmendment | null;
   // True when the resident has zero open charges — their balance
   // is clear through the next billing cycle. Used by the "Up to
@@ -94,13 +98,6 @@ export function PaymentTermsCard({
       setDownloading(false);
     }
   }
-
-  const effectiveDefault = (() => {
-    const d = new Date();
-    d.setMonth(d.getMonth() + 1);
-    d.setDate(dueDay);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  })();
 
   return (
     <Card className="border-primary/20">
@@ -190,24 +187,25 @@ export function PaymentTermsCard({
                 View Signed Commitment
               </Button>
             ))}
-          {isAdmin && residentUserId && (
-            // Visible even when a prior amendment is still pending so
-            // admins can always find the entry point for editing. If
-            // they try to propose a second amendment while one is in
-            // flight, the server action rejects it and surfaces a
-            // "cancel the pending amendment first" error, which the
-            // amber banner below also makes obvious.
-            <EditTermsDialog
-              userId={residentUserId}
-              residentName={residentName}
-              currentRent={terms.rent_amount}
-              currentAdminFee={terms.admin_fee ?? 0}
-              currentPaymentFrequency={terms.payment_frequency}
-              currentCommitmentTerm={terms.commitment_term ?? null}
-              currentRestrictionsNotes={terms.restrictions_notes ?? null}
-              currentNotes={terms.notes ?? null}
-              effectiveDateDefault={effectiveDefault}
-            />
+          {isAdmin && residentUserId && !pendingAmendment && (
+            // Link into the full-page Amend Commitment workflow,
+            // which mirrors the intake-review form 1:1 (rent
+            // configuration, notes, admin-fee treatment, staff
+            // signature). On submit the resident is hard-blocked on
+            // /sign-commitment until they sign — same gate used for
+            // the initial commitment. Hidden while a prior amendment
+            // is still pending signature; the amber banner below
+            // directs admins to cancel that one first.
+            <Link
+              href={`/residents/${residentId}/amend-commitment`}
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "h-8 gap-1.5"
+              )}
+            >
+              <FileEdit className="h-3.5 w-3.5" />
+              Edit Commitment Agreement
+            </Link>
           )}
         </div>
         {pendingAmendment && (

@@ -560,6 +560,16 @@ export async function proposeAmendment(
     typeof rawRestrictionsNotes === "string" ? rawRestrictionsNotes.trim() : "";
   const rawNotes = formData.get("notes");
   const newNotes = typeof rawNotes === "string" ? rawNotes.trim() : "";
+  // Optional fresh staff signature (data URL). When the admin
+  // re-signs the amended agreement (same workflow as intake), we
+  // store the new signature on the amendment row. When omitted
+  // (older callers / dialog-based flow), we fall back to the parent
+  // commitment's signature below.
+  const rawStaffSignature = formData.get("staff_signature");
+  const newStaffSignature =
+    typeof rawStaffSignature === "string" && rawStaffSignature.startsWith("data:")
+      ? rawStaffSignature
+      : null;
 
   if (!userId) return { error: "Resident is required" };
   if (!Number.isFinite(newRent) || newRent < 0) {
@@ -693,10 +703,13 @@ export async function proposeAmendment(
           : rawNotes === null
             ? active.notes
             : null,
-      // Reuse the original staff signature on file so the admin doesn't
-      // need to sign twice. The amendment is attributed to the acting
-      // admin via staff_signer_id.
-      staff_signature: active.staff_signature,
+      // Prefer a freshly-collected staff signature when the amend
+      // form provided one (admins re-sign the amended agreement the
+      // same way they sign at intake). Fall back to the parent
+      // commitment's signature for older callers that don't supply
+      // one. The amendment is always attributed to the acting admin
+      // via staff_signer_id.
+      staff_signature: newStaffSignature ?? active.staff_signature,
       staff_signed_at: new Date().toISOString(),
       staff_signer_id: user.id,
       status: "pending_resident_signature",
