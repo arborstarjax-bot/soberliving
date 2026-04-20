@@ -54,6 +54,8 @@ interface IntakePendingUser {
   phone: string | null;
   created_at: string;
   intakeFormData: Record<string, unknown>;
+  intakeSignatures: Record<string, string>;
+  staffSignedOffAt: string | null;
   completedAt: string | null;
 }
 
@@ -620,6 +622,8 @@ export function ResidentsTabs({
                       houses={housesWithAddress}
                       isAdmin={isAdmin}
                       formData={user.intakeFormData}
+                      signatures={user.intakeSignatures}
+                      staffSignedOffAt={user.staffSignedOffAt}
                     />
                   </div>
                 ))}

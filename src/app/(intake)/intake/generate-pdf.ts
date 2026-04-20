@@ -18,10 +18,39 @@ const TITLE_SIZE = 15;
 const SECTION_SIZE = 11;
 const LABEL_SIZE = 8;
 
+export interface StaffSignOff {
+  signature: string; // data URL of the signature image
+  printedName: string;
+  date: string; // ISO yyyy-mm-dd
+}
+
 export async function generateIntakePdf(
-  formData: Record<string, string>,
-  signatures: Record<string, string>
+  rawFormData: Record<string, string>,
+  rawSignatures: Record<string, string>,
+  staffSignOff?: StaffSignOff | null
 ): Promise<string> {
+  // When staff has signed off, one signature+name+date fills every
+  // staff/witness slot across the packet (application staff sig,
+  // every policy's witness sig, ROI witness sig). If no sign-off
+  // yet, these slots render blank so the PDF still reflects the
+  // current state of the packet.
+  const formData: Record<string, string> = { ...rawFormData };
+  const signatures: Record<string, string> = { ...rawSignatures };
+  if (staffSignOff) {
+    formData.application_staff_name = staffSignOff.printedName;
+    formData.application_staff_date = staffSignOff.date;
+    signatures.application_staff = staffSignOff.signature;
+    for (const p of ALL_POLICIES) {
+      if (p.witnessKey) {
+        signatures[p.witnessKey] = staffSignOff.signature;
+        formData[`${p.witnessKey}_date`] = staffSignOff.date;
+      }
+    }
+    signatures.release_of_information_witness = staffSignOff.signature;
+    formData.roi_witness_printed_name = staffSignOff.printedName;
+    formData.roi_witness_date = staffSignOff.date;
+  }
+
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdf.embedFont(StandardFonts.HelveticaBold);
@@ -423,11 +452,15 @@ export async function generateIntakePdf(
       value: formData.application_resident_print_name,
     },
   });
-  // Staff signature is typed name only at intake (they'll re-sign later if needed)
-  drawFieldRow([
-    { label: "Staff Name", value: formData.application_staff_name },
-    { label: "Staff Date", value: formData.application_staff_date },
-  ]);
+  await drawSignatureBlock({
+    label: "Staff Signature",
+    signatureKey: "application_staff",
+    dateValue: formData.application_staff_date,
+    printedName: {
+      label: "Staff Name",
+      value: formData.application_staff_name,
+    },
+  });
 
   // ═══════════════════════════════════════════════════════════════
   // POLICY PAGES (each on a fresh page)

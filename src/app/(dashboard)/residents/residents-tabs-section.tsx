@@ -166,6 +166,8 @@ export async function ResidentsTabsSection({
     phone: string | null;
     created_at: string;
     intakeFormData: Record<string, unknown>;
+    intakeSignatures: Record<string, string>;
+    staffSignedOffAt: string | null;
     completedAt: string | null;
   }> = [];
   const intakeAwaiting: Array<{
@@ -231,7 +233,7 @@ export async function ResidentsTabsSection({
           ),
         adminClient
           .from("intake_forms")
-          .select("user_id, form_data, completed_at, status, updated_at")
+          .select("user_id, form_data, signatures, completed_at, status, updated_at")
           .in(
             "user_id",
             activeIntakeIds.length > 0 ? activeIntakeIds : ["none"]
@@ -277,13 +279,22 @@ export async function ResidentsTabsSection({
         continue;
       }
       if (u.intake_completed && form?.status === "completed") {
+        const fd = (form.form_data ?? {}) as Record<string, unknown>;
+        const staffSignedOffAt =
+          typeof fd.staff_signed_off_at === "string"
+            ? (fd.staff_signed_off_at as string)
+            : null;
         intakePending.push({
           id: u.id,
           full_name: u.full_name,
           email: u.email,
           phone: u.phone ?? null,
           created_at: u.created_at,
-          intakeFormData: (form.form_data ?? {}) as Record<string, unknown>,
+          intakeFormData: fd,
+          intakeSignatures:
+            ((form as { signatures?: Record<string, string> | null })
+              .signatures ?? {}) as Record<string, string>,
+          staffSignedOffAt,
           completedAt: form.completed_at ?? null,
         });
         continue;
