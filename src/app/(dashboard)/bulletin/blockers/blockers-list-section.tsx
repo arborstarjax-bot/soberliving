@@ -57,14 +57,29 @@ export async function BlockersListSection({ user }: { user: SessionUser }) {
   };
   const acksByBlocker = new Map<string, AckEntry[]>();
   if (blockerIds.length > 0) {
-    const { data: acks } = await admin
-      .from("blocker_acknowledgments")
-      .select(
-        "blocker_id, user_id, acknowledged_at, signature, user:users!user_id(full_name)"
-      )
-      .in("blocker_id", blockerIds)
-      .order("acknowledged_at", { ascending: false });
-    for (const a of acks ?? []) {
+    // Fetch metadata WITHOUT the signature column (those are
+    // 10-30 KB dataURL PNGs). A second ultra-small query tells us
+    // which (blocker_id, user_id) rows have a non-null signature
+    // so we can flip the icon in the UI.
+    const [metaRes, signedRes] = await Promise.all([
+      admin
+        .from("blocker_acknowledgments")
+        .select(
+          "blocker_id, user_id, acknowledged_at, user:users!user_id(full_name)"
+        )
+        .in("blocker_id", blockerIds)
+        .order("acknowledged_at", { ascending: false }),
+      admin
+        .from("blocker_acknowledgments")
+        .select("blocker_id, user_id")
+        .in("blocker_id", blockerIds)
+        .not("signature", "is", null),
+    ]);
+    const signedKeys = new Set<string>();
+    for (const s of signedRes.data ?? []) {
+      signedKeys.add(`${s.blocker_id}:${s.user_id}`);
+    }
+    for (const a of metaRes.data ?? []) {
       const id = a.blocker_id as string;
       const userData = Array.isArray(a.user)
         ? (a.user as Array<{ full_name: string }>)[0]
@@ -73,7 +88,7 @@ export async function BlockersListSection({ user }: { user: SessionUser }) {
         user_id: a.user_id as string,
         user_name: userData?.full_name ?? "Unknown",
         acknowledged_at: a.acknowledged_at as string,
-        has_signature: Boolean(a.signature),
+        has_signature: signedKeys.has(`${a.blocker_id}:${a.user_id}`),
       };
       const list = acksByBlocker.get(id);
       if (list) list.push(entry);

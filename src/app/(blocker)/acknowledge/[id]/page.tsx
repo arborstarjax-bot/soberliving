@@ -85,7 +85,9 @@ export default async function AcknowledgePage({ params }: PageProps) {
       <div className="text-center">
         <h1 className="text-2xl font-bold">Required Acknowledgment</h1>
         <p className="text-muted-foreground mt-1">
-          Please review and sign to continue using the app.
+          {blocker.require_signature !== false
+            ? "Please review and sign to continue using the app."
+            : "Please review and acknowledge to continue using the app."}
         </p>
       </div>
 
