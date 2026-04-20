@@ -134,13 +134,20 @@ export default async function ResidentDetailPage(
   // card and Edit button always surface — admins need a way to fix
   // the terms even if the status field drifted.
   if (!activeCommitment && resident.user_id) {
+    // `.or("status.is.null,status.neq.cancelled")` — PostgREST's
+    // `neq` translates to SQL `status <> 'cancelled'`, which
+    // evaluates to NULL (not TRUE) for rows where status itself is
+    // NULL, so those rows would silently slip out of the result
+    // set. The `status.is.null` branch puts them back in. Matches
+    // the scenario explicitly called out in the comment above —
+    // an older migration left status NULL for some rows.
     const { data: latest } = await supabase
       .from("house_commitments")
       .select(
         "id, rent_amount, admin_fee, payment_frequency, commitment_start_date, commitment_term, restrictions_notes, notes, status, pdf_storage_path"
       )
       .eq("user_id", resident.user_id)
-      .not("status", "eq", "cancelled")
+      .or("status.is.null,status.neq.cancelled")
       .order("commitment_start_date", { ascending: false })
       .limit(1)
       .maybeSingle();
