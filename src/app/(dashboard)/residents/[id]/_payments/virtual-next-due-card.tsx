@@ -173,13 +173,18 @@ function toIsoLocal(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-// Derive the next upcoming due date from the resident's payment terms.
-// Monthly: roll to this month's due day, or next month's if already past
-// today, clamping Jan-31 → Feb-28/29 the same way the opener does.
-// Weekly: step forward to the same weekday as `commitment_start_date`,
-// or today if today matches. Used by the Next Rent card and the
-// Record Payment dialog pre-fill so both match what the opener
-// will actually create.
+// Derive the next upcoming cycle anchor date from the resident's
+// payment terms. Callers shift `anchor - 1 day` to get the actual
+// due date (policy: rent is due the day BEFORE the cycle anchor).
+//
+// Key invariant: the returned anchor must satisfy `anchor - 1 >= today`,
+// i.e. `anchor > today`. When today IS the anchor day, the real charge
+// for that cycle was already opened yesterday (opener fires when
+// `due_date = anchor - 1 <= today`), so the "upcoming" anchor we want
+// to surface is the NEXT one. Weekly rolls to +7 days; monthly rolls
+// to the next month. Without this guard the virtual card displays
+// "1d ago / past due" on every anchor day for every weekly/monthly
+// resident.
 function computeNextDue(
   terms: PaymentTerms,
   today: Date
@@ -196,7 +201,9 @@ function computeNextDue(
         ).getUTCDay()
       : today.getDay();
     const candidate = new Date(today);
-    const diff = (startWeekday - today.getDay() + 7) % 7;
+    const rawDiff = (startWeekday - today.getDay() + 7) % 7;
+    // Skip today → full week when today IS the anchor weekday.
+    const diff = rawDiff === 0 ? 7 : rawDiff;
     candidate.setDate(candidate.getDate() + diff);
     return candidate;
   }
@@ -208,7 +215,9 @@ function computeNextDue(
     0
   ).getDate();
   candidate.setDate(Math.min(dayOfMonth, lastDayThis));
-  if (candidate.getTime() < today.getTime()) {
+  // `<=` (not `<`) so we roll forward when candidate equals today —
+  // today's cycle already has a real open charge if any.
+  if (candidate.getTime() <= today.getTime()) {
     candidate.setDate(1);
     candidate.setMonth(candidate.getMonth() + 1);
     const lastDayNext = new Date(
