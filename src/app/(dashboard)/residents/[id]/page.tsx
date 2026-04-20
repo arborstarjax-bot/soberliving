@@ -94,7 +94,15 @@ export default async function ResidentDetailPage(
   // admin fee, due day). Pulled first so we can backfill any missing
   // charges BEFORE we read them, otherwise the first page load shows
   // "No open charges" until a second refresh.
-  const { data: activeCommitment } = await supabase
+  //
+  // We try `resident_id` first and fall back to `user_id` because
+  // some historical commitment rows never got their `resident_id`
+  // backfilled (the column was added mid-flight). Without the
+  // fallback, those residents render with no Payment Terms card —
+  // which in turn hides the Edit Commitment Agreement button and
+  // the Upcoming Rent card, even though the commitment is clearly
+  // active (charges are being opened against it).
+  let { data: activeCommitment } = await supabase
     .from("house_commitments")
     .select(
       "id, rent_amount, admin_fee, payment_frequency, commitment_start_date, commitment_term, restrictions_notes, notes, status, pdf_storage_path"
@@ -104,6 +112,40 @@ export default async function ResidentDetailPage(
     .order("commitment_start_date", { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (!activeCommitment && resident.user_id) {
+    const { data: byUser } = await supabase
+      .from("house_commitments")
+      .select(
+        "id, rent_amount, admin_fee, payment_frequency, commitment_start_date, commitment_term, restrictions_notes, notes, status, pdf_storage_path"
+      )
+      .eq("user_id", resident.user_id)
+      .eq("status", "active")
+      .order("commitment_start_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    activeCommitment = byUser ?? null;
+  }
+  // Final fallback: the resident has charges on the books but no
+  // row flagged `status='active'`. Can happen when a commitment
+  // was mistakenly left in a non-terminal status (e.g. never
+  // flipped from 'pending_resident_signature' after the resident
+  // signed on paper, or a migration left it as NULL). Grab the most
+  // recent non-cancelled commitment by user_id so the Payment Terms
+  // card and Edit button always surface — admins need a way to fix
+  // the terms even if the status field drifted.
+  if (!activeCommitment && resident.user_id) {
+    const { data: latest } = await supabase
+      .from("house_commitments")
+      .select(
+        "id, rent_amount, admin_fee, payment_frequency, commitment_start_date, commitment_term, restrictions_notes, notes, status, pdf_storage_path"
+      )
+      .eq("user_id", resident.user_id)
+      .not("status", "eq", "cancelled")
+      .order("commitment_start_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    activeCommitment = latest ?? null;
+  }
 
   // Pending payment-terms amendment awaiting resident signature. Shown
   // as a callout on the Payment Terms card so admins don't propose a
