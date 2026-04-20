@@ -34,7 +34,27 @@ export async function createChore(
     return { error: "Not authorized" };
   }
 
+  // Optional list of rooms to exclude from the new chore's rotation.
+  // Passed through the same form so staff can pick the chore's
+  // schedule AND its room scoping in one shot on create. Validated
+  // against the chore's house below to match the update path.
+  const rawExcluded = formData.getAll("excluded_room_ids");
+  const excludedRoomIds = rawExcluded
+    .map((v) => (typeof v === "string" ? v : ""))
+    .filter((v): v is string => v.length > 0);
+
   const supabase = await createClient();
+
+  if (excludedRoomIds.length > 0) {
+    const { data: validRooms } = await supabase
+      .from("rooms")
+      .select("id")
+      .eq("house_id", parsed.data.house_id)
+      .in("id", excludedRoomIds);
+    if ((validRooms?.length ?? 0) !== excludedRoomIds.length) {
+      return { error: "One or more rooms don't belong to this chore's house" };
+    }
+  }
 
   // Get max sort_order for this house
   const { data: existing } = await supabase
@@ -54,13 +74,32 @@ export async function createChore(
 
   if (error) return { error: error.message };
 
+  if (excludedRoomIds.length > 0) {
+    const { error: exErr } = await supabase
+      .from("chore_room_exclusions")
+      .insert(
+        excludedRoomIds.map((rid) => ({
+          chore_id: data.id,
+          room_id: rid,
+          created_by: user.id,
+        }))
+      );
+    // A failure here shouldn't roll back the chore itself (it still
+    // has a valid schedule), but it should surface to the UI so staff
+    // can retry via the Edit dialog.
+    if (exErr) {
+      revalidatePath("/chores");
+      return { error: `Chore created but room exclusions failed: ${exErr.message}` };
+    }
+  }
+
   await logActivity({
     houseId: parsed.data.house_id,
     actorId: user.id,
     eventType: "chore_created",
     entityType: "chore",
     entityId: data.id,
-    description: `Chore "${parsed.data.name}" created by ${user.full_name}`,
+    description: `Chore "${parsed.data.name}" created by ${user.full_name}${excludedRoomIds.length > 0 ? ` (${excludedRoomIds.length} rooms excluded)` : ""}`,
   });
 
   revalidatePath("/chores");
