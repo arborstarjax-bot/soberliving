@@ -10,7 +10,7 @@ import {
   normalizePaymentFrequency,
 } from "@/lib/payments/charges";
 import {
-  allocateMoveInPayment,
+  allocateMoveInPaymentExplicit,
   buildInitialCharges,
   buildMoveInNote,
   normalizeSobrietyDate,
@@ -21,12 +21,21 @@ import { getHouseToday } from "@/lib/timezone";
 
 const FACILITY_NAME = "Sober Living";
 
-const moveInPaymentSchema = z.object({
-  amount: z.number().positive(),
-  method: z.enum(["cash", "check", "money_order", "venmo", "zelle", "other"]),
-  paidAt: z.string().min(1),
-  note: z.string().optional(),
-});
+const moveInPaymentSchema = z
+  .object({
+    // Admin and rent are collected as separate amounts so partial
+    // payments can be recorded against each charge independently.
+    // At least one must be > 0 (enforced below); either may be 0.
+    adminAmount: z.number().min(0),
+    rentAmount: z.number().min(0),
+    method: z.enum(["cash", "check", "money_order", "venmo", "zelle", "other"]),
+    paidAt: z.string().min(1),
+    note: z.string().optional(),
+  })
+  .refine((d) => d.adminAmount + d.rentAmount > 0, {
+    message: "Enter an amount for admin fee or rent, or check 'No payment collected'.",
+    path: ["adminAmount"],
+  });
 
 const checkInRestrictionSchema = z.object({
   restriction_type: z.string().min(1),
@@ -319,9 +328,10 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
       (c) => (c.charge_type as string) === "rent"
     );
 
-    // Allocate: admin fee first, then rent. Pure function owns the math.
-    const allocations = allocateMoveInPayment({
-      amount: mi.amount,
+    // Allocate each amount to its own charge. Pure function owns the math.
+    const allocations = allocateMoveInPaymentExplicit({
+      adminAmount: mi.adminAmount,
+      rentAmount: mi.rentAmount,
       adminFeeCharge: adminFeeRow
         ? { id: adminFeeRow.id as string, amount: Number(adminFeeRow.amount) }
         : null,
@@ -329,6 +339,8 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
         ? { id: rentRow.id as string, amount: Number(rentRow.amount) }
         : null,
     });
+
+    const miTotal = allocations.reduce((s, a) => s + a.applied, 0);
 
     const fullNote = buildMoveInNote(allocations, mi.note);
 
@@ -351,7 +363,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
       .insert({
         resident_id: residentId,
         house_id: data.houseId,
-        amount: mi.amount,
+        amount: miTotal,
         payment_type: "deposit",
         payment_method: mi.method,
         note: fullNote,
@@ -391,7 +403,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
           houseName: house?.name ?? "",
           houseAddress: house?.address ?? null,
           residentName: targetUser.full_name,
-          amount: mi.amount,
+          amount: miTotal,
           paymentType: "Move-In Deposit",
           paymentMethod: mi.method,
           dueDate: data.commitmentStartDate,
@@ -439,7 +451,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     eventType: "intake_review_completed",
     entityType: "user",
     entityId: data.userId,
-    description: `${currentUser.full_name} completed intake review for ${targetUser.full_name} — assigned to ${house?.name || "house"}${data.moveInPayment ? ` (move-in payment: $${data.moveInPayment.amount.toFixed(2)})` : ""}`,
+    description: `${currentUser.full_name} completed intake review for ${targetUser.full_name} — assigned to ${house?.name || "house"}${data.moveInPayment ? ` (move-in payment: $${(data.moveInPayment.adminAmount + data.moveInPayment.rentAmount).toFixed(2)})` : ""}`,
   });
 
   // Notify the applicant that their application was approved and there's

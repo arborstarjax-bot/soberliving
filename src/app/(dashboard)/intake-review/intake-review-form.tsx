@@ -94,7 +94,10 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
   // to make an affirmative choice rather than silently submitting with
   // zero payment.
   const [moveInNoPayment, setMoveInNoPayment] = useState(false);
-  const [moveInAmount, setMoveInAmount] = useState("");
+  // Admin fee and rent are collected as separate amounts so partial
+  // payments against either charge can be recorded distinctly.
+  const [moveInAdminAmount, setMoveInAdminAmount] = useState("");
+  const [moveInRentAmount, setMoveInRentAmount] = useState("");
   const [moveInMethod, setMoveInMethod] = useState<
     "cash" | "check" | "money_order" | "venmo" | "zelle" | "other"
   >("cash");
@@ -138,10 +141,15 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
   const expectedMoveInTotal =
     (Number.isFinite(parsedRent) ? parsedRent : 0) +
     effectiveAdminFeeForMoveIn;
-  const parsedMoveInAmount = parseFloat(moveInAmount);
-  const collectedAmount = Number.isFinite(parsedMoveInAmount)
-    ? parsedMoveInAmount
+  const parsedMoveInAdminAmount = parseFloat(moveInAdminAmount);
+  const parsedMoveInRentAmount = parseFloat(moveInRentAmount);
+  const collectedAdmin = Number.isFinite(parsedMoveInAdminAmount)
+    ? parsedMoveInAdminAmount
     : 0;
+  const collectedRent = Number.isFinite(parsedMoveInRentAmount)
+    ? parsedMoveInRentAmount
+    : 0;
+  const collectedAmount = collectedAdmin + collectedRent;
   const isPartialPayment =
     !isExistingTenant &&
     !moveInNoPayment &&
@@ -205,7 +213,8 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
     // (> 0) with a method. If the payment is partial (less than
     // the expected total) they must leave a note.
     let moveInPayload: {
-      amount: number;
+      adminAmount: number;
+      rentAmount: number;
       method: typeof moveInMethod;
       paidAt: string;
       note?: string;
@@ -225,21 +234,22 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
         return setError("Next rent due date cannot be in the past");
       }
     } else if (!moveInNoPayment) {
-      if (!Number.isFinite(parsedMoveInAmount) || parsedMoveInAmount <= 0) {
+      if (collectedAmount <= 0) {
         return setError(
-          'Enter the amount collected at move-in, or check "No payment collected at move-in"'
+          'Enter an amount for Admin Fee or Rent, or check "No payment collected at move-in"'
         );
       }
       if (!moveInPaidAt) {
         return setError("Select a payment date");
       }
-      if (parsedMoveInAmount < expectedMoveInTotal && !moveInNote.trim()) {
+      if (collectedAmount < expectedMoveInTotal && !moveInNote.trim()) {
         return setError(
           "Partial move-in payments require a note explaining the arrangement"
         );
       }
       moveInPayload = {
-        amount: parsedMoveInAmount,
+        adminAmount: collectedAdmin,
+        rentAmount: collectedRent,
         method: moveInMethod,
         paidAt: moveInPaidAt,
         note: moveInNote.trim() || undefined,
@@ -678,9 +688,35 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
 
         {!isExistingTenant && !moveInNoPayment && (
           <div className="space-y-3">
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div
+              className={`grid gap-4 ${
+                skipAdminFee
+                  ? "sm:grid-cols-3"
+                  : "sm:grid-cols-2 lg:grid-cols-4"
+              }`}
+            >
+              {!skipAdminFee && (
+                <div className="space-y-2">
+                  <Label>Admin Fee Collected *</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                      $
+                    </span>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className="pl-7"
+                      value={moveInAdminAmount}
+                      onChange={(e) => setMoveInAdminAmount(e.target.value)}
+                      placeholder={effectiveAdminFeeForMoveIn.toFixed(2)}
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
-                <Label>Amount Collected *</Label>
+                <Label>Rent Collected *</Label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
                     $
@@ -690,9 +726,9 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
                     min="0"
                     step="0.01"
                     className="pl-7"
-                    value={moveInAmount}
-                    onChange={(e) => setMoveInAmount(e.target.value)}
-                    placeholder={expectedMoveInTotal.toFixed(2)}
+                    value={moveInRentAmount}
+                    onChange={(e) => setMoveInRentAmount(e.target.value)}
+                    placeholder={(Number.isFinite(parsedRent) ? parsedRent : 0).toFixed(2)}
                   />
                 </div>
               </div>

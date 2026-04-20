@@ -136,6 +136,52 @@ export interface MoveInAllocationInput {
   rentCharge?: OpenChargeRef | null;
 }
 
+// Explicit per-charge allocation. Use when the admin enters separate
+// admin-fee and rent amounts at move-in (partial payments can be made
+// against either charge independently). Each amount is capped at the
+// corresponding charge's outstanding balance so a typo can't
+// overpay — any residual intent should be a second payment, not a
+// duplicated ledger entry.
+export interface MoveInExplicitAllocationInput {
+  adminAmount: number;
+  rentAmount: number;
+  adminFeeCharge?: OpenChargeRef | null;
+  rentCharge?: OpenChargeRef | null;
+}
+
+export function allocateMoveInPaymentExplicit(
+  input: MoveInExplicitAllocationInput
+): Allocation[] {
+  const allocations: Allocation[] = [];
+
+  if (input.adminFeeCharge && input.adminAmount > 0) {
+    const apply = Math.min(
+      input.adminAmount,
+      Number(input.adminFeeCharge.amount)
+    );
+    if (apply > 0) {
+      allocations.push({
+        chargeId: input.adminFeeCharge.id,
+        chargeType: "admin_fee",
+        applied: apply,
+      });
+    }
+  }
+
+  if (input.rentCharge && input.rentAmount > 0) {
+    const apply = Math.min(input.rentAmount, Number(input.rentCharge.amount));
+    if (apply > 0) {
+      allocations.push({
+        chargeId: input.rentCharge.id,
+        chargeType: "rent",
+        applied: apply,
+      });
+    }
+  }
+
+  return allocations;
+}
+
 export function allocateMoveInPayment(
   input: MoveInAllocationInput
 ): Allocation[] {
