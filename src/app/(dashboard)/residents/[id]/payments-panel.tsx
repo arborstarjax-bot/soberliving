@@ -124,8 +124,8 @@ export function ResidentPaymentsPanel({
         <PaymentTermsCard
           terms={terms}
           isAdmin={isAdmin}
+          residentId={residentId}
           residentUserId={residentUserId}
-          residentName={residentName}
           pendingAmendment={pendingAmendment}
           isUpToDate={isUpToDate}
           nextCycleDate={nextCycleDate}
