@@ -664,18 +664,20 @@ export async function proposeAmendment(
       rent_due_date: (() => {
         const [y, m, d] = effectiveDate.split("-").map(Number);
         if (!y || !m || !d) return active.rent_due_date;
-        // Weekday label for a date-only value. Construct the Date at
-        // UTC midnight and format in UTC so the weekday matches the
-        // stored calendar day regardless of server or browser timezone
-        // — `new Date(y, m-1, d)` on a UTC server gives UTC midnight,
-        // which when read with `timeZone: "America/New_York"` flips
-        // back 4 hours to the previous day's name.
-        const dt = new Date(Date.UTC(y, m - 1, d));
+        // Policy: rent is due the day BEFORE the anchor. Label the
+        // stored rent_due_date accordingly so the PDF + UI read the
+        // same day the charge engine actually opens.
+        const anchor = new Date(Date.UTC(y, m - 1, d));
+        const due = new Date(anchor);
+        due.setUTCDate(due.getUTCDate() - 1);
         const freq = (newFrequency ?? active.payment_frequency) as
           | string
           | null;
         if (freq === "weekly") {
-          const weekday = dt.toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long" });
+          const weekday = due.toLocaleDateString("en-US", {
+            timeZone: "UTC",
+            weekday: "long",
+          });
           return `Every ${weekday}`;
         }
         const ordinal = (n: number) => {
@@ -683,7 +685,8 @@ export async function proposeAmendment(
           const v = n % 100;
           return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
         };
-        return `${ordinal(d)} of each month`;
+        if (d === 1) return "Last day of each preceding month";
+        return `${ordinal(d - 1)} of each month`;
       })(),
       commitment_start_date: effectiveDate,
       commitment_term: newCommitmentTerm ?? active.commitment_term,

@@ -56,19 +56,25 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
 
   // Rent Due Date is derived from frequency + start date so admins
   // can't accidentally enter something inconsistent with the schedule.
-  // Monthly → "<ordinal> of each month" based on the start day-of-month.
-  // Weekly  → "Every <Weekday>" based on the start weekday.
-  // Uses a local-date parser so date-only strings don't drift a day in
-  // US Pacific.
+  // Policy: rent is due the day BEFORE the commitment-start anchor
+  // (matches the signed contract and the charge engine).
+  //   Weekly start Sunday → "Every Saturday"
+  //   Monthly start 19th  → "18th of each month"
+  //   Monthly start 1st   → "Last day of each preceding month"
+  // Uses UTC midnight math so the weekday / day-of-month never
+  // drifts by one day due to server timezone.
   const rentDueDate = (() => {
     if (!commitmentStartDate) return "";
     const [y, m, d] = commitmentStartDate.split("-").map(Number);
     if (!y || !m || !d) return "";
-    // Use UTC midnight + UTC weekday lookup so the weekday label
-    // matches the stored calendar day regardless of server timezone.
-    const dt = new Date(Date.UTC(y, m - 1, d));
+    const anchor = new Date(Date.UTC(y, m - 1, d));
+    const due = new Date(anchor);
+    due.setUTCDate(due.getUTCDate() - 1);
     if (paymentFrequency === "weekly") {
-      const weekday = dt.toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long" });
+      const weekday = due.toLocaleDateString("en-US", {
+        timeZone: "UTC",
+        weekday: "long",
+      });
       return `Every ${weekday}`;
     }
     const ordinal = (n: number) => {
@@ -76,7 +82,8 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
       const v = n % 100;
       return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
     };
-    return `${ordinal(d)} of each month`;
+    if (d === 1) return "Last day of each preceding month";
+    return `${ordinal(d - 1)} of each month`;
   })();
   const [commitmentTerm, setCommitmentTerm] = useState("181 days");
   const [notes, setNotes] = useState("");
