@@ -3,8 +3,62 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { redirect, notFound } from "next/navigation";
 import { findPendingBlockerForUser } from "@/lib/blockers";
 import { AcknowledgeForm } from "./acknowledge-form";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { formatInAppTz } from "@/lib/timezone";
+import { escapeToDashboard } from "./actions";
+
+/**
+ * Terminal "nothing to acknowledge here" card. Rendered instead of
+ * redirecting to /dashboard when the blocker referenced by the URL
+ * is gone / archived / already acked. Rendering a page here (rather
+ * than redirecting) is deliberate: it guarantees the /acknowledge
+ * route cannot participate in a redirect loop, even if some other
+ * layout still disagrees about whether this blocker is pending.
+ *
+ * The Back to Dashboard button submits to `escapeToDashboard`, which
+ * upserts a best-effort ack row for this (blocker, user) pair before
+ * redirecting. That guarantees `findPendingBlockerForUser` returns
+ * a different id (or null) on the very next request, unsticking
+ * any resident whose pending_blocker_id has gone stale.
+ */
+function NothingToAcknowledge({
+  blockerId,
+  message,
+}: {
+  blockerId: string;
+  message: string;
+}) {
+  async function handleEscape() {
+    "use server";
+    await escapeToDashboard(blockerId);
+  }
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <h1 className="text-2xl font-bold">You&apos;re all caught up</h1>
+        <p className="text-muted-foreground mt-1">{message}</p>
+      </div>
+      <Card>
+        <CardContent className="pt-6 text-sm text-muted-foreground">
+          If you expected to see a message here, please contact your house
+          manager.
+        </CardContent>
+        <CardFooter>
+          <form action={handleEscape}>
+            <Button type="submit">Back to dashboard</Button>
+          </form>
+        </CardFooter>
+      </Card>
+    </div>
+  );
+}
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -24,10 +78,20 @@ export default async function AcknowledgePage({ params }: PageProps) {
     .maybeSingle();
 
   if (!blocker || blocker.archived_at) {
-    // Blocker went away (archived, deleted, or bad id). Bounce
-    // the resident back to the dashboard; the layout gate will
-    // re-send them to the next pending blocker if one exists.
-    redirect("/dashboard");
+    // Blocker went away (archived, deleted, or bad id). Render a
+    // terminal "nothing to acknowledge" card rather than redirecting
+    // — if the dashboard layout still thinks this blocker is pending
+    // (e.g. getSessionUser's staleness check disagreed with what we
+    // see here because of a race or drift) a redirect back there
+    // would ping-pong forever. The Back to Dashboard button posts
+    // to `escapeToDashboard`, which forces an ack row in so the gate
+    // reliably advances on the next request.
+    return (
+      <NothingToAcknowledge
+        blockerId={id}
+        message="This message was archived or removed before you got to it."
+      />
+    );
   }
 
   // Staff can visit this URL for audit/preview purposes but don't
@@ -61,7 +125,11 @@ export default async function AcknowledgePage({ params }: PageProps) {
     notFound();
   }
 
-  // Already acked? Bounce to whatever's next (or dashboard if none).
+  // Already acked? Jump to the next pending blocker if one exists.
+  // If none do, render a terminal "caught up" card instead of
+  // redirecting to /dashboard — for the same reason as the archived
+  // branch above, we never want this route to redirect in a way
+  // that could ping-pong with the dashboard gate.
   const { data: existingAck } = await admin
     .from("blocker_acknowledgments")
     .select("blocker_id")
@@ -70,8 +138,13 @@ export default async function AcknowledgePage({ params }: PageProps) {
     .maybeSingle();
   if (existingAck) {
     const next = await findPendingBlockerForUser(user.id, admin);
-    if (next) redirect(`/acknowledge/${next}`);
-    redirect("/dashboard");
+    if (next && next !== blocker.id) redirect(`/acknowledge/${next}`);
+    return (
+      <NothingToAcknowledge
+        blockerId={blocker.id as string}
+        message="You already acknowledged this message."
+      />
+    );
   }
 
   const authorData = Array.isArray(blocker.author)

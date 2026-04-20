@@ -20,7 +20,11 @@
 //   - Push notifications. Wire those up when we actually have a
 //     backend endpoint to send from.
 
-const CACHE_VERSION = "v1";
+// Bumped to v2 to purge stale navigation-response caches from v1 that
+// captured redirect loops (dashboard ↔ acknowledge) before the gate
+// fixes in #142. Every CACHE_VERSION bump invalidates the prior
+// runtime cache on activation via the cleanup step below.
+const CACHE_VERSION = "v2";
 const RUNTIME_CACHE = `sl-runtime-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline";
 
@@ -76,24 +80,22 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Navigations: network-first, fall back to cache, then offline page.
+  // Navigations: network-only, fall back to the precached /offline
+  // page if the network is unreachable. We deliberately do NOT cache
+  // navigation responses — the app's routes are auth-gated and a
+  // cached HTML/RSC response can contain a `redirect()` instruction
+  // that later becomes stale (e.g. "go sign commitment" cached,
+  // then the resident signs, but the cache replays the old redirect
+  // on the next navigation). Caching those responses produced
+  // redirect loops on deployed fixes because the SW kept replaying
+  // pre-fix behavior. Static assets are still cached below.
   if (req.mode === "navigate") {
     event.respondWith(
       (async () => {
         try {
-          const fresh = await fetch(req);
-          // Only cache successful responses. A 404/500 stored here
-          // would be returned from the catch block below when the
-          // user later goes offline, shadowing the /offline fallback.
-          if (fresh.ok) {
-            const cache = await caches.open(RUNTIME_CACHE);
-            cache.put(req, fresh.clone()).catch(() => {});
-          }
-          return fresh;
+          return await fetch(req);
         } catch {
           const cache = await caches.open(RUNTIME_CACHE);
-          const cached = await cache.match(req);
-          if (cached) return cached;
           const offline = await cache.match(OFFLINE_URL);
           if (offline) return offline;
           return new Response("Offline", { status: 503 });
