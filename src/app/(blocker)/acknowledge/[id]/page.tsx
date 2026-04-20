@@ -69,13 +69,25 @@ export default async function AcknowledgePage({ params }: PageProps) {
   const { id } = await params;
   const admin = createAdminClient();
 
-  const { data: blocker } = await admin
+  // Don't embed the author join here. PostgREST embedded joins can
+  // fail silently (returning {data:null}) if the joined user row
+  // was deleted — we'd then drop into the "archived or removed"
+  // branch for a blocker that's actually active. Fetch the blocker
+  // row by itself, then resolve the author name separately below.
+  const { data: blocker, error: blockerErr } = await admin
     .from("blockers")
     .select(
-      "id, title, body, attachment_paths, save_to_docs, require_signature, target_type, target_house_ids, target_user_ids, archived_at, created_at, created_by, author:users!created_by(full_name)"
+      "id, title, body, attachment_paths, save_to_docs, require_signature, target_type, target_house_ids, target_user_ids, archived_at, created_at, created_by"
     )
     .eq("id", id)
     .maybeSingle();
+
+  if (blockerErr) {
+    // Surface actual query errors — don't pretend the blocker was
+    // archived. Falling into the "caught up" branch on a transient
+    // Supabase error would strand the resident on an infinite card.
+    throw blockerErr;
+  }
 
   if (!blocker || blocker.archived_at) {
     // Blocker went away (archived, deleted, or bad id). Render a
@@ -84,7 +96,7 @@ export default async function AcknowledgePage({ params }: PageProps) {
     // (e.g. getSessionUser's staleness check disagreed with what we
     // see here because of a race or drift) a redirect back there
     // would ping-pong forever. The Back to Dashboard button posts
-    // to `escapeToDashboard`, which forces an ack row in so the gate
+    // to `escapeToDashboard`, which forces an ack row so the gate
     // reliably advances on the next request.
     return (
       <NothingToAcknowledge
@@ -147,10 +159,19 @@ export default async function AcknowledgePage({ params }: PageProps) {
     );
   }
 
-  const authorData = Array.isArray(blocker.author)
-    ? (blocker.author as Array<{ full_name: string }>)[0]
-    : (blocker.author as { full_name: string } | null);
-  const authorName = authorData?.full_name ?? "Staff";
+  // Resolve author name separately — this is best-effort so a
+  // deleted author row (manual auth.users cleanup) can't break the
+  // page render. Fallback to "Staff" when the row is missing.
+  let authorName = "Staff";
+  const createdBy = blocker.created_by as string | null;
+  if (createdBy) {
+    const { data: authorRow } = await admin
+      .from("users")
+      .select("full_name")
+      .eq("id", createdBy)
+      .maybeSingle();
+    if (authorRow?.full_name) authorName = authorRow.full_name as string;
+  }
   const paths = (blocker.attachment_paths as string[] | null) ?? [];
 
   return (
