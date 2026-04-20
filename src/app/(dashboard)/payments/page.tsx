@@ -1,7 +1,7 @@
 import { Suspense } from "react";
+import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { ListSkeleton } from "@/components/ui/skeleton";
-import { ResidentPaymentsSection } from "./resident-payments-section";
 import { StaffPaymentsSection } from "./staff-payments-section";
 import { CreatePaymentSection } from "./create-payment-section";
 
@@ -10,18 +10,27 @@ interface PaymentsPageProps {
 }
 
 /**
- * Payments shell. Title + subtitle paint immediately. Staff see
- * the Record Payment button populated in its own `<Suspense>`
- * island. The heavy RentStructure / RentFlowKpis / 3-tab body
- * (staff) or the resident's Payment Terms + charges + ledger
- * (resident) streams in behind a second boundary.
+ * Payments shell. Staff-only by policy: residents are redirected
+ * to their dashboard because payment tracking is handled
+ * internally and not surfaced in the resident-facing UI.
  *
- * Charge sweep runs in `/api/cron/sweep-charges` daily — residents
- * still get a targeted backfill in `ResidentPaymentsSection`.
+ * Title + subtitle paint immediately. Staff see the Record
+ * Payment button populated in its own `<Suspense>` island. The
+ * heavy RentStructure / RentFlowKpis / 3-tab body streams in
+ * behind a second boundary.
+ *
+ * Charge sweep runs in `/api/cron/sweep-charges` daily.
  */
 export default async function PaymentsPage({ searchParams }: PaymentsPageProps) {
   const user = await requireAuth();
   const isStaff = user.role === "admin" || user.role === "manager";
+
+  // Residents no longer have a payments view. Redirect to dashboard
+  // so any deep link (old notification, browser history) lands
+  // somewhere coherent instead of a blank page.
+  if (!isStaff) {
+    redirect("/dashboard");
+  }
 
   // searchParams is reserved for future filters (e.g. ?house=xxx).
   await searchParams;
@@ -35,28 +44,16 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
             Track rent flow, open balances, and receipts
           </p>
         </div>
-        {isStaff && (
-          <Suspense fallback={null}>
-            <CreatePaymentSection user={user} />
-          </Suspense>
-        )}
+        <Suspense fallback={null}>
+          <CreatePaymentSection user={user} />
+        </Suspense>
       </div>
 
-      {user.role === "resident" && (
-        <Suspense
-          fallback={<ListSkeleton rows={4} rowClassName="h-24 w-full" />}
-        >
-          <ResidentPaymentsSection user={user} />
-        </Suspense>
-      )}
-
-      {isStaff && (
-        <Suspense
-          fallback={<ListSkeleton rows={6} rowClassName="h-24 w-full" />}
-        >
-          <StaffPaymentsSection user={user} />
-        </Suspense>
-      )}
+      <Suspense
+        fallback={<ListSkeleton rows={6} rowClassName="h-24 w-full" />}
+      >
+        <StaffPaymentsSection user={user} />
+      </Suspense>
     </div>
   );
 }
