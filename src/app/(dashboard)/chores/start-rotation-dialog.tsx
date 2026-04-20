@@ -17,9 +17,10 @@ import { getHouseToday } from "@/lib/timezone";
 
 interface Props {
   houses: { id: string; name: string }[];
+  defaultHouseId?: string | null;
 }
 
-export function StartRotationDialog({ houses }: Props) {
+export function StartRotationDialog({ houses, defaultHouseId }: Props) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState(createRotation, undefined);
 
@@ -54,6 +55,7 @@ export function StartRotationDialog({ houses }: Props) {
             <select
               name="house_id"
               required
+              defaultValue={defaultHouseId ?? ""}
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
             >
               <option value="">Select house</option>
