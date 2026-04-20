@@ -86,9 +86,44 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   // targeted at them and not yet signed. Admins/managers can't be
   // the target of a blocker. Resolution is FIFO — oldest pending id
   // first so multi-blocker scenarios step through one at a time.
+  //
+  // After findPendingBlockerForUser returns a candidate, re-verify
+  // the row still exists, is not archived, and has no ack from this
+  // user. If the candidate is stale (e.g. orphaned rows from a
+  // manually-recreated auth.users account, a race with
+  // maybeAutoArchiveBlocker, or a cross-request state drift) we
+  // null it out instead of exposing it on the session — otherwise
+  // every layout that reads pending_blocker_id would blindly redirect
+  // the resident into /acknowledge/[id], which would bounce them
+  // right back (blocker missing/acked → redirect /dashboard) and
+  // the browser hits its 20-redirect cap on a blank page.
+  //
+  // Centralizing this guarantee here means every consumer —
+  // (dashboard)/layout, (check-in)/layout, future gates — can
+  // trust pending_blocker_id without having to re-verify.
   const pendingBlockerPromise =
     isResident && admin
-      ? findPendingBlockerForUser(profile.id, admin)
+      ? findPendingBlockerForUser(profile.id, admin).then(async (id) => {
+          if (!id) return null;
+          const [blockerRes, ackRes] = await Promise.all([
+            admin
+              .from("blockers")
+              .select("id, archived_at")
+              .eq("id", id)
+              .maybeSingle(),
+            admin
+              .from("blocker_acknowledgments")
+              .select("blocker_id")
+              .eq("blocker_id", id)
+              .eq("user_id", profile.id)
+              .maybeSingle(),
+          ]);
+          const stillPending =
+            !!blockerRes.data &&
+            !blockerRes.data.archived_at &&
+            !ackRes.data;
+          return stillPending ? id : null;
+        })
       : Promise.resolve(null);
 
   // Detect "discharged" residents: any residents row exists for

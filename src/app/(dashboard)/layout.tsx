@@ -47,38 +47,11 @@ export default async function DashboardLayout({
   // that require a signed ack before the resident can proceed —
   // same gating model as /sign-commitment. pending_blocker_id is
   // FIFO (oldest-first) so multi-blocker scenarios resolve in order.
-  //
-  // Loop-breaker: before redirecting, re-verify the blocker actually
-  // exists, isn't archived, and has no ack from this user. If any of
-  // those fail we fall through instead — the /acknowledge/[id] page
-  // would otherwise redirect us right back here and the browser
-  // would hit its 20-redirect cap on a blank page. This can happen
-  // when the blockers table / blocker_acknowledgments diverge from
-  // the session gate (manual deletes, orphaned rows, race between
-  // auto-archive and an in-flight session).
+  // getSessionUser re-verifies the candidate before exposing it, so
+  // if this field is truthy the blocker is guaranteed to still be
+  // pending (not archived, not already acked). See src/lib/auth.ts.
   if (user.role === "resident" && user.pending_blocker_id) {
-    const pendingId = user.pending_blocker_id;
-    const admin = createAdminClient();
-    const [blockerRes, ackRes] = await Promise.all([
-      admin
-        .from("blockers")
-        .select("id, archived_at")
-        .eq("id", pendingId)
-        .maybeSingle(),
-      admin
-        .from("blocker_acknowledgments")
-        .select("blocker_id")
-        .eq("blocker_id", pendingId)
-        .eq("user_id", user.id)
-        .maybeSingle(),
-    ]);
-    const blockerStillPending =
-      !!blockerRes.data &&
-      !blockerRes.data.archived_at &&
-      !ackRes.data;
-    if (blockerStillPending) {
-      redirect(`/acknowledge/${pendingId}`);
-    }
+    redirect(`/acknowledge/${user.pending_blocker_id}`);
   }
 
   // Critical-path queries that can influence the rendered shell:
