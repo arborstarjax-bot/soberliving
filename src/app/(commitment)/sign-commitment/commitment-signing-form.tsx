@@ -134,14 +134,16 @@ export function CommitmentSigningForm({
     return `${n}th`;
   };
   // Human phrase for the monthly due day. Anchor 1 → "last day of
-  // the preceding month" (variable-length). Every other anchor N →
-  // "the (N-1)th day of each month".
+  // the preceding month" (variable-length, so no trailing "of each
+  // month" here). Every other anchor N → "the (N-1)th day of each
+  // month". Phrase is the complete clause — consumers must NOT append
+  // additional suffix text.
   const monthlyDueDayPhrase =
     dayOfMonth == null
-      ? "the agreed day"
+      ? "the agreed day of each month"
       : dayOfMonth === 1
         ? "the last day of each preceding month"
-        : `the ${ordinalize(dayOfMonth - 1)}`;
+        : `the ${ordinalize(dayOfMonth - 1)} day of each month`;
   const startDateLong = startDateObj
     ? startDateObj.toLocaleDateString("en-US", {
         year: "numeric",
@@ -415,7 +417,7 @@ export function CommitmentSigningForm({
       drawParagraph(
         `Sober Living Fee shall be at the monthly rate of $${rentAmount.toFixed(
           2
-        )} per month, payable on ${monthlyDueDayPhrase} day of each month, commencing ${startDateLong}.`
+        )} per month, payable on ${monthlyDueDayPhrase}, commencing ${startDateLong}.`
       );
     }
 
@@ -804,8 +806,8 @@ export function CommitmentSigningForm({
                   ${rentAmount.toFixed(2)}
                 </span>{" "}
                 per month, payable on{" "}
-                <span className="font-semibold">{monthlyDueDayPhrase}</span>{" "}
-                day of each month, commencing{" "}
+                <span className="font-semibold">{monthlyDueDayPhrase}</span>,
+                commencing{" "}
                 <span className="font-semibold">{startDateLong}</span>.
               </>
             )}
