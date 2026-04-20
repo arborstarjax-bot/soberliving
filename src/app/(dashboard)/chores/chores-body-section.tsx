@@ -25,10 +25,23 @@ import { generateMissedChoreDemerits } from "../discipline/actions";
  * design.  Historical signoffs are capped at 100 to bound the work
  * just like the previous behavior.
  */
-export async function ChoresBodySection({ user }: { user: SessionUser }) {
+export async function ChoresBodySection({
+  user,
+  selectedHouseId = null,
+}: {
+  user: SessionUser;
+  selectedHouseId?: string | null;
+}) {
   const supabase = await createClient();
-  const houseFilter = getAccessibleHouseFilter(user);
+  const accessibleHouseFilter = getAccessibleHouseFilter(user);
   const isStaff = user.role === "admin" || user.role === "manager";
+
+  // When the staff user has picked a specific house via the URL
+  // tab, scope every query to just that one. Otherwise fall back
+  // to their normal accessible set (null = admin, every house).
+  const houseFilter: string[] | null = selectedHouseId
+    ? [selectedHouseId]
+    : accessibleHouseFilter;
 
   // Auto-enforce missed chore demerits on staff page loads.  Kept
   // inside the section so it stays deferred along with the body.

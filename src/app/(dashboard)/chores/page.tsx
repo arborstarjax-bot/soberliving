@@ -7,15 +7,45 @@ import type { SessionUser } from "@/lib/types";
 import { CreateChoreDialog } from "./create-chore-dialog";
 import { StartRotationDialog } from "./start-rotation-dialog";
 import { ChoresBodySection } from "./chores-body-section";
+import { HouseFilterTabs } from "./house-filter-tabs";
 
 /**
  * Chores shell. Title + staff action buttons paint immediately.
  * The heavy rotation / chore-list / signoff data gather is
  * deferred behind `<Suspense>`.
+ *
+ * Staff can narrow the entire page to one of their accessible houses
+ * via the `?house=<id>` query param. Admins see every active house;
+ * managers see only their assigned set. Residents don't get the tabs.
  */
-export default async function ChoresPage() {
+interface ChoresPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function ChoresPage({ searchParams }: ChoresPageProps) {
   const user = await requireAuth();
   const isStaff = user.role === "admin" || user.role === "manager";
+
+  const sp = await searchParams;
+  const rawHouse = sp.house;
+  const requestedHouseId =
+    typeof rawHouse === "string" && rawHouse.length > 0 ? rawHouse : null;
+
+  // Resolve the authoritative accessible-house list server-side so a
+  // resident URL-guessing `?house=...` can't leak another house's
+  // data. `selectedHouseId` is null when "All Houses" is active or
+  // the provided id is outside the user's accessible set.
+  const houseFilter = isStaff ? getAccessibleHouseFilter(user) : null;
+  const allHouses = isStaff ? await getCachedActiveHouses() : [];
+  const accessibleHouses = houseFilter
+    ? allHouses.filter((h) => houseFilter.includes(h.id))
+    : allHouses;
+  const selectedHouseId =
+    isStaff &&
+    requestedHouseId &&
+    accessibleHouses.some((h) => h.id === requestedHouseId)
+      ? requestedHouseId
+      : null;
 
   return (
     <div className="space-y-6">
@@ -27,26 +57,34 @@ export default async function ChoresPage() {
           </p>
         </div>
         {isStaff && (
-          <Suspense fallback={null}>
-            <StaffActions user={user} />
-          </Suspense>
+          <StaffActions user={user} houses={accessibleHouses} />
         )}
       </div>
 
+      {isStaff && (
+        <HouseFilterTabs
+          houses={accessibleHouses}
+          selectedHouseId={selectedHouseId}
+        />
+      )}
+
       <Suspense fallback={<ListSkeleton rows={4} rowClassName="h-32 w-full" />}>
-        <ChoresBodySection user={user} />
+        <ChoresBodySection
+          user={user}
+          selectedHouseId={selectedHouseId}
+        />
       </Suspense>
     </div>
   );
 }
 
-async function StaffActions({ user }: { user: SessionUser }) {
-  const houseFilter = getAccessibleHouseFilter(user);
-  const all = await getCachedActiveHouses();
-  const houses = houseFilter
-    ? all.filter((h) => houseFilter.includes(h.id))
-    : all;
-
+function StaffActions({
+  user: _user,
+  houses,
+}: {
+  user: SessionUser;
+  houses: { id: string; name: string }[];
+}) {
   return (
     <div className="flex gap-2">
       <CreateChoreDialog houses={houses} />
