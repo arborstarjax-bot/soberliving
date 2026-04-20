@@ -179,7 +179,13 @@ export function PaymentTermsCard({
                 View Signed Commitment
               </Button>
             ))}
-          {isAdmin && residentUserId && !pendingAmendment && (
+          {isAdmin && residentUserId && (
+            // Visible even when a prior amendment is still pending so
+            // admins can always find the entry point for editing. If
+            // they try to propose a second amendment while one is in
+            // flight, the server action rejects it and surfaces a
+            // "cancel the pending amendment first" error, which the
+            // amber banner below also makes obvious.
             <EditTermsDialog
               userId={residentUserId}
               residentName={residentName}

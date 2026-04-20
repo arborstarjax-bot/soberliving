@@ -52,17 +52,23 @@ export function VirtualNextDueCard({
     : terms;
 
   // When projecting off a future-dated amendment, that effective
-  // date IS the next due — no need to roll forward from today. For
-  // amendments whose effective date is already in the past
-  // (resident just hasn't signed yet), fall back to the regular
-  // computeNextDue so we don't show a stale date.
-  const candidate =
+  // date IS the next cycle anchor — no need to roll forward from
+  // today. For amendments whose effective date is already in the
+  // past (resident just hasn't signed yet), fall back to the
+  // regular computeNextDue so we don't show a stale date.
+  const anchor =
     projection && projection.anchorDate.getTime() >= today.getTime()
       ? projection.anchorDate
       : computeNextDue(effectiveTerms, today);
+  // Policy: rent is due the day BEFORE the cycle anchor. Render
+  // that shifted date as the "Due on …" value so this card matches
+  // the rate clause on the signed commitment PDF and the real
+  // payment_charges row the opener will eventually create.
+  const dueDate = new Date(anchor);
+  dueDate.setDate(dueDate.getDate() - 1);
   const msDay = 24 * 60 * 60 * 1000;
   const days = Math.round(
-    (candidate.getTime() - today.getTime()) / msDay
+    (dueDate.getTime() - today.getTime()) / msDay
   );
   return (
     <Card>
@@ -92,9 +98,17 @@ export function VirtualNextDueCard({
                   : `Due in ${days}d`}
           </Badge>
         </div>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Calendar className="h-3.5 w-3.5" />
-          {candidate.toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+        <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-3.5 w-3.5" />
+            <span>
+              Due {dueDate.toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+            </span>
+          </div>
+          <span className="pl-5 text-[11px]">
+            Covers cycle starting{" "}
+            {anchor.toLocaleDateString("en-US", { timeZone: "America/New_York" })}
+          </span>
         </div>
         {canRecordPayment && !projection && (
           <div className="pt-2 border-t">
@@ -104,7 +118,7 @@ export function VirtualNextDueCard({
               residentName={residentName}
               houseId={houseId}
               rentAmount={terms.rent_amount}
-              nextDueDate={toIsoLocal(candidate)}
+              nextDueDate={toIsoLocal(dueDate)}
               size="default"
               label={`Record Payment · ${formatMoney(terms.rent_amount)}`}
             />

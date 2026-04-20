@@ -81,6 +81,13 @@ export function ResidentPaymentsPanel({
     0
   );
 
+  // Is there already an open/partial rent row? When YES the Next
+  // Due hero or Other Open Charges list already surfaces it. When
+  // NO — e.g. the only open charge is an admin fee, or the resident
+  // just paid every open rent — we still want to show an Upcoming
+  // Rent card so staff can see when the next rent cycle lands.
+  const hasOpenRent = sortedCharges.some((c) => c.charge_type === "rent");
+
   // "Up to date" — no open charges at all. Used for the green pill
   // on the Payment Terms card. We show the expected next-cycle date
   // alongside it so staff can see at a glance when the next charge
@@ -125,8 +132,11 @@ export function ResidentPaymentsPanel({
         />
       )}
 
-      {/* Next Due hero card */}
-      {nextCharge ? (
+      {/* Next Due hero card — real open charge sorted soonest-first.
+          When the resident owes both rent and admin fee, rent sorts
+          first thanks to the -1 day offset; when only admin fee is
+          open the fee takes this slot. */}
+      {nextCharge && (
         <NextDueCard
           charge={nextCharge}
           canRecordPayment={canRecordPayment && !!houseId}
@@ -134,7 +144,17 @@ export function ResidentPaymentsPanel({
           residentName={residentName}
           houseId={houseId ?? ""}
         />
-      ) : terms ? (
+      )}
+
+      {/* Upcoming Rent card — always visible when terms exist and no
+          open rent row is on the books yet. Covers two scenarios that
+          used to silently drop off the page: (a) only an admin fee is
+          outstanding so the Next Due hero shows the fee, not rent, and
+          staff had no visibility of when the next rent lands, and
+          (b) first rent cycle hasn't opened yet (existing-tenant
+          activation with a future billing_anchor_date). Virtual — no
+          DB row; gets replaced by a real NextDueCard on the due day. */}
+      {terms && !hasOpenRent && (
         <VirtualNextDueCard
           terms={terms}
           pendingAmendment={pendingAmendment}
@@ -143,7 +163,9 @@ export function ResidentPaymentsPanel({
           residentName={residentName}
           houseId={houseId ?? ""}
         />
-      ) : (
+      )}
+
+      {!nextCharge && !terms && (
         <Card>
           <CardContent className="py-6 text-center space-y-1">
             <p className="text-sm font-medium">No open charges</p>
