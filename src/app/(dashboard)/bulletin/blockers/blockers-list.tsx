@@ -3,7 +3,16 @@
 import { useState, useTransition } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Archive, Paperclip, Loader2, Trash2 } from "lucide-react";
+import {
+  Archive,
+  Paperclip,
+  Loader2,
+  Trash2,
+  ChevronDown,
+  ChevronRight,
+  PenLine,
+  CheckCircle2,
+} from "lucide-react";
 import { archiveBlocker, deleteBlocker } from "./actions";
 import { formatInAppTz } from "@/lib/timezone";
 import type { BlockerTargetType, UserRole } from "@/lib/types";
@@ -18,6 +27,13 @@ function formatDateTime(iso: string): string {
   });
 }
 
+interface AckEntry {
+  user_id: string;
+  user_name: string;
+  acknowledged_at: string;
+  has_signature: boolean;
+}
+
 interface BlockerItem {
   id: string;
   title: string;
@@ -27,10 +43,12 @@ interface BlockerItem {
   target_house_ids: string[];
   target_user_ids: string[];
   save_to_docs: boolean;
+  require_signature: boolean;
   created_by: string;
   created_at: string;
   archived_at: string | null;
   author_name: string;
+  acknowledgments: AckEntry[];
   ack_count: number;
   target_count: number;
 }
@@ -151,7 +169,10 @@ function BlockerRow({
         : `${item.target_user_ids.length} resident(s)`;
 
   return (
-    <Card className={item.archived_at ? "opacity-60" : undefined}>
+    <Card
+      id={`blocker-${item.id}`}
+      className={item.archived_at ? "opacity-60" : undefined}
+    >
       <CardHeader>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
@@ -205,6 +226,11 @@ function BlockerRow({
           <span>
             Acknowledged: {item.ack_count}/{item.target_count}
           </span>
+          <span>
+            {item.require_signature
+              ? "Signature required"
+              : "Continue-only (no signature)"}
+          </span>
           {item.attachment_paths.length > 0 && (
             <span className="inline-flex items-center gap-1">
               <Paperclip className="h-3 w-3" />
@@ -213,8 +239,80 @@ function BlockerRow({
           )}
           {item.save_to_docs && <span>Saved to Documents on ack</span>}
         </div>
+        <AcknowledgmentsToggle
+          ackCount={item.ack_count}
+          targetCount={item.target_count}
+          acknowledgments={item.acknowledgments}
+        />
         {error && <p className="text-sm text-destructive">{error}</p>}
       </CardContent>
     </Card>
+  );
+}
+
+function AcknowledgmentsToggle({
+  ackCount,
+  targetCount,
+  acknowledgments,
+}: {
+  ackCount: number;
+  targetCount: number;
+  acknowledgments: AckEntry[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hasAny = acknowledgments.length > 0;
+
+  return (
+    <div className="pt-1">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+        aria-expanded={expanded}
+      >
+        {expanded ? (
+          <ChevronDown className="h-3 w-3" />
+        ) : (
+          <ChevronRight className="h-3 w-3" />
+        )}
+        <span>
+          Acknowledgments ({ackCount}/{targetCount})
+        </span>
+      </button>
+      {expanded && (
+        <div className="mt-2 rounded-md border bg-muted/30 p-2">
+          {!hasAny ? (
+            <p className="text-xs text-muted-foreground">
+              No one has acknowledged yet.
+            </p>
+          ) : (
+            <ul className="divide-y">
+              {acknowledgments.map((a) => (
+                <li
+                  key={a.user_id}
+                  className="flex items-center gap-2 py-1.5 text-xs"
+                >
+                  {a.has_signature ? (
+                    <PenLine
+                      className="h-3 w-3 text-muted-foreground"
+                      aria-label="Signed"
+                    />
+                  ) : (
+                    <CheckCircle2
+                      className="h-3 w-3 text-muted-foreground"
+                      aria-label="Acknowledged"
+                    />
+                  )}
+                  <span className="flex-1 font-medium">{a.user_name}</span>
+                  <span className="text-muted-foreground">
+                    {formatDateTime(a.acknowledged_at)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

@@ -38,6 +38,7 @@ export function NewBlockerForm({
   );
   const [houseIds, setHouseIds] = useState<string[]>([]);
   const [userIds, setUserIds] = useState<string[]>([]);
+  const [requireSignature, setRequireSignature] = useState(true);
   const [saveToDocs, setSaveToDocs] = useState(false);
   const [attachments, setAttachments] = useState<string[]>([]);
   const [attachmentNames, setAttachmentNames] = useState<Record<string, string>>({});
@@ -55,6 +56,7 @@ export function NewBlockerForm({
     setTargetType(userRole === "manager" ? "house" : "all");
     setHouseIds([]);
     setUserIds([]);
+    setRequireSignature(true);
     setSaveToDocs(false);
     setAttachments([]);
     setAttachmentNames({});
@@ -134,6 +136,7 @@ export function NewBlockerForm({
         targetUserIds: userIds,
         attachmentPaths: attachments,
         saveToDocs,
+        requireSignature,
       });
       if (result.error) {
         setSubmitError(result.error);
@@ -340,6 +343,20 @@ export function NewBlockerForm({
             <p className="mt-1 text-sm text-destructive">{uploadError}</p>
           )}
         </div>
+
+        <label className="flex items-start gap-2 text-sm">
+          <Checkbox
+            checked={requireSignature}
+            onCheckedChange={(v) => setRequireSignature(Boolean(v))}
+          />
+          <span>
+            Require signature to acknowledge
+            <span className="block text-xs text-muted-foreground">
+              When off, residents tap Continue to acknowledge. When on,
+              they must draw a signature (the default).
+            </span>
+          </span>
+        </label>
 
         <label className="flex items-start gap-2 text-sm">
           <Checkbox

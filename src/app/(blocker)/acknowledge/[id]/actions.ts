@@ -15,31 +15,41 @@ import { isBlockerApplicableToUser, maybeAutoArchiveBlocker } from "@/lib/blocke
  */
 export async function acknowledgeBlocker(
   blockerId: string,
-  signatureDataUrl: string,
+  signatureDataUrl: string | null,
   pdfBase64: string | null
 ) {
   const user = await requireAuth();
   if (user.role !== "resident") {
     return { error: "Only residents can acknowledge blockers" };
   }
-  if (!signatureDataUrl || !signatureDataUrl.startsWith("data:image/")) {
-    return { error: "Signature required" };
-  }
 
   const admin = createAdminClient();
 
   // Load the blocker row for the downstream PDF + log + save-to-docs
   // flow. `isBlockerApplicableToUser` below also reads the row but
-  // we need the title / save_to_docs fields here anyway.
+  // we need the title / save_to_docs / require_signature fields here
+  // anyway.
   const { data: blocker } = await admin
     .from("blockers")
     .select(
-      "id, title, body, save_to_docs, archived_at, target_type, target_house_ids, target_user_ids"
+      "id, title, body, save_to_docs, require_signature, archived_at, target_type, target_house_ids, target_user_ids"
     )
     .eq("id", blockerId)
     .maybeSingle();
   if (!blocker) return { error: "Blocker not found" };
   if (blocker.archived_at) return { error: "Blocker is no longer active" };
+
+  // Signature handling depends on the blocker's configuration. When
+  // require_signature is true (default), we require a valid data-url
+  // image. When false, residents tap Continue and no signature is
+  // captured — the ack row stores NULL in the signature column.
+  const mustSign = blocker.require_signature !== false;
+  if (mustSign) {
+    if (!signatureDataUrl || !signatureDataUrl.startsWith("data:image/")) {
+      return { error: "Signature required" };
+    }
+  }
+  const signatureToStore = mustSign ? signatureDataUrl : null;
 
   // Re-check targeting server-side. A `"use server"` action can be
   // invoked directly via HTTP POST — bypassing the page-level gate —
@@ -63,7 +73,7 @@ export async function acknowledgeBlocker(
         blocker_id: blockerId,
         user_id: user.id,
         acknowledged_at: new Date().toISOString(),
-        signature: signatureDataUrl,
+        signature: signatureToStore,
       },
       { onConflict: "blocker_id,user_id" }
     );

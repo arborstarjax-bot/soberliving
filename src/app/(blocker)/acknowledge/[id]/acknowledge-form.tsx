@@ -14,6 +14,7 @@ interface AcknowledgeFormProps {
   body: string;
   attachmentPaths: string[];
   saveToDocs: boolean;
+  requireSignature: boolean;
   residentName: string;
 }
 
@@ -31,6 +32,7 @@ export function AcknowledgeForm({
   body,
   attachmentPaths,
   saveToDocs,
+  requireSignature,
   residentName,
 }: AcknowledgeFormProps) {
   const router = useRouter();
@@ -39,7 +41,7 @@ export function AcknowledgeForm({
   const [isPending, startTransition] = useTransition();
 
   const generatePdf = useCallback(
-    async (sig: string): Promise<string> => {
+    async (sig: string | null): Promise<string> => {
       const { PDFDocument, rgb, StandardFonts } = await import("pdf-lib");
       const pdf = await PDFDocument.create();
       const font = await pdf.embedFont(StandardFonts.Helvetica);
@@ -80,21 +82,30 @@ export function AcknowledgeForm({
       }
 
       y -= 30;
-      draw("Resident Signature:", 50, 10, true);
-      try {
-        const sigBytes = Uint8Array.from(
-          atob(sig.split(",")[1] || ""),
-          (c) => c.charCodeAt(0)
+      if (sig) {
+        draw("Resident Signature:", 50, 10, true);
+        try {
+          const sigBytes = Uint8Array.from(
+            atob(sig.split(",")[1] || ""),
+            (c) => c.charCodeAt(0)
+          );
+          const sigImage = await pdf.embedPng(sigBytes);
+          page.drawImage(sigImage, {
+            x: 50,
+            y: y - 55,
+            width: 180,
+            height: 45,
+          });
+        } catch {
+          draw("[signature recorded]", 50, 9);
+        }
+      } else {
+        draw(
+          "Acknowledged electronically (no signature required).",
+          50,
+          10,
+          true
         );
-        const sigImage = await pdf.embedPng(sigBytes);
-        page.drawImage(sigImage, {
-          x: 50,
-          y: y - 55,
-          width: 180,
-          height: 45,
-        });
-      } catch {
-        draw("[signature recorded]", 50, 9);
       }
 
       const bytes = await pdf.save();
@@ -112,17 +123,18 @@ export function AcknowledgeForm({
   );
 
   async function handleSubmit() {
-    if (!signature) {
+    if (requireSignature && !signature) {
       setError("Please sign above to continue.");
       return;
     }
     setError(null);
+    const sig = requireSignature ? signature : null;
     startTransition(async () => {
       try {
-        const pdfBase64 = saveToDocs ? await generatePdf(signature) : null;
+        const pdfBase64 = saveToDocs ? await generatePdf(sig) : null;
         const result = await acknowledgeBlocker(
           blockerId,
-          signature,
+          sig,
           pdfBase64
         );
         if (result?.error) {
@@ -165,18 +177,21 @@ export function AcknowledgeForm({
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            Sign to acknowledge
+            {requireSignature ? "Sign to acknowledge" : "Acknowledge"}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            By signing below, I confirm I have read and understand the
-            message above.
+            {requireSignature
+              ? "By signing below, I confirm I have read and understand the message above."
+              : "Tap Continue to confirm you have read and understood the message above."}
           </p>
-          <SignaturePad
-            onSignatureChange={(val) => setSignature(val)}
-            label="Your Signature"
-          />
+          {requireSignature && (
+            <SignaturePad
+              onSignatureChange={(val) => setSignature(val)}
+              label="Your Signature"
+            />
+          )}
           {error && (
             <p className="text-sm text-destructive">{error}</p>
           )}
@@ -184,15 +199,17 @@ export function AcknowledgeForm({
             <Button
               type="button"
               onClick={handleSubmit}
-              disabled={!signature || isPending}
+              disabled={(requireSignature && !signature) || isPending}
             >
               {isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Submitting…
                 </>
-              ) : (
+              ) : requireSignature ? (
                 "I acknowledge"
+              ) : (
+                "Continue"
               )}
             </Button>
           </div>
