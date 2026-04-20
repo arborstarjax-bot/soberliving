@@ -178,6 +178,18 @@ export async function dischargeResident(
   }
 
   const dischargeDate = getHouseToday();
+  const nowIso = new Date().toISOString();
+
+  // Grab the linked auth user_id up front so we can clear their
+  // bulletin / social content below. The resident row stays (so the
+  // login, email/password, and their documents survive) — we're just
+  // wiping the things that represent active house participation.
+  const { data: residentLink } = await supabase
+    .from("residents")
+    .select("user_id")
+    .eq("id", residentId)
+    .maybeSingle();
+  const residentUserId = residentLink?.user_id ?? null;
 
   // End all active bed assignments
   await supabase
@@ -186,10 +198,140 @@ export async function dischargeResident(
     .eq("resident_id", residentId)
     .is("end_date", null);
 
+  // Close any open sign-out row (defensive — delete wipes the whole
+  // history right after, this prevents stray open rows during the
+  // transition if RLS blocks the delete for some reason).
+  await supabase
+    .from("sign_out_sheet")
+    .update({ time_in: nowIso, signed_in_by: user.id })
+    .eq("resident_id", residentId)
+    .is("time_in", null);
+
+  // ── Discipline ───────────────────────────────────────────────
+  // A returning resident gets a clean slate. Warnings, demerits,
+  // incidents, and restrictions are wiped. Staff still have the
+  // activity_log as an audit trail of the original events.
+  await supabase.from("warnings").delete().eq("resident_id", residentId);
+  await supabase.from("demerits").delete().eq("resident_id", residentId);
+  await supabase.from("incidents").delete().eq("resident_id", residentId);
+  await supabase.from("restrictions").delete().eq("resident_id", residentId);
+
+  // ── Chore participation ──────────────────────────────────────
+  // Pull the resident out of every current/future rotation and wipe
+  // completion history so they don't appear on the house board.
+  // chore_signoffs cascade from chore_rotation_assignments.
+  await supabase
+    .from("chore_rotation_assignments")
+    .delete()
+    .eq("resident_id", residentId);
+  await supabase
+    .from("chore_completions")
+    .delete()
+    .eq("resident_id", residentId);
+  await supabase
+    .from("chore_exclusions")
+    .delete()
+    .eq("resident_id", residentId);
+
+  // ── Activity records ─────────────────────────────────────────
+  // Leave requests, sign-out rows, check-in responses, resident
+  // notes, safety assessments — all represent in-flight state of
+  // the resident's stay. Wipe them so a returning resident starts
+  // fresh.
+  await supabase
+    .from("leave_requests")
+    .delete()
+    .eq("resident_id", residentId);
+  await supabase.from("sign_out_sheet").delete().eq("resident_id", residentId);
+  await supabase
+    .from("check_in_responses")
+    .delete()
+    .eq("resident_id", residentId);
+  await supabase.from("resident_notes").delete().eq("resident_id", residentId);
+  await supabase
+    .from("safety_assessments")
+    .delete()
+    .eq("resident_id", residentId);
+
+  // ── Cancel in-flight commitments ─────────────────────────────
+  // The signed PDF + history stays in the documents bucket and the
+  // row itself survives (for future reference when they move back
+  // in), but we flip status to 'cancelled' so the rent-charge
+  // generator stops producing new weekly/monthly charges against
+  // this resident.
+  await supabase
+    .from("house_commitments")
+    .update({ status: "cancelled", updated_at: nowIso })
+    .eq("resident_id", residentId)
+    .in("status", [
+      "active",
+      "pending_staff_signature",
+      "pending_resident_signature",
+    ]);
+
+  // ── Void unpaid / future-dated charges ───────────────────────
+  // Paid charges stay (ledger history). Unpaid ones would otherwise
+  // keep surfacing as "past due" forever on reports.
+  await supabase
+    .from("payment_charges")
+    .delete()
+    .eq("resident_id", residentId)
+    .in("status", ["unpaid", "partial"]);
+
+  // ── Bulletin / social content (linked via user_id) ───────────
+  // Posts, comments, likes, ride-share reservations, grievances,
+  // blocker acknowledgments, and sobriety milestone posts by this
+  // user all get wiped so the house feed isn't cluttered with a
+  // discharged resident's content.
+  if (residentUserId) {
+    await supabase
+      .from("bulletin_likes")
+      .delete()
+      .eq("user_id", residentUserId);
+    await supabase
+      .from("bulletin_comments")
+      .delete()
+      .eq("user_id", residentUserId);
+    await supabase
+      .from("bulletin_posts")
+      .delete()
+      .eq("user_id", residentUserId);
+    await supabase
+      .from("ride_share_reservations")
+      .delete()
+      .eq("user_id", residentUserId);
+    await supabase
+      .from("ride_shares")
+      .delete()
+      .eq("user_id", residentUserId);
+    await supabase
+      .from("grievances")
+      .delete()
+      .eq("user_id", residentUserId);
+    await supabase
+      .from("blocker_acknowledgments")
+      .delete()
+      .eq("user_id", residentUserId);
+    await supabase
+      .from("sobriety_milestone_posts")
+      .delete()
+      .eq("user_id", residentUserId);
+    await supabase
+      .from("notifications")
+      .delete()
+      .eq("user_id", residentUserId);
+  }
+
   // Update resident status with discharge date, optional reason, and
   // voluntary flag. The boolean is stored so the State of the House report
   // can reliably split "Discharged" vs "Voluntary departures" instead of
   // inferring from whether a reason was provided.
+  //
+  // Preserved: residents row itself (so their login still works if
+  // they return), intake_forms (documents + signatures), signed
+  // house_commitments rows (pdf_storage_path + signatures), payments
+  // (ledger receipts), activity_log (audit trail), bed_assignments
+  // history (end-dated, not deleted).
   const { error } = await supabase
     .from("residents")
     .update({
@@ -197,7 +339,7 @@ export async function dischargeResident(
       move_out_date: dischargeDate,
       discharge_reason: reason || null,
       discharge_is_voluntary: isVoluntary ?? false,
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
     })
     .eq("id", residentId);
 
