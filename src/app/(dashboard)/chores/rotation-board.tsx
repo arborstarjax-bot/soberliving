@@ -81,64 +81,65 @@ export function RotationBoard({
   const displayWeek = Math.min(currentWeek, maxCycleWeeks);
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle>{houseName}</CardTitle>
+    <Card className="overflow-hidden">
+      <CardHeader className="border-b bg-muted/30">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <CardTitle className="text-xl">{houseName}</CardTitle>
             <p className="text-sm text-muted-foreground">
               {formatDateOnly(rotation.cycle_start_date)} —{" "}
               {formatDateOnly(rotation.cycle_end_date)}
+            </p>
+            <p className="pt-1 text-base font-semibold text-foreground">
+              Week {displayWeek} of {maxCycleWeeks}
             </p>
           </div>
           <div className="flex items-center gap-2">
             {isStaff && assignments.length >= 2 && (
               <RotateButton rotationId={rotation.id} />
             )}
-            <Badge variant="outline">
-              Week {displayWeek} of {maxCycleWeeks}
-            </Badge>
           </div>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-0">
         {/* On phones we keep the grid but make the "Chore" column
             sticky to the left so the chore name is always in view
             while the resident/days columns horizontally scroll. The
             `min-w-[640px]` on the table guarantees the sticky column
             actually has something to scroll under on narrow screens. */}
-        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-          <table className="w-full text-sm border min-w-[640px]">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm min-w-[640px]">
             <thead>
-              <tr>
-                <th className="border p-2 text-left bg-muted min-w-[140px] sm:min-w-[180px] sticky left-0 z-10">
+              <tr className="border-b bg-muted/40">
+                <th className="border-r p-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground min-w-[140px] sm:min-w-[180px] sticky left-0 z-10 bg-muted/40">
                   Chore
                 </th>
-                <th className="border p-2 text-left bg-muted min-w-[140px] sm:min-w-[160px]">
+                <th className="border-r p-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground min-w-[140px] sm:min-w-[160px]">
                   Assigned To
                 </th>
                 {ALL_DAYS.map((day) => (
                   <th
                     key={day}
-                    className={`border p-2 text-center bg-muted text-xs min-w-[44px] ${day === todayDay ? "bg-primary/10 font-bold" : ""}`}
+                    className={`border-r p-2 text-center text-xs min-w-[52px] last:border-r-0 ${day === todayDay ? "bg-primary/10 text-primary font-semibold" : "text-muted-foreground"}`}
                   >
-                    {DAY_LABELS[day]}
-                    {day === todayDay && <span className="block text-[10px] text-primary">Today</span>}
+                    <div className="uppercase tracking-wide">{DAY_LABELS[day]}</div>
+                    {day === todayDay && <div className="mt-0.5 text-[10px] font-normal normal-case">Today</div>}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {chores.map((chore) => {
+              {chores.map((chore, idx) => {
                 const assignment = assignments.find(
                   (a) => a.chore_id === chore.id
                 );
                 const choreDays: string[] = chore.days_of_week ?? ["monday", "wednesday", "friday"];
+                const rowBg = idx % 2 === 0 ? "bg-background" : "bg-muted/20";
 
                 return (
-                  <tr key={chore.id}>
-                    <td className="border p-2 font-medium sticky left-0 z-10 bg-background">{chore.name}</td>
-                    <td className="border p-2">
+                  <tr key={chore.id} className={`border-b last:border-b-0 ${rowBg} hover:bg-muted/30 transition-colors`}>
+                    <td className={`border-r p-2 font-medium sticky left-0 z-10 ${rowBg}`}>{chore.name}</td>
+                    <td className="border-r p-2">
                       {assignment ? (
                         <div className="flex items-center gap-1">
                           <span className="flex-1">{assignment.resident?.full_name}</span>
@@ -160,7 +161,7 @@ export function RotationBoard({
                         return (
                           <td
                             key={`${chore.id}-${day}`}
-                            className="border p-2 text-center bg-muted/30"
+                            className="border-r p-2 text-center bg-muted/40 last:border-r-0"
                           />
                         );
                       }
@@ -185,7 +186,7 @@ export function RotationBoard({
                       return (
                         <td
                           key={`${chore.id}-${day}`}
-                          className={`border p-2 text-center ${day === todayDay ? "bg-primary/5" : ""}`}
+                          className={`border-r p-2 text-center last:border-r-0 ${day === todayDay ? "bg-primary/5" : ""}`}
                         >
                           {canVerify ? (
                             <VerifyButtons signoffId={signoff.id} />

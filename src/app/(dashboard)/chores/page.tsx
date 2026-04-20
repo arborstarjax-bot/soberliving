@@ -119,7 +119,7 @@ function StaffActions({
         rooms={rooms}
         defaultHouseId={defaultHouseId}
       />
-      <StartRotationDialog houses={houses} />
+      <StartRotationDialog houses={houses} defaultHouseId={defaultHouseId} />
     </div>
   );
 }
