@@ -69,6 +69,19 @@ export async function login(
   if (role === "admin" || role === "manager") {
     redirect("/admin");
   }
+  // Discharged residents (any residents row exists but none are
+  // active) land on the lockout page instead of the dashboard.
+  // The dashboard layout also enforces this gate, but checking
+  // here saves one server round-trip on the happy-path sign-in.
+  const admin = createAdminClient();
+  const { data: residentRows } = await admin
+    .from("residents")
+    .select("status")
+    .eq("user_id", data.user?.id ?? "");
+  const rows = residentRows ?? [];
+  if (rows.length > 0 && rows.every((r) => r.status !== "active")) {
+    redirect("/discharged");
+  }
   // Residents land at /dashboard; the dashboard layout handles
   // redirecting them onwards to /intake or /sign-commitment as needed.
   redirect("/dashboard");

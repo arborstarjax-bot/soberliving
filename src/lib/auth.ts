@@ -91,12 +91,30 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
       ? findPendingBlockerForUser(profile.id, admin)
       : Promise.resolve(null);
 
-  const [assignmentsRes, pendingCommitmentRes, pendingBlockerId] =
-    await Promise.all([
-      assignmentsPromise,
-      pendingCommitmentPromise,
-      pendingBlockerPromise,
-    ]);
+  // Detect "discharged" residents: any residents row exists for
+  // this user but none are currently active. Used by the layout
+  // to hard-gate them onto /discharged. Role admin/manager users
+  // who were also residents don't need this gate — their elevated
+  // role takes over.
+  const residentStatusPromise =
+    role === "resident" && admin
+      ? admin
+          .from("residents")
+          .select("status")
+          .eq("user_id", profile.id)
+      : Promise.resolve({ data: null as { status: string }[] | null });
+
+  const [
+    assignmentsRes,
+    pendingCommitmentRes,
+    pendingBlockerId,
+    residentStatusRes,
+  ] = await Promise.all([
+    assignmentsPromise,
+    pendingCommitmentPromise,
+    pendingBlockerPromise,
+    residentStatusPromise,
+  ]);
 
   const assignedHouseIds: string[] =
     assignmentsRes.data?.map((a) => a.house_id) ?? [];
@@ -104,6 +122,15 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
 
   const intakeCompleted = profile.intake_completed === true;
   const commitmentSigned = profile.commitment_signed === true;
+
+  // A resident is "discharged" when at least one residents row
+  // exists for them and none are currently active. Pre-intake
+  // residents (no rows yet) fall through to the normal intake flow.
+  const residentRows = residentStatusRes.data ?? [];
+  const residentDischarged =
+    role === "resident" &&
+    residentRows.length > 0 &&
+    residentRows.every((r) => r.status !== "active");
 
   return {
     id: profile.id,
@@ -116,6 +143,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     commitment_signed: commitmentSigned,
     has_pending_commitment: hasPendingCommitment,
     pending_blocker_id: pendingBlockerId,
+    resident_discharged: residentDischarged,
   };
 });
 

@@ -8,6 +8,12 @@ export default async function CommitmentLayout({
 }) {
   const user = await requireAuth();
 
+  // Discharged residents shouldn't be re-signing anything — route
+  // them to the lockout page.
+  if (user.role === "resident" && user.resident_discharged) {
+    redirect("/discharged");
+  }
+
   // Only residents who completed intake but haven't signed commitment should be here
   if (user.role === "resident" && !user.intake_completed) {
     redirect("/intake");

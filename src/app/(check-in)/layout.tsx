@@ -12,6 +12,11 @@ export default async function CheckInLayout({
   // has_pending_commitment catches amendments proposed after the
   // original commitment was signed (commitment_signed stays true).
   if (user.role === "resident") {
+    // Discharged residents are locked out regardless of any
+    // outstanding check-in request.
+    if (user.resident_discharged) {
+      redirect("/discharged");
+    }
     if (!user.intake_completed) {
       redirect("/intake");
     }
