@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
 import {
   addChoreTask,
   removeChoreTask,
@@ -72,26 +72,49 @@ export function ChoreListManager({
 }: Props) {
   const [selectedHouse, setSelectedHouse] = useState(houses[0]?.id ?? "");
 
+  // Keep the internal house selector in sync with the `houses` prop.
+  // The parent page narrows `houses` based on the URL's `?house=<id>`
+  // filter tabs — without this effect the internal `selectedHouse`
+  // state sticks to its initial value (usually the first house on
+  // first mount) and filters out every chore that doesn't belong to
+  // that stale house. That was the "chores won't populate in House 3"
+  // bug: page-level tabs scoped the data to house 3, but this
+  // component was still filtering against house 1.
+  useEffect(() => {
+    if (houses.length === 0) return;
+    if (!houses.some((h) => h.id === selectedHouse)) {
+      setSelectedHouse(houses[0].id);
+    }
+  }, [houses, selectedHouse]);
+
   const houseChores = chores.filter((c) => c.house_id === selectedHouse);
   const houseResidents = residents.filter((r) => r.house_id === selectedHouse);
   const houseRooms = rooms.filter((r) => r.house_id === selectedHouse);
 
+  // When the page-level filter has already narrowed us to a single
+  // house, hide this redundant dropdown — the source of truth is
+  // the tab strip above. Keeps the two pickers from going out of
+  // sync on house switches.
+  const showHousePicker = houses.length > 1;
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <label className="text-sm font-medium">House:</label>
-        <select
-          value={selectedHouse}
-          onChange={(e) => setSelectedHouse(e.target.value)}
-          className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-        >
-          {houses.map((h) => (
-            <option key={h.id} value={h.id}>
-              {h.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {showHousePicker && (
+        <div className="flex items-center gap-3">
+          <label className="text-sm font-medium">House:</label>
+          <select
+            value={selectedHouse}
+            onChange={(e) => setSelectedHouse(e.target.value)}
+            className="h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+          >
+            {houses.map((h) => (
+              <option key={h.id} value={h.id}>
+                {h.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {houseChores.length === 0 ? (
         <p className="text-muted-foreground text-center py-8">
