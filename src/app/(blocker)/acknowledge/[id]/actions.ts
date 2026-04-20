@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/server";
 import { logActivity } from "@/lib/activity";
@@ -127,6 +128,11 @@ export async function acknowledgeBlocker(
   });
 
   // Auto-archive the notice once every targeted resident has acked.
+  // Uses the admin client (bypassing RLS) so the archive lands even
+  // if the resident doesn't have SELECT/UPDATE rights on the notice.
+  // This is the only place residents indirectly modify blockers; the
+  // action is scoped to the blocker they just acked.
+
   // Keeps the staff Notices list scoped to work-in-progress — a
   // fulfilled notice silently moves to the Archived section.
   await maybeAutoArchiveBlocker(blockerId, admin);
@@ -137,6 +143,43 @@ export async function acknowledgeBlocker(
   revalidatePath("/", "layout");
 
   return {};
+}
+
+/**
+ * Emergency escape hatch used by the "Back to dashboard" button on
+ * the terminal "nothing to acknowledge" card. Forces an ack row for
+ * this (blocker, user) pair regardless of signature — then redirects
+ * to /dashboard.
+ *
+ * Only invoked from the terminal card, which we only render when the
+ * blocker is archived, missing, or already acked for this user, so
+ * the ack row is functionally a no-op (upsert is idempotent via the
+ * (blocker_id, user_id) primary key). Its purpose is to guarantee
+ * that `findPendingBlockerForUser` returns a different id (or null)
+ * on the very next request, unsticking any resident whose
+ * pending_blocker_id has gone stale.
+ */
+export async function escapeToDashboard(blockerId: string) {
+  const user = await requireAuth();
+  const admin = createAdminClient();
+
+  // Upsert a best-effort ack row so the gate reliably advances on the
+  // next navigation. We don't bail on errors — the redirect below is
+  // what actually unsticks the resident.
+  await admin
+    .from("blocker_acknowledgments")
+    .upsert(
+      {
+        blocker_id: blockerId,
+        user_id: user.id,
+        acknowledged_at: new Date().toISOString(),
+        signature: null,
+      },
+      { onConflict: "blocker_id,user_id" }
+    );
+
+  revalidatePath("/", "layout");
+  redirect("/dashboard");
 }
 
 async function hasExistingAck(
