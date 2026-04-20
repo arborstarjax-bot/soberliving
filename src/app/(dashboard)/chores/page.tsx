@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { requireAuth } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
 import { getCachedActiveHouses } from "@/lib/cached-dropdowns";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { ListSkeleton } from "@/components/ui/skeleton";
@@ -47,6 +48,12 @@ export default async function ChoresPage({ searchParams }: ChoresPageProps) {
       ? requestedHouseId
       : null;
 
+  // Rooms for the Create-Chore dialog's "Excluded Rooms" picker.
+  // Scoped to the user's accessible houses so a manager never sees
+  // another house's rooms in the dropdown.
+  const accessibleHouseIds = accessibleHouses.map((h) => h.id);
+  const rooms = isStaff && accessibleHouseIds.length > 0 ? await fetchRooms(accessibleHouseIds) : [];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -57,7 +64,12 @@ export default async function ChoresPage({ searchParams }: ChoresPageProps) {
           </p>
         </div>
         {isStaff && (
-          <StaffActions user={user} houses={accessibleHouses} />
+          <StaffActions
+            user={user}
+            houses={accessibleHouses}
+            rooms={rooms}
+            defaultHouseId={selectedHouseId}
+          />
         )}
       </div>
 
@@ -78,16 +90,35 @@ export default async function ChoresPage({ searchParams }: ChoresPageProps) {
   );
 }
 
+async function fetchRooms(houseIds: string[]) {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("rooms")
+    .select("id, house_id, name")
+    .eq("is_active", true)
+    .in("house_id", houseIds)
+    .order("name");
+  return data ?? [];
+}
+
 function StaffActions({
   user: _user,
   houses,
+  rooms,
+  defaultHouseId,
 }: {
   user: SessionUser;
   houses: { id: string; name: string }[];
+  rooms: { id: string; house_id: string; name: string }[];
+  defaultHouseId: string | null;
 }) {
   return (
     <div className="flex gap-2">
-      <CreateChoreDialog houses={houses} />
+      <CreateChoreDialog
+        houses={houses}
+        rooms={rooms}
+        defaultHouseId={defaultHouseId}
+      />
       <StartRotationDialog houses={houses} />
     </div>
   );
