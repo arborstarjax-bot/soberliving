@@ -84,6 +84,26 @@ export async function signCommitment(
     return { error: updateError.message };
   }
 
+  // Defense-in-depth: supersede any OTHER pending commitments for
+  // this user. Normally there's only ever one, but manual data edits
+  // or failed retries can leave stale rows around — and any surviving
+  // pending row keeps `has_pending_commitment=true` in requireAuth,
+  // which bounces the resident between /dashboard and /sign-commitment
+  // on every request (hit the 20-redirect browser cap).
+  const { error: cleanupError } = await adminClient
+    .from("house_commitments")
+    .update({ status: "superseded", updated_at: new Date().toISOString() })
+    .eq("user_id", user.id)
+    .eq("status", "pending_resident_signature")
+    .neq("id", commitmentId);
+  if (cleanupError) {
+    console.error(
+      "Failed to supersede stale pending commitments for user",
+      user.id,
+      cleanupError.message
+    );
+  }
+
   // Upload signed PDF
   const pdfBuffer = Buffer.from(pdfBase64, "base64");
   const fileName = `${user.id}/house-commitment-${Date.now()}.pdf`;
