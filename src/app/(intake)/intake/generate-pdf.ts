@@ -9,14 +9,18 @@ import {
   type PolicyPageContent,
 } from "./policy-text";
 
+// Geometry chosen to mirror the paper JSL Resident Application scan:
+// an inset decorative border, italic Times titles wrapped in en-dashes,
+// and inline form rows with underlined placeholders/values.
 const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
-const MARGIN = 50;
+const PAGE_BORDER_INSET = 28;
+const MARGIN = 54;
 const LINE_HEIGHT = 14;
 const FONT_SIZE = 10;
-const TITLE_SIZE = 15;
+const TITLE_SIZE = 18;
 const SECTION_SIZE = 11;
-const LABEL_SIZE = 8;
+const UNDERLINE_COLOR = rgb(0, 0, 0);
 
 export interface StaffSignOff {
   signature: string; // data URL of the signature image
@@ -52,14 +56,31 @@ export async function generateIntakePdf(
   }
 
   const pdf = await PDFDocument.create();
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const boldFont = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const font = await pdf.embedFont(StandardFonts.TimesRoman);
+  const boldFont = await pdf.embedFont(StandardFonts.TimesRomanBold);
+  const italicFont = await pdf.embedFont(StandardFonts.TimesRomanItalic);
+  const boldItalicFont = await pdf.embedFont(
+    StandardFonts.TimesRomanBoldItalic
+  );
+
+  function drawPageBorder(page: PDFPage) {
+    page.drawRectangle({
+      x: PAGE_BORDER_INSET,
+      y: PAGE_BORDER_INSET,
+      width: PAGE_WIDTH - 2 * PAGE_BORDER_INSET,
+      height: PAGE_HEIGHT - 2 * PAGE_BORDER_INSET,
+      borderWidth: 0.75,
+      borderColor: rgb(0, 0, 0),
+    });
+  }
 
   let currentPage: PDFPage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  drawPageBorder(currentPage);
   let y = PAGE_HEIGHT - MARGIN;
 
   function newPage() {
     currentPage = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    drawPageBorder(currentPage);
     y = PAGE_HEIGHT - MARGIN;
   }
 
@@ -69,20 +90,25 @@ export async function generateIntakePdf(
     }
   }
 
+  // Centered italic title wrapped in en-dashes, mirroring the paper scan:
+  //     - Jax Sober Living Resident Application -
   function drawTitle(text: string) {
-    ensureSpace(TITLE_SIZE + 20);
-    currentPage.drawText(text, {
-      x: MARGIN,
+    ensureSpace(TITLE_SIZE + 28);
+    const full = `- ${text} -`;
+    const width = boldItalicFont.widthOfTextAtSize(full, TITLE_SIZE);
+    const x = (PAGE_WIDTH - width) / 2;
+    currentPage.drawText(full, {
+      x,
       y,
       size: TITLE_SIZE,
-      font: boldFont,
+      font: boldItalicFont,
       color: rgb(0, 0, 0),
     });
-    y -= TITLE_SIZE + 10;
+    y -= TITLE_SIZE + 14;
   }
 
   function drawSectionHeading(text: string) {
-    ensureSpace(SECTION_SIZE + 12);
+    ensureSpace(SECTION_SIZE + 10);
     currentPage.drawText(text, {
       x: MARGIN,
       y,
@@ -90,7 +116,7 @@ export async function generateIntakePdf(
       font: boldFont,
       color: rgb(0, 0, 0),
     });
-    y -= SECTION_SIZE + 6;
+    y -= SECTION_SIZE + 4;
   }
 
   function wrapText(text: string, fontToUse: PDFFont, size: number, maxWidth: number): string[] {
@@ -116,7 +142,10 @@ export async function generateIntakePdf(
     return lines;
   }
 
-  function drawParagraph(text: string, opts?: { bold?: boolean; size?: number; indent?: number }) {
+  function drawParagraph(
+    text: string,
+    opts?: { bold?: boolean; size?: number; indent?: number }
+  ) {
     const useFont = opts?.bold ? boldFont : font;
     const size = opts?.size ?? FONT_SIZE;
     const indent = opts?.indent ?? 0;
@@ -135,71 +164,240 @@ export async function generateIntakePdf(
     }
   }
 
-  function drawField(label: string, value: string | undefined) {
-    ensureSpace(LINE_HEIGHT * 2);
-    currentPage.drawText(label.toUpperCase(), {
-      x: MARGIN,
-      y,
-      size: LABEL_SIZE,
-      font: boldFont,
-      color: rgb(0.35, 0.35, 0.35),
-    });
-    y -= 11;
-    currentPage.drawText(value || "—", {
+  // Paragraph renderer that understands the policy-text bullet and numbered
+  // list conventions. Lines beginning with "\u2022" or "N." keep their marker
+  // and wrap to a hanging indent so continuations align under the body, not
+  // under the marker.
+  function drawPolicyBody(text: string) {
+    for (const rawPara of text.split("\n\n")) {
+      const lines = rawPara.split("\n");
+      for (const rawLine of lines) {
+        const line = rawLine.trimStart();
+        const bulletMatch = line.match(/^(\u2022|\d+\.)\s+(.*)$/);
+        if (bulletMatch) {
+          const marker = bulletMatch[1];
+          const rest = bulletMatch[2];
+          const markerIndent = 14;
+          const bodyIndent = 28;
+          const wrapped = wrapText(
+            rest,
+            font,
+            FONT_SIZE,
+            PAGE_WIDTH - 2 * MARGIN - bodyIndent
+          );
+          ensureSpace(LINE_HEIGHT * wrapped.length);
+          currentPage.drawText(marker, {
+            x: MARGIN + markerIndent,
+            y,
+            size: FONT_SIZE,
+            font,
+            color: rgb(0, 0, 0),
+          });
+          for (let i = 0; i < wrapped.length; i++) {
+            currentPage.drawText(wrapped[i], {
+              x: MARGIN + bodyIndent,
+              y,
+              size: FONT_SIZE,
+              font,
+              color: rgb(0, 0, 0),
+            });
+            y -= LINE_HEIGHT;
+          }
+        } else if (line.length > 0) {
+          drawParagraph(line);
+        }
+      }
+      y -= 6;
+    }
+  }
+
+  // Inline field row: "Label: ____value____" segments on a single line.
+  // Each segment takes a share of the row width based on its `flex`. Empty
+  // values render as a blank underline, matching the paper form.
+  function drawInlineRow(
+    fields: { label: string; value?: string; flex?: number }[]
+  ) {
+    ensureSpace(LINE_HEIGHT + 4);
+    const totalFlex = fields.reduce((sum, f) => sum + (f.flex ?? 1), 0);
+    const available = PAGE_WIDTH - 2 * MARGIN;
+    let cursorX = MARGIN;
+    for (const f of fields) {
+      const slotWidth = (available * (f.flex ?? 1)) / totalFlex;
+      const labelText = `${f.label}: `;
+      const labelWidth = font.widthOfTextAtSize(labelText, FONT_SIZE);
+      const underlineStart = cursorX + labelWidth;
+      const underlineEnd = cursorX + slotWidth - 6;
+      currentPage.drawText(labelText, {
+        x: cursorX,
+        y,
+        size: FONT_SIZE,
+        font,
+        color: rgb(0, 0, 0),
+      });
+      currentPage.drawLine({
+        start: { x: underlineStart, y: y - 1 },
+        end: { x: underlineEnd, y: y - 1 },
+        thickness: 0.4,
+        color: UNDERLINE_COLOR,
+      });
+      if (f.value && f.value.trim().length > 0) {
+        currentPage.drawText(f.value, {
+          x: underlineStart + 2,
+          y: y + 1,
+          size: FONT_SIZE,
+          font,
+          color: rgb(0, 0, 0),
+        });
+      }
+      cursorX += slotWidth;
+    }
+    y -= LINE_HEIGHT + 4;
+  }
+
+  // Label followed by a single underlined value that stretches to the right
+  // margin. Used for address lines, sobriety date, etc.
+  function drawInlineField(label: string, value: string | undefined) {
+    drawInlineRow([{ label, value }]);
+  }
+
+  // "Do you X? Yes or No" with the selected option bolded + underlined.
+  // Mirrors the paper scan's convention of leaving both options visible.
+  function drawYesNoField(question: string, value: string | undefined) {
+    ensureSpace(LINE_HEIGHT + 4);
+    const selected = (value ?? "").toLowerCase();
+    const questionText = `${question}  `;
+    currentPage.drawText(questionText, {
       x: MARGIN,
       y,
       size: FONT_SIZE,
       font,
       color: rgb(0, 0, 0),
     });
-    y -= LINE_HEIGHT + 2;
+    let cursorX = MARGIN + font.widthOfTextAtSize(questionText, FONT_SIZE);
+    const drawOption = (opt: string, chosen: boolean) => {
+      const f = chosen ? boldFont : font;
+      currentPage.drawText(opt, {
+        x: cursorX,
+        y,
+        size: FONT_SIZE,
+        font: f,
+        color: rgb(0, 0, 0),
+      });
+      const w = f.widthOfTextAtSize(opt, FONT_SIZE);
+      if (chosen) {
+        currentPage.drawLine({
+          start: { x: cursorX, y: y - 1 },
+          end: { x: cursorX + w, y: y - 1 },
+          thickness: 0.6,
+          color: rgb(0, 0, 0),
+        });
+      }
+      cursorX += w;
+    };
+    drawOption("Yes", selected === "yes" || selected === "y");
+    currentPage.drawText(" or ", {
+      x: cursorX,
+      y,
+      size: FONT_SIZE,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    cursorX += font.widthOfTextAtSize(" or ", FONT_SIZE);
+    drawOption("No", selected === "no" || selected === "n");
+    y -= LINE_HEIGHT + 4;
+  }
+
+  // Gender row: shows all options with the selected one bold+underlined.
+  function drawGenderField(value: string | undefined) {
+    ensureSpace(LINE_HEIGHT + 4);
+    const selected = (value ?? "").toLowerCase();
+    const prefix = "Gender:  ";
+    currentPage.drawText(prefix, {
+      x: MARGIN,
+      y,
+      size: FONT_SIZE,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    let cursorX = MARGIN + font.widthOfTextAtSize(prefix, FONT_SIZE);
+    const options: Array<{ label: string; match: string[] }> = [
+      { label: "M", match: ["m", "male"] },
+      { label: "F", match: ["f", "female"] },
+      { label: "Trans", match: ["trans", "transgender"] },
+      { label: "Non-Binary", match: ["non-binary", "nonbinary", "nb"] },
+    ];
+    for (const opt of options) {
+      const chosen = opt.match.includes(selected);
+      const f = chosen ? boldFont : font;
+      currentPage.drawText(opt.label, {
+        x: cursorX,
+        y,
+        size: FONT_SIZE,
+        font: f,
+        color: rgb(0, 0, 0),
+      });
+      const w = f.widthOfTextAtSize(opt.label, FONT_SIZE);
+      if (chosen) {
+        currentPage.drawLine({
+          start: { x: cursorX, y: y - 1 },
+          end: { x: cursorX + w, y: y - 1 },
+          thickness: 0.6,
+          color: rgb(0, 0, 0),
+        });
+      }
+      cursorX += w + 24;
+    }
+    y -= LINE_HEIGHT + 4;
+  }
+
+  // Italic "Policy:" / "Procedure:" label followed by the body text on the
+  // same line (body wraps under the label in the scan).
+  function drawPolicyLead(label: string, body: string) {
+    const labelText = `${label}: `;
+    const labelWidth = boldFont.widthOfTextAtSize(labelText, FONT_SIZE);
+    const firstLineWidth = PAGE_WIDTH - 2 * MARGIN - labelWidth;
+    // split first line by words so it fits after the bold prefix
+    const words = body.split(/\s+/);
+    let first = "";
+    let rest = "";
+    for (let i = 0; i < words.length; i++) {
+      const cand = first ? `${first} ${words[i]}` : words[i];
+      if (font.widthOfTextAtSize(cand, FONT_SIZE) > firstLineWidth) {
+        rest = words.slice(i).join(" ");
+        break;
+      }
+      first = cand;
+    }
+    ensureSpace(LINE_HEIGHT);
+    currentPage.drawText(labelText, {
+      x: MARGIN,
+      y,
+      size: FONT_SIZE,
+      font: boldFont,
+      color: rgb(0, 0, 0),
+    });
+    currentPage.drawText(first, {
+      x: MARGIN + labelWidth,
+      y,
+      size: FONT_SIZE,
+      font,
+      color: rgb(0, 0, 0),
+    });
+    y -= LINE_HEIGHT;
+    if (rest) {
+      drawParagraph(rest);
+    }
+    y -= 4;
+  }
+
+  // Backwards-compatible wrappers that delegate to the paper-style inline
+  // helpers so existing call sites don't change layout unexpectedly.
+  function drawField(label: string, value: string | undefined) {
+    drawInlineField(label, value);
   }
 
   function drawFieldRow(fields: { label: string; value: string | undefined }[]) {
-    ensureSpace(LINE_HEIGHT * 2);
-    const colWidth = (PAGE_WIDTH - 2 * MARGIN) / fields.length;
-    for (let i = 0; i < fields.length; i++) {
-      const x = MARGIN + i * colWidth;
-      currentPage.drawText(fields[i].label.toUpperCase(), {
-        x,
-        y,
-        size: LABEL_SIZE,
-        font: boldFont,
-        color: rgb(0.35, 0.35, 0.35),
-      });
-      currentPage.drawText(fields[i].value || "—", {
-        x,
-        y: y - 11,
-        size: FONT_SIZE,
-        font,
-        color: rgb(0, 0, 0),
-      });
-    }
-    y -= LINE_HEIGHT * 2;
-  }
-
-  function drawLongAnswer(label: string, value: string | undefined) {
-    ensureSpace(LINE_HEIGHT * 3);
-    currentPage.drawText(label.toUpperCase(), {
-      x: MARGIN,
-      y,
-      size: LABEL_SIZE,
-      font: boldFont,
-      color: rgb(0.35, 0.35, 0.35),
-    });
-    y -= 11;
-    if (!value) {
-      currentPage.drawText("—", { x: MARGIN, y, size: FONT_SIZE, font, color: rgb(0, 0, 0) });
-      y -= LINE_HEIGHT + 2;
-      return;
-    }
-    const lines = wrapText(value, font, FONT_SIZE, PAGE_WIDTH - 2 * MARGIN);
-    for (const line of lines) {
-      ensureSpace(LINE_HEIGHT);
-      currentPage.drawText(line, { x: MARGIN, y, size: FONT_SIZE, font, color: rgb(0, 0, 0) });
-      y -= LINE_HEIGHT;
-    }
-    y -= 4;
+    drawInlineRow(fields);
   }
 
   async function drawSignatureBlock(opts: {
@@ -209,12 +407,12 @@ export async function generateIntakePdf(
     printedName?: { label: string; value: string };
   }) {
     ensureSpace(95);
-    currentPage.drawText(opts.label.toUpperCase(), {
+    currentPage.drawText(opts.label, {
       x: MARGIN,
       y,
-      size: LABEL_SIZE,
+      size: FONT_SIZE,
       font: boldFont,
-      color: rgb(0.35, 0.35, 0.35),
+      color: rgb(0, 0, 0),
     });
     y -= 12;
 
@@ -286,7 +484,7 @@ export async function generateIntakePdf(
     { label: "Admission Date", value: formData.admission_date },
     { label: "Date of Birth", value: formData.date_of_birth },
   ]);
-  drawField("Gender", formData.gender);
+  drawGenderField(formData.gender);
   drawFieldRow([
     { label: "Phone No.", value: formData.phone },
     { label: "Email Address", value: formData.email },
@@ -300,7 +498,7 @@ export async function generateIntakePdf(
 
   // — Vehicle —
   drawSectionHeading("Vehicle");
-  drawField("Do you own a vehicle?", formData.owns_vehicle);
+  drawYesNoField("Do you own a vehicle?", formData.owns_vehicle);
   if (formData.owns_vehicle === "Yes") {
     drawFieldRow([
       { label: "Year", value: formData.vehicle_year },
@@ -322,50 +520,74 @@ export async function generateIntakePdf(
 
   // — Referral & Recovery —
   drawSectionHeading("Recovery & Medical");
-  drawLongAnswer("How did you hear about Jax Sober Living?", formData.referral_source);
-  drawField(
+  drawInlineField(
+    "How did you hear about Jax Sober Living?",
+    formData.referral_source
+  );
+  drawYesNoField(
     "Do you identify as someone who struggles with drugs and/or alcohol?",
     formData.struggles_with_substances
   );
-  drawField(
+  drawYesNoField(
     "Plan on working a recovery program while at Jax Sober Living (12 Step based)?",
     formData.in_recovery_program
   );
-  drawField("Attending or will be attending an IOP Program?", formData.attending_iop);
+  drawYesNoField(
+    "Attending or will be attending an IOP Program?",
+    formData.attending_iop
+  );
   if (formData.attending_iop === "Yes") {
-    drawField("IOP Program Name", formData.iop_program_name);
+    drawInlineField("IOP Program Name", formData.iop_program_name);
   }
-  drawLongAnswer("Medications", formData.medications);
-  drawLongAnswer("Medical History / Issues", formData.medical_history);
-  drawField("Ever been diagnosed with a mental illness?", formData.has_mental_illness);
+  drawInlineField("Medications", formData.medications);
+  drawInlineField("Medical History / Issues", formData.medical_history);
+  drawYesNoField(
+    "Ever been diagnosed with a mental illness?",
+    formData.has_mental_illness
+  );
   if (formData.has_mental_illness === "Yes") {
-    drawLongAnswer("Mental Illness Diagnosis", formData.mental_illness_diagnosis);
+    drawInlineField(
+      "Mental Illness Diagnosis",
+      formData.mental_illness_diagnosis
+    );
   }
-  drawField("Any present or past physical problems?", formData.has_physical_problems);
+  drawYesNoField(
+    "Any present or past physical problems?",
+    formData.has_physical_problems
+  );
   if (formData.has_physical_problems === "Yes") {
-    drawLongAnswer("Physical Problem Diagnosis", formData.physical_problems_diagnosis);
+    drawInlineField(
+      "Physical Problem Diagnosis",
+      formData.physical_problems_diagnosis
+    );
   }
 
   // — Allergies / Physician / Employment —
   newPage();
   drawSectionHeading("Allergies, Physician & Employment");
-  drawField("Any known allergies?", formData.has_allergies);
+  drawYesNoField("Any known allergies?", formData.has_allergies);
   if (formData.has_allergies === "Yes") {
-    drawLongAnswer("Allergy Description (reaction / remedy)", formData.allergies_details);
+    drawInlineField(
+      "If yes, describe (reaction / remedy)",
+      formData.allergies_details
+    );
   }
-  drawField("Currently under the care of a physician?", formData.under_physician_care);
+  drawYesNoField(
+    "Currently under the care of a physician?",
+    formData.under_physician_care
+  );
   if (formData.under_physician_care === "Yes") {
-    drawLongAnswer("Reason", formData.physician_reason);
-    drawFieldRow([
+    drawInlineField("If so, reason", formData.physician_reason);
+    drawInlineRow([
       { label: "Physician's Name", value: formData.physician_name },
       { label: "Phone No.", value: formData.physician_phone },
     ]);
   }
-  drawField("Currently working?", formData.currently_working);
+  drawYesNoField("Currently working?", formData.currently_working);
   if (formData.currently_working === "Yes") {
-    drawField("Employer", formData.employer_name);
-    drawField("Employer Address", formData.employer_address);
-    drawField("Employer Phone", formData.employer_phone);
+    drawInlineField("Employer", formData.employer_name);
+    drawInlineField("Employer Address", formData.employer_address);
+    drawInlineField("Employer Phone", formData.employer_phone);
   }
 
   // — Emergency + Financial Contacts —
@@ -401,17 +623,17 @@ export async function generateIntakePdf(
       { label: "Date Discharged", value: discharge },
       { label: "Length of Stay", value: length },
     ]);
-    drawField("Successfully completed?", completed);
+    drawYesNoField("Successfully completed?", completed);
     if (completed === "No" && reason) {
-      drawLongAnswer("If no, why not?", reason);
+      drawInlineField("If no, why not?", reason);
     }
   }
-  drawField("Sobriety Date", formData.sobriety_date);
+  drawInlineField("Sobriety Date", formData.sobriety_date);
 
   // — Drug Use & Criminal History —
   newPage();
   drawSectionHeading("Drug Use");
-  drawField("Drug of Choice", formData.drug_of_choice);
+  drawInlineField("Drug of Choice", formData.drug_of_choice);
   for (let i = 1; i <= 4; i++) {
     const d = formData[`recent_drug_${i}_name`];
     const dt = formData[`recent_drug_${i}_date`];
@@ -423,20 +645,32 @@ export async function generateIntakePdf(
   }
 
   drawSectionHeading("Criminal History");
-  drawField("Ever convicted of a felony or misdemeanor?", formData.convicted_felon);
+  drawYesNoField(
+    "Ever convicted of a felony or misdemeanor?",
+    formData.convicted_felon
+  );
   if (formData.convicted_felon === "Yes") {
-    drawLongAnswer("Explanation", formData.conviction_explanation);
+    drawInlineField("If yes, please explain", formData.conviction_explanation);
   }
-  drawField("Sex Offender / Predator Status?", formData.sex_offender);
+  drawYesNoField(
+    "Sex Offender / Predator Status?",
+    formData.sex_offender
+  );
   if (formData.sex_offender === "Yes") {
-    drawLongAnswer("Explanation", formData.sex_offender_explanation);
+    drawInlineField(
+      "If yes, please explain",
+      formData.sex_offender_explanation
+    );
   }
-  drawField(
+  drawYesNoField(
     "Convicted of violent/sexual crimes against elderly, children, or disabled?",
     formData.violent_crime_history
   );
   if (formData.violent_crime_history === "Yes") {
-    drawLongAnswer("Explanation", formData.violent_crime_explanation);
+    drawInlineField(
+      "If yes, please explain",
+      formData.violent_crime_explanation
+    );
   }
 
   // — Attestation + Application signatures —
@@ -542,23 +776,15 @@ export async function generateIntakePdf(
 
   const pages = pdf.getPages();
   for (let i = 0; i < pages.length; i++) {
-    pages[i].drawText(`Page ${i + 1} of ${pages.length}`, {
-      x: PAGE_WIDTH - MARGIN - 80,
-      y: 20,
-      size: 8,
-      font,
-      color: rgb(0.55, 0.55, 0.55),
+    const footerText = `${i + 1} | P a g e`;
+    const fw = italicFont.widthOfTextAtSize(footerText, 9);
+    pages[i].drawText(footerText, {
+      x: PAGE_WIDTH - PAGE_BORDER_INSET - 12 - fw,
+      y: PAGE_BORDER_INSET + 10,
+      size: 9,
+      font: italicFont,
+      color: rgb(0, 0, 0),
     });
-    pages[i].drawText(
-      `Generated ${new Date().toLocaleDateString("en-US", { timeZone: "America/New_York" })} — Jax Sober Living`,
-      {
-        x: MARGIN,
-        y: 20,
-        size: 8,
-        font,
-        color: rgb(0.55, 0.55, 0.55),
-      }
-    );
   }
 
   const pdfBytes = await pdf.save();
@@ -573,21 +799,33 @@ export async function generateIntakePdf(
   // helpers that close over `pdf` / `drawXYZ`
   // ────────────────────────────────────────────────────────────────
 
-  async function renderPolicy(policy: PolicyPageContent, formData: Record<string, string>) {
+  // On the paper scan, policy pages use inline bold "Policy:" /
+  // "Procedure:" prefixes for the first line of each section, and any
+  // bullet or numbered items retain their markers on a hanging indent.
+  // Other section headings (e.g. "Items not approved include...") print
+  // as a standalone bold line above the body.
+  async function renderPolicy(
+    policy: PolicyPageContent,
+    formData: Record<string, string>
+  ) {
     newPage();
     drawTitle(policy.title);
-    y -= 4;
+    y -= 2;
+    const LEAD_HEADINGS = new Set(["Policy", "Procedure"]);
     for (const section of policy.sections) {
-      if (section.heading) {
-        drawSectionHeading(section.heading);
-      }
-      for (const para of section.body.split("\n\n")) {
-        drawParagraph(para);
-        y -= 4;
+      if (section.heading && LEAD_HEADINGS.has(section.heading)) {
+        const [firstPara, ...restParas] = section.body.split("\n\n");
+        drawPolicyLead(section.heading, firstPara);
+        if (restParas.length > 0) {
+          drawPolicyBody(restParas.join("\n\n"));
+        }
+      } else {
+        if (section.heading) drawSectionHeading(section.heading);
+        drawPolicyBody(section.body);
       }
       y -= 4;
     }
-    y -= 6;
+    y -= 4;
     await drawSignatureBlock({
       label: "Resident Signature",
       signatureKey: policy.signatureKey,
