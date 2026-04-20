@@ -340,9 +340,20 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
         : null,
     });
 
-    const miTotal = allocations.reduce((s, a) => s + a.applied, 0);
+    // The payments row records the actual amount collected from the
+    // resident, NOT the capped allocation sum. If the admin enters
+    // more than a charge's face value (e.g. $900 rent against an
+    // $800 charge), the overage sits on the payment row as a credit
+    // rather than being silently dropped from the ledger.
+    const miTotal = mi.adminAmount + mi.rentAmount;
+    const allocatedTotal = allocations.reduce((s, a) => s + a.applied, 0);
+    const credit = miTotal - allocatedTotal;
 
-    const fullNote = buildMoveInNote(allocations, mi.note);
+    const baseNote = buildMoveInNote(allocations, mi.note);
+    const fullNote =
+      credit > 0
+        ? `${baseNote}\nUnallocated credit: $${credit.toFixed(2)}`
+        : baseNote;
 
     // Allocate a receipt number.
     let receiptNumber: string | null = null;
