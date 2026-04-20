@@ -217,8 +217,10 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
         data.existingTenant && data.nextRentDueDate
           ? data.nextRentDueDate
           : null,
-      skip_initial_admin_fee:
-        data.existingTenant && data.skipInitialAdminFee ? true : false,
+      // Admin-fee-paid-prior applies to both new intakes (resident
+      // paid the admin fee before move-in, or the fee was waived)
+      // and existing-tenant activations (already caught up).
+      skip_initial_admin_fee: data.skipInitialAdminFee === true,
     })
     .select("id")
     .single();
@@ -273,6 +275,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     adminFee: data.adminFee,
     frequency,
     existingTenant: data.existingTenant ?? false,
+    skipAdminFee: data.skipInitialAdminFee === true,
   });
 
   if (initialCharges.length > 0) {
@@ -298,13 +301,15 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
   if (data.moveInPayment) {
     const mi = data.moveInPayment;
 
-    // Re-read the freshly opened charges to get their IDs.
+    // Re-read the freshly opened charges to get their IDs. Scoped by
+    // commitment_id so we don't need to filter by due_date, which
+    // differs between admin_fee (commitmentStartDate) and rent
+    // (commitmentStartDate - 1, per the -1 day policy).
     const { data: openCharges } = await adminClient
       .from("payment_charges")
       .select("id, charge_type, amount")
       .eq("resident_id", residentId)
       .eq("commitment_id", commitmentId)
-      .eq("due_date", data.commitmentStartDate)
       .in("charge_type", ["admin_fee", "rent"]);
 
     const adminFeeRow = (openCharges ?? []).find(

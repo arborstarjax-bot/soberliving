@@ -540,10 +540,33 @@ export async function proposeAmendment(
     rawFrequency === "weekly" || rawFrequency === "monthly"
       ? rawFrequency
       : null;
+  // Optional full-agreement fields sent by the Edit Commitment
+  // Agreement dialog. Older callers (tests, direct FormData fixtures)
+  // can omit these; `proposeAmendment` falls back to the parent
+  // commitment's values so the amendment is still a complete row.
+  const rawAdminFee = formData.get("admin_fee");
+  const hasAdminFee = rawAdminFee !== null && String(rawAdminFee).trim() !== "";
+  const newAdminFee = hasAdminFee ? Number(rawAdminFee) : null;
+  const adminFeePaidPrior =
+    formData.get("admin_fee_paid_prior") === "on" ||
+    formData.get("admin_fee_paid_prior") === "true";
+  const rawCommitmentTerm = formData.get("commitment_term");
+  const newCommitmentTerm =
+    typeof rawCommitmentTerm === "string" && rawCommitmentTerm.trim() !== ""
+      ? rawCommitmentTerm.trim()
+      : null;
+  const rawRestrictionsNotes = formData.get("restrictions_notes");
+  const newRestrictionsNotes =
+    typeof rawRestrictionsNotes === "string" ? rawRestrictionsNotes.trim() : "";
+  const rawNotes = formData.get("notes");
+  const newNotes = typeof rawNotes === "string" ? rawNotes.trim() : "";
 
   if (!userId) return { error: "Resident is required" };
   if (!Number.isFinite(newRent) || newRent < 0) {
     return { error: "Rent must be a non-negative number" };
+  }
+  if (hasAdminFee && (!Number.isFinite(newAdminFee) || (newAdminFee ?? 0) < 0)) {
+    return { error: "Admin fee must be a non-negative number" };
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
     return { error: "Effective date is required" };
@@ -562,7 +585,7 @@ export async function proposeAmendment(
   const { data: active } = await admin
     .from("house_commitments")
     .select(
-      "id, user_id, resident_id, house_id, room_id, bed_id, payment_frequency, rent_amount, admin_fee, rent_due_date, commitment_start_date, commitment_term, property_location, notes, staff_signature"
+      "id, user_id, resident_id, house_id, room_id, bed_id, payment_frequency, rent_amount, admin_fee, rent_due_date, commitment_start_date, commitment_term, restrictions_notes, property_location, notes, staff_signature"
     )
     .eq("user_id", userId)
     .eq("status", "active")
@@ -610,14 +633,17 @@ export async function proposeAmendment(
       // one — keeps old callers safe.
       payment_frequency: newFrequency ?? active.payment_frequency,
       rent_amount: newRent,
-      // Admin fee is a one-time move-in fee — it was already collected
-      // (or opened) against the original commitment. We carry the
-      // amount through on the amendment row for audit/display only
-      // and set skip_initial_admin_fee so openStartupChargesForCommitment
-      // doesn't open a second admin_fee charge when the amendment is
-      // signed.
-      admin_fee: active.admin_fee,
-      skip_initial_admin_fee: true,
+      // Admin fee behaviour on amendments:
+      //  - Default (adminFeePaidPrior=true) → carry the fee amount
+      //    across for audit/display and skip charge creation; the
+      //    one-time fee was already collected on the original
+      //    commitment.
+      //  - Explicit untick (adminFeePaidPrior=false) → charge the
+      //    new admin fee again on the amendment. Rare: used when the
+      //    resident re-enrolled or the admin explicitly wants to
+      //    levy a new fee.
+      admin_fee: hasAdminFee ? (newAdminFee ?? 0) : active.admin_fee,
+      skip_initial_admin_fee: adminFeePaidPrior,
       // New rent schedule anchors on the effective date — future
       // rent charges opened against this commitment will use it as
       // their cycle day. Also re-derive the human-readable rent_due_date
@@ -650,9 +676,23 @@ export async function proposeAmendment(
         return `${ordinal(d)} of each month`;
       })(),
       commitment_start_date: effectiveDate,
-      commitment_term: active.commitment_term,
+      commitment_term: newCommitmentTerm ?? active.commitment_term,
       property_location: active.property_location,
-      notes: active.notes,
+      restrictions_notes:
+        newRestrictionsNotes !== ""
+          ? newRestrictionsNotes
+          : // Explicit empty string from the form means "clear it";
+            // undefined means "not provided by caller → inherit".
+            rawRestrictionsNotes === null
+            ? (active as { restrictions_notes?: string | null })
+                .restrictions_notes ?? null
+            : null,
+      notes:
+        newNotes !== ""
+          ? newNotes
+          : rawNotes === null
+            ? active.notes
+            : null,
       // Reuse the original staff signature on file so the admin doesn't
       // need to sign twice. The amendment is attributed to the acting
       // admin via staff_signer_id.

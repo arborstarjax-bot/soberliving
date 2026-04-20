@@ -9,7 +9,12 @@
 // the same outputs. No DB calls, no clock reads (the caller passes
 // `now` when one is needed), no network I/O.
 
-import { periodEndFor, parseIsoDate, toIsoDate } from "./charges";
+import {
+  periodEndFor,
+  parseIsoDate,
+  toIsoDate,
+  computeRentDueDate,
+} from "./charges";
 import type { PaymentFrequency } from "./charges";
 
 // ── Sobriety-date validation ────────────────────────────────────────
@@ -52,6 +57,10 @@ export interface InitialChargesInput {
   adminFee: number;
   frequency: PaymentFrequency;
   existingTenant: boolean;
+  // When true, the admin-fee charge is not opened. Used for both
+  // new intakes where the fee was paid prior to move-in or waived,
+  // and existing-tenant activations (caught up on everything).
+  skipAdminFee?: boolean;
 }
 
 export interface InitialChargeRow {
@@ -72,7 +81,7 @@ export function buildInitialCharges(
 
   const rows: InitialChargeRow[] = [];
 
-  if (input.adminFee > 0) {
+  if (input.adminFee > 0 && !input.skipAdminFee) {
     rows.push({
       resident_id: input.residentId,
       house_id: input.houseId,
@@ -83,9 +92,12 @@ export function buildInitialCharges(
     });
   }
 
-  const rentPeriodEnd = toIsoDate(
-    periodEndFor(parseIsoDate(input.commitmentStartDate), input.frequency)
-  );
+  const anchor = parseIsoDate(input.commitmentStartDate);
+  const rentPeriodEnd = toIsoDate(periodEndFor(anchor, input.frequency));
+  // Rent is due the day BEFORE the cycle anchor. The first cycle
+  // charge must follow the same rule as subsequent cycles so past-
+  // due detection is consistent across the whole commitment.
+  const rentDueDate = toIsoDate(computeRentDueDate(anchor));
 
   rows.push({
     resident_id: input.residentId,
@@ -93,7 +105,7 @@ export function buildInitialCharges(
     commitment_id: input.commitmentId,
     charge_type: "rent",
     amount: input.rentAmount,
-    due_date: input.commitmentStartDate,
+    due_date: rentDueDate,
     period_start: input.commitmentStartDate,
     period_end: rentPeriodEnd,
   });

@@ -102,7 +102,11 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
   // the admin selects. Default next-rent date is the first of next
   // month, which is what we use most often.
   const [isExistingTenant, setIsExistingTenant] = useState(false);
-  const [skipAdminFee, setSkipAdminFee] = useState(true);
+  // Admin fee defaults to being charged (checkbox unchecked). Admin
+  // must explicitly opt in when the fee was paid prior to move-in,
+  // waived, or carried over from a previous commitment — otherwise
+  // new intakes would silently skip the admin fee on every submit.
+  const [skipAdminFee, setSkipAdminFee] = useState(false);
   const [nextRentDueDate, setNextRentDueDate] = useState(() => {
     // First of next month, seeded from today-in-app-tz so it doesn't
     // drift around the UTC midnight boundary (8 PM Eastern).
@@ -114,11 +118,19 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
 
   // Derived move-in totals. The form lets the admin change rent /
   // admin fee interactively so the expected total tracks those.
+  // When the admin fee is marked already-paid/waived, it is excluded
+  // from the expected move-in total so partial-payment detection
+  // reflects only what's actually owed at move-in.
   const parsedRent = parseFloat(rentAmount);
   const parsedAdminFee = parseFloat(adminFee);
+  const effectiveAdminFeeForMoveIn = skipAdminFee
+    ? 0
+    : Number.isFinite(parsedAdminFee)
+      ? parsedAdminFee
+      : 0;
   const expectedMoveInTotal =
     (Number.isFinite(parsedRent) ? parsedRent : 0) +
-    (Number.isFinite(parsedAdminFee) ? parsedAdminFee : 0);
+    effectiveAdminFeeForMoveIn;
   const parsedMoveInAmount = parseFloat(moveInAmount);
   const collectedAmount = Number.isFinite(parsedMoveInAmount)
     ? parsedMoveInAmount
@@ -245,7 +257,7 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
         moveInPayment: isExistingTenant ? null : moveInPayload,
         existingTenant: isExistingTenant,
         nextRentDueDate: isExistingTenant ? nextRentDueDate : undefined,
-        skipInitialAdminFee: isExistingTenant ? skipAdminFee : undefined,
+        skipInitialAdminFee: skipAdminFee,
       });
 
       if (result.error) {
@@ -592,7 +604,6 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
               className="mt-0.5 h-4 w-4"
               checked={skipAdminFee}
               onChange={(e) => setSkipAdminFee(e.target.checked)}
-              disabled={!isExistingTenant}
             />
             <span>
               <span className="font-medium">
@@ -603,8 +614,10 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
                 {Number.isFinite(parsedAdminFee)
                   ? parsedAdminFee.toFixed(0)
                   : "200"}{" "}
-                admin fee charge. Only applies when the resident is being
-                activated as already paid up on rent.
+                admin fee charge. Use when the resident paid the
+                admin fee prior to move-in (cash at the office,
+                prior deposit, etc.) or the fee was waived. Applies
+                to both new intakes and existing-tenant activations.
               </span>
             </span>
           </label>
@@ -619,8 +632,19 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
             </span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Administrative Fee</span>
-            <span className="font-medium">
+            <span className="text-muted-foreground">
+              Administrative Fee
+              {skipAdminFee && (
+                <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                  paid prior / waived
+                </span>
+              )}
+            </span>
+            <span
+              className={`font-medium ${
+                skipAdminFee ? "text-muted-foreground line-through" : ""
+              }`}
+            >
               ${Number.isFinite(parsedAdminFee) ? parsedAdminFee.toFixed(2) : "0.00"}
             </span>
           </div>

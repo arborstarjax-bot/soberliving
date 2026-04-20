@@ -60,7 +60,7 @@ export async function ResidentDashboardSection({
     .order("created_at", { ascending: false })
     .limit(5);
 
-  const [openSignOutRes, restrictionsRes, nextDueRes] = await Promise.all([
+  const [openSignOutRes, restrictionsRes, openChargesRes] = await Promise.all([
     supabase
       .from("sign_out_sheet")
       .select("id, destination, time_out")
@@ -72,28 +72,30 @@ export async function ResidentDashboardSection({
       .select("restriction_type")
       .eq("resident_id", resident.id)
       .eq("is_active", true),
+    // Pull every open/partial charge so the tile shows the FULL
+    // amount due — rent + admin fee + any deposit, not just the
+    // earliest single row. The previous `.limit(1)` under-counted
+    // when a resident owed both rent and a move-in admin fee.
     supabase
       .from("payment_charges")
       .select("id, amount, paid_amount, due_date, charge_type")
       .eq("resident_id", resident.id)
       .in("status", ["open", "partial"])
-      .order("due_date", { ascending: true })
-      .limit(1)
-      .maybeSingle(),
+      .order("due_date", { ascending: true }),
   ]);
 
   const openSignOut = openSignOutRes.data ?? null;
   const residentHasNoLeave = (restrictionsRes.data ?? []).some(
     (r) => (r as { restriction_type: string }).restriction_type === "no_leave"
   );
-  const nextDueCharge =
-    (nextDueRes?.data as unknown as {
+  const openCharges =
+    (openChargesRes.data as unknown as Array<{
       id: string;
       amount: number;
       paid_amount: number;
       due_date: string;
       charge_type: string;
-    } | null) ?? null;
+    }> | null) ?? [];
 
   const activeBeds = resident.bed_assignments?.filter(
     (ba: { end_date: string | null }) => !ba.end_date
@@ -173,59 +175,118 @@ export async function ResidentDashboardSection({
         </Link>
       )}
 
-      {nextDueCharge && (() => {
-        const balance =
-          Number(nextDueCharge.amount) - Number(nextDueCharge.paid_amount);
+      {openCharges.length > 0 && (() => {
+        // Aggregate every open/partial charge into a single "Amount
+        // Due" tile. Previously the dashboard showed just the
+        // earliest charge via .limit(1) — so a resident who owed
+        // both rent and a move-in admin fee only saw rent. Now we
+        // display the full balance with a per-charge breakdown
+        // underneath, styled red if ANY charge is past due.
         const todayIso = getHouseToday();
-        const pastDue = nextDueCharge.due_date < todayIso;
-        const [y, m, d] = nextDueCharge.due_date.split("-").map(Number);
-        const dueLabel = new Date(
-          y,
-          (m ?? 1) - 1,
-          d ?? 1
-        ).toLocaleDateString("en-US", {
-          timeZone: "America/New_York",
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        });
+        const chargesWithBalance = openCharges
+          .map((c) => ({
+            ...c,
+            balance: Number(c.amount) - Number(c.paid_amount),
+            isPastDue: c.due_date < todayIso,
+          }))
+          .filter((c) => c.balance > 0);
+        if (chargesWithBalance.length === 0) return null;
+        const totalBalance = chargesWithBalance.reduce(
+          (s, c) => s + c.balance,
+          0
+        );
+        const pastDueCount = chargesWithBalance.filter((c) => c.isPastDue)
+          .length;
+        const anyPastDue = pastDueCount > 0;
+        const formatCurrency = (n: number) =>
+          new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency: "USD",
+            maximumFractionDigits: n % 1 === 0 ? 0 : 2,
+          }).format(n);
+        const formatIsoDate = (iso: string) => {
+          const [yy, mm, dd] = iso.split("-").map(Number);
+          return new Date(yy, (mm ?? 1) - 1, dd ?? 1).toLocaleDateString(
+            "en-US",
+            {
+              timeZone: "America/New_York",
+              month: "short",
+              day: "numeric",
+            }
+          );
+        };
+        const chargeLabel = (type: string) => {
+          if (type === "rent") return "Rent";
+          if (type === "admin_fee") return "Admin Fee";
+          if (type === "deposit") return "Deposit";
+          return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+        };
         return (
           <Link href="/payments" className="block">
             <Card
               className={
-                pastDue
+                anyPastDue
                   ? "border-red-500/40 bg-red-500/5"
                   : "border-amber-500/30 bg-amber-500/5"
               }
             >
-              <CardContent className="flex items-center justify-between gap-4 p-4">
-                <div>
-                  <p
-                    className={`text-xs font-semibold uppercase tracking-wide ${
-                      pastDue ? "text-red-600" : "text-amber-600"
+              <CardContent className="space-y-3 p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <p
+                      className={`text-xs font-semibold uppercase tracking-wide ${
+                        anyPastDue ? "text-red-600" : "text-amber-600"
+                      }`}
+                    >
+                      {anyPastDue ? "Amount Past Due" : "Amount Due"}
+                    </p>
+                    <p className="mt-1 text-2xl font-bold">
+                      {formatCurrency(totalBalance)}
+                    </p>
+                    <p className="mt-0.5 text-sm text-muted-foreground">
+                      {chargesWithBalance.length === 1
+                        ? "1 open charge"
+                        : `${chargesWithBalance.length} open charges`}
+                      {pastDueCount > 0
+                        ? ` — ${pastDueCount} past due`
+                        : null}
+                    </p>
+                  </div>
+                  <DollarSign
+                    className={`h-8 w-8 shrink-0 ${
+                      anyPastDue ? "text-red-500/60" : "text-amber-500/60"
                     }`}
-                  >
-                    {pastDue
-                      ? "Past Due"
-                      : nextDueCharge.charge_type === "rent"
-                        ? "Next Rent Due"
-                        : "Next Payment Due"}
-                  </p>
-                  <p className="mt-1 text-2xl font-bold">
-                    {new Intl.NumberFormat("en-US", {
-                      style: "currency",
-                      currency: "USD",
-                    }).format(balance)}
-                  </p>
-                  <p className="mt-0.5 text-sm text-muted-foreground">
-                    Due {dueLabel}
-                  </p>
+                  />
                 </div>
-                <DollarSign
-                  className={`h-8 w-8 shrink-0 ${
-                    pastDue ? "text-red-500/60" : "text-amber-500/60"
-                  }`}
-                />
+                <ul className="divide-y divide-border/50 border-t border-border/50 text-sm">
+                  {chargesWithBalance.map((c) => (
+                    <li
+                      key={c.id}
+                      className="flex items-center justify-between gap-3 py-1.5"
+                    >
+                      <span className="truncate">
+                        <span className="font-medium">
+                          {chargeLabel(c.charge_type)}
+                        </span>
+                        <span className="ml-2 text-muted-foreground">
+                          due {formatIsoDate(c.due_date)}
+                        </span>
+                        {c.isPastDue && (
+                          <span className="ml-2 rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-600">
+                            past due
+                          </span>
+                        )}
+                      </span>
+                      <span
+                        className={`shrink-0 font-semibold ${
+                          c.isPastDue ? "text-red-600" : ""
+                        }`}
+                      >
+                        {formatCurrency(c.balance)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </CardContent>
             </Card>
           </Link>

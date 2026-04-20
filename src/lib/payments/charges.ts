@@ -8,8 +8,17 @@
 //                commitment_start_date. Simple +7 day step.
 // No proration, no late fees — a missed cycle is just an open charge
 // in the past until it gets paid.
+//
+// Cycle vs. due date: each rent cycle has an "anchor" (the calendar
+// day the period starts, == commitment_start_date for monthly or
+// commitment_start_date + 7n for weekly) and a "due date" (when the
+// resident must have paid). Policy: due_date = anchor − 1 day. The
+// anchor is still the period start on receipts; the due date shifts
+// so rent is always collected the day BEFORE the period it covers.
+// See computeRentDueDate below.
 
 import { createAdminClient } from "@/lib/supabase/server";
+import { DEFAULT_TIMEZONE, getHouseToday } from "@/lib/timezone";
 
 export type PaymentFrequency = "weekly" | "monthly";
 
@@ -50,13 +59,26 @@ export function addCycles(
 }
 
 // Period end of a rent charge — i.e. the start of the NEXT cycle.
-// `period_start = due_date` by convention, so period_end is just one
-// cycle after due_date.
+// `period_start = cycle anchor` by convention, so period_end is just
+// one cycle after the anchor.
 export function periodEndFor(
-  due: Date,
+  anchor: Date,
   frequency: PaymentFrequency
 ): Date {
-  return addCycles(due, 1, frequency);
+  return addCycles(anchor, 1, frequency);
+}
+
+// Policy: rent is due the day BEFORE the cycle anchor (the day the
+// cycle begins). So for a Jan 15 anchor, due_date is Jan 14. The
+// anchor itself is still the period_start on receipts / commitment
+// copies; only the collection date shifts. Weekly + monthly both
+// follow the same rule.
+export const RENT_DUE_OFFSET_DAYS = -1;
+
+export function computeRentDueDate(anchor: Date): Date {
+  const d = new Date(anchor);
+  d.setDate(d.getDate() + RENT_DUE_OFFSET_DAYS);
+  return d;
 }
 
 export function toIsoDate(d: Date): string {
@@ -171,18 +193,21 @@ export async function openRentChargesForCommitment(
   const cutoff =
     createdAtDate.getTime() > start.getTime() ? createdAtDate : start;
 
-  // Scope to THIS commitment's rent charges only. After an amendment
-  // that changes the monthly due day (e.g. day-15 → day-28), paid
-  // charges from the superseded commitment would otherwise poison
-  // `nextDueDate`: it takes the max existing due and adds a month, so
-  // a Feb-15 (old) paid charge combined with a Jan-28 (new) start would
-  // compute Mar-28 and skip Jan-28 / Feb-28 at the new rate entirely.
-  // The unique index (resident_id, due_date, charge_type) + upsert
-  // ignoreDuplicates below handles any same-day collisions with old
-  // commitment charges.
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const todayIso = toIsoDate(today);
+  // "Today" for rent-charge purposes is the house's local calendar
+  // day, not the server's. Without this a UTC-only server between
+  // 00:00 UTC and 05:00 UTC Eastern would briefly treat the NEXT
+  // calendar day as already arrived and open rent one day early,
+  // and vice versa for positive-offset houses. Fall back to the
+  // default Eastern timezone when the house row isn't joined.
+  const { data: houseRow } = await supabase
+    .from("houses")
+    .select("timezone")
+    .eq("id", commitment.house_id)
+    .maybeSingle();
+  const timezone =
+    (houseRow?.timezone as string | null) ?? DEFAULT_TIMEZONE;
+  const todayIso = getHouseToday(timezone);
+  const today = parseIsoDate(todayIso);
 
   // Clean up any unpaid rent charges with a due_date strictly in the
   // future. Previous versions of this opener pre-opened upcoming
@@ -208,14 +233,24 @@ export async function openRentChargesForCommitment(
   // at the new rate entirely. The unique index (resident_id,
   // due_date, charge_type) + upsert ignoreDuplicates below handles
   // any same-day collisions with old commitment charges.
+  //
+  // We query period_start (== cycle anchor) rather than due_date
+  // because due_date is now shifted by RENT_DUE_OFFSET_DAYS relative
+  // to the anchor; nextDueDate's cycle math operates on anchors. For
+  // legacy rows inserted before the offset shipped (period_start may
+  // be null) we fall back to due_date, which for those rows IS the
+  // anchor.
   const { data: existing } = await supabase
     .from("payment_charges")
-    .select("due_date")
+    .select("due_date, period_start")
     .eq("resident_id", commitment.resident_id)
     .eq("commitment_id", commitment.id)
     .eq("charge_type", "rent");
   const existingDates: Date[] = (existing ?? []).map((r) =>
-    parseIsoDate(r.due_date as unknown as string)
+    parseIsoDate(
+      ((r as { period_start: string | null }).period_start ??
+        (r as { due_date: string }).due_date) as string
+    )
   );
 
   const rows: Array<{
@@ -242,33 +277,36 @@ export async function openRentChargesForCommitment(
   let openedCount = 0;
   let safety = 0;
   while (safety++ < 1040) {
-    const due = nextDueDate(
+    const anchor = nextDueDate(
       start,
       [
         ...existingDates,
-        ...rows.map((r) => parseIsoDate(r.due_date)),
+        ...rows.map((r) => parseIsoDate(r.period_start)),
       ],
       frequency
     );
-    // Stop opening once we've caught up to today. No future rows.
-    if (due.getTime() > today.getTime()) break;
+    const dueDate = computeRentDueDate(anchor);
+    // Stop once the shifted due date is in the future. Under the
+    // "rent due the day before" policy, an anchor of today+1 still
+    // has a due_date of today and must be opened now.
+    if (dueDate.getTime() > today.getTime()) break;
     // Skip anything before the system cutoff — don't backfill charges
     // from before the resident was on the system. We still push to
     // the virtual cursor list (via existingDates) so nextDueDate
     // keeps advancing each iteration.
-    if (due.getTime() < cutoff.getTime()) {
-      existingDates.push(due);
+    if (anchor.getTime() < cutoff.getTime()) {
+      existingDates.push(anchor);
       continue;
     }
-    const periodStart = toIsoDate(due);
-    const periodEnd = toIsoDate(periodEndFor(due, frequency));
+    const periodStart = toIsoDate(anchor);
+    const periodEnd = toIsoDate(periodEndFor(anchor, frequency));
     rows.push({
       resident_id: commitment.resident_id,
       house_id: commitment.house_id,
       commitment_id: commitment.id,
       charge_type: "rent",
       amount: commitment.rent_amount,
-      due_date: toIsoDate(due),
+      due_date: toIsoDate(dueDate),
       period_start: periodStart,
       period_end: periodEnd,
     });
@@ -409,20 +447,27 @@ export async function materializeNextRentCharge(commitmentId: string): Promise<{
 
   // No open charge — compute the next cycle past all existing rent
   // rows (paid included), clamp to the commitment day-of-month.
+  // Query period_start (== cycle anchor); legacy rows with a null
+  // period_start fall back to due_date, which for those rows is
+  // also the anchor (no offset had been applied yet).
   const { data: existing } = await supabase
     .from("payment_charges")
-    .select("due_date")
+    .select("due_date, period_start")
     .eq("resident_id", commitment.resident_id)
     .eq("commitment_id", commitment.id)
     .eq("charge_type", "rent");
   const existingDates: Date[] = (existing ?? []).map((r) =>
-    parseIsoDate(r.due_date as unknown as string)
+    parseIsoDate(
+      ((r as { period_start: string | null }).period_start ??
+        (r as { due_date: string }).due_date) as string
+    )
   );
 
-  const due = nextDueDate(start, existingDates, frequency);
-  const periodStart = toIsoDate(due);
-  const periodEnd = toIsoDate(periodEndFor(due, frequency));
-  const dueIso = toIsoDate(due);
+  const anchor = nextDueDate(start, existingDates, frequency);
+  const dueDateObj = computeRentDueDate(anchor);
+  const periodStart = toIsoDate(anchor);
+  const periodEnd = toIsoDate(periodEndFor(anchor, frequency));
+  const dueIso = toIsoDate(dueDateObj);
 
   // Insert with onConflict do-nothing in case two admins click Pay
   // Upcoming in the same moment — we then re-select the winning row.
@@ -477,10 +522,34 @@ export async function materializeNextRentCharge(commitmentId: string): Promise<{
 // monthly charges up through today + the upcoming due. Used by the
 // payments page on load as a lazy cron replacement so residents /
 // staff don't have to manually advance the schedule.
+//
+// Cross-process debounced via public.system_flags: only the first
+// caller in any given SWEEP_MIN_INTERVAL window actually runs the
+// fan-out; the rest short-circuit. This keeps every /payments page
+// load from triggering N commitment opens in sequence while still
+// guaranteeing the schedule advances within a few minutes of any
+// page view.
+const SWEEP_DEBOUNCE_KEY = "rent_sweep_last_run_at";
+const SWEEP_MIN_INTERVAL = "5 minutes";
+
 export async function sweepOpenChargesForActiveCommitments(
   houseIds?: string[] | null
 ): Promise<void> {
   const supabase = createAdminClient();
+
+  // Atomic compare-and-swap: insert the flag if missing, or update
+  // it if the stored timestamp is older than SWEEP_MIN_INTERVAL. An
+  // empty/false result means another process already owns this
+  // window and we skip the sweep. If the RPC itself errors (e.g.
+  // the migration hasn't deployed yet) we fall through and run the
+  // sweep — the per-charge UNIQUE index + upsert ignoreDuplicates
+  // keep it idempotent.
+  const { data: claim, error: claimErr } = await supabase.rpc(
+    "claim_debounce_slot",
+    { p_key: SWEEP_DEBOUNCE_KEY, p_interval: SWEEP_MIN_INTERVAL }
+  );
+  if (!claimErr && claim === false) return;
+
   let q = supabase
     .from("house_commitments")
     .select("id")

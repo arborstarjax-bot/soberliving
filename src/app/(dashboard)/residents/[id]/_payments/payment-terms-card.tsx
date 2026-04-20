@@ -3,11 +3,12 @@
 import { useState, useTransition } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { CheckCircle2, ClipboardList, FileText } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { dayOfMonthLocal } from "@/lib/local-date";
 import { getDocumentUrl } from "@/app/(intake)/actions";
+import { cn } from "@/lib/utils";
 import { EditTermsDialog } from "@/app/(dashboard)/payments/edit-terms-dialog";
 import { cancelPendingAmendment } from "@/app/(dashboard)/payments/actions";
 import type { PaymentTerms, PendingAmendment } from "./types";
@@ -60,12 +61,24 @@ export function PaymentTermsCard({
     });
   })();
 
+  // Legacy fallback for the rare case we didn't manage to pre-sign
+  // the URL server-side (e.g. storage transient error). Still uses
+  // the synchronous-window trick so iOS Safari keeps the user-gesture
+  // context when it falls through to the server action.
   async function openCommitment() {
     if (!terms.pdf_storage_path) return;
+    // Open a blank tab immediately so iOS keeps the user-gesture
+    // context; redirect it once the signed URL resolves.
+    const w = typeof window !== "undefined" ? window.open("", "_blank") : null;
     setDownloading(true);
     try {
       const res = await getDocumentUrl(terms.pdf_storage_path);
-      if (res.url) window.open(res.url, "_blank");
+      if (res.url) {
+        if (w) w.location.href = res.url;
+        else window.location.href = res.url;
+      } else if (w) {
+        w.close();
+      }
     } finally {
       setDownloading(false);
     }
@@ -136,25 +149,46 @@ export function PaymentTermsCard({
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {terms.pdf_storage_path && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5"
-              disabled={downloading}
-              onClick={openCommitment}
-            >
-              <FileText className="h-3.5 w-3.5" />
-              View Signed Commitment
-            </Button>
-          )}
+          {terms.pdf_storage_path &&
+            (terms.pdf_signed_url ? (
+              // Native <a href> tap — required for iOS Safari, which
+              // blocks window.open called after an async server
+              // action has resolved.
+              <a
+                href={terms.pdf_signed_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  buttonVariants({ variant: "outline", size: "sm" }),
+                  "h-8 gap-1.5"
+                )}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                View Signed Commitment
+              </a>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5"
+                disabled={downloading}
+                onClick={openCommitment}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                View Signed Commitment
+              </Button>
+            ))}
           {isAdmin && residentUserId && !pendingAmendment && (
             <EditTermsDialog
               userId={residentUserId}
               residentName={residentName}
               currentRent={terms.rent_amount}
+              currentAdminFee={terms.admin_fee ?? 0}
               currentPaymentFrequency={terms.payment_frequency}
+              currentCommitmentTerm={terms.commitment_term ?? null}
+              currentRestrictionsNotes={terms.restrictions_notes ?? null}
+              currentNotes={terms.notes ?? null}
               effectiveDateDefault={effectiveDefault}
             />
           )}
