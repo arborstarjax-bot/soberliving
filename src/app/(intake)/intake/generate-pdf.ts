@@ -260,22 +260,39 @@ export async function generateIntakePdf(
     drawInlineRow([{ label, value }]);
   }
 
-  // "Do you X? Yes or No" with the selected option bolded + underlined.
-  // Mirrors the paper scan's convention of leaving both options visible.
+  // "Do you X? ... ... Yes or No" with the selected option bolded +
+  // underlined. Yes/No column is right-aligned to the content margin
+  // so every question's options land in the same column, matching the
+  // paper scan's alignment. Long questions wrap onto multiple lines.
   function drawYesNoField(question: string, value: string | undefined) {
-    ensureSpace(LINE_HEIGHT + 4);
     const selected = (value ?? "").toLowerCase();
-    const questionText = `${question}  `;
-    currentPage.drawText(questionText, {
-      x: MARGIN,
-      y,
-      size: FONT_SIZE,
-      font,
-      color: rgb(0, 0, 0),
-    });
-    let cursorX = MARGIN + font.widthOfTextAtSize(questionText, FONT_SIZE);
-    const drawOption = (opt: string, chosen: boolean) => {
-      const f = chosen ? boldFont : font;
+    const yesChosen = selected === "yes" || selected === "y";
+    const noChosen = selected === "no" || selected === "n";
+    const yesFont = yesChosen ? boldFont : font;
+    const noFont = noChosen ? boldFont : font;
+    const orWidth = font.widthOfTextAtSize(" or ", FONT_SIZE);
+    const yesWidth = yesFont.widthOfTextAtSize("Yes", FONT_SIZE);
+    const noWidth = noFont.widthOfTextAtSize("No", FONT_SIZE);
+    const optionsWidth = yesWidth + orWidth + noWidth;
+    const optionsX = PAGE_WIDTH - MARGIN - optionsWidth;
+    // Leave a 12pt gutter between the wrapped question text and the
+    // right-aligned options column.
+    const questionMaxWidth = optionsX - MARGIN - 12;
+    const lines = wrapText(question, font, FONT_SIZE, questionMaxWidth);
+    ensureSpace(LINE_HEIGHT * lines.length + 4);
+    for (let i = 0; i < lines.length; i++) {
+      currentPage.drawText(lines[i], {
+        x: MARGIN,
+        y,
+        size: FONT_SIZE,
+        font,
+        color: rgb(0, 0, 0),
+      });
+      if (i < lines.length - 1) y -= LINE_HEIGHT;
+    }
+    // Options column sits on the baseline of the last question line.
+    let cursorX = optionsX;
+    const drawOption = (opt: string, chosen: boolean, f: PDFFont, w: number) => {
       currentPage.drawText(opt, {
         x: cursorX,
         y,
@@ -283,7 +300,6 @@ export async function generateIntakePdf(
         font: f,
         color: rgb(0, 0, 0),
       });
-      const w = f.widthOfTextAtSize(opt, FONT_SIZE);
       if (chosen) {
         currentPage.drawLine({
           start: { x: cursorX, y: y - 1 },
@@ -294,7 +310,7 @@ export async function generateIntakePdf(
       }
       cursorX += w;
     };
-    drawOption("Yes", selected === "yes" || selected === "y");
+    drawOption("Yes", yesChosen, yesFont, yesWidth);
     currentPage.drawText(" or ", {
       x: cursorX,
       y,
@@ -302,8 +318,8 @@ export async function generateIntakePdf(
       font,
       color: rgb(0, 0, 0),
     });
-    cursorX += font.widthOfTextAtSize(" or ", FONT_SIZE);
-    drawOption("No", selected === "no" || selected === "n");
+    cursorX += orWidth;
+    drawOption("No", noChosen, noFont, noWidth);
     y -= LINE_HEIGHT + 4;
   }
 
@@ -400,71 +416,111 @@ export async function generateIntakePdf(
     drawInlineRow(fields);
   }
 
+  // Paper-style signature row:
+  //   Resident Signature: ______[image]_______    Date: _______
+  //   Printed Name:       _____________________
+  // The signature image sits ON the underline (its bottom = the line),
+  // so the faint rule reads like a real signature line instead of an
+  // unrelated stripe below the image.
   async function drawSignatureBlock(opts: {
     label: string;
     signatureKey: string;
     dateValue?: string;
     printedName?: { label: string; value: string };
   }) {
-    ensureSpace(95);
-    currentPage.drawText(opts.label, {
+    // Reserve space for sig row + (optional) printed-name row.
+    const SIG_IMAGE_MAX_HEIGHT = 28;
+    const rowHeight = SIG_IMAGE_MAX_HEIGHT + LINE_HEIGHT;
+    const hasPrintedName = !!opts.printedName;
+    ensureSpace(rowHeight + (hasPrintedName ? LINE_HEIGHT + 4 : 0) + 6);
+
+    const hasDate = opts.dateValue !== undefined;
+    const dateLabelText = "Date: ";
+    const dateLabelWidth = font.widthOfTextAtSize(dateLabelText, FONT_SIZE);
+    const dateSlotWidth = hasDate ? 90 : 0;
+    const dateColumnWidth = hasDate ? dateLabelWidth + dateSlotWidth : 0;
+
+    const labelText = `${opts.label}: `;
+    const labelWidth = font.widthOfTextAtSize(labelText, FONT_SIZE);
+    const sigLineStart = MARGIN + labelWidth;
+    const sigLineEnd =
+      PAGE_WIDTH - MARGIN - (hasDate ? dateColumnWidth + 18 : 0);
+    const sigLineY = y - SIG_IMAGE_MAX_HEIGHT;
+
+    currentPage.drawText(labelText, {
       x: MARGIN,
-      y,
+      y: sigLineY + 2,
       size: FONT_SIZE,
-      font: boldFont,
+      font,
       color: rgb(0, 0, 0),
     });
-    y -= 12;
+    currentPage.drawLine({
+      start: { x: sigLineStart, y: sigLineY },
+      end: { x: sigLineEnd, y: sigLineY },
+      thickness: 0.4,
+      color: rgb(0, 0, 0),
+    });
 
     const sigData = signatures[opts.signatureKey];
     if (sigData) {
       try {
         const sigBytes = await fetch(sigData).then((r) => r.arrayBuffer());
         const sigImage = await pdf.embedPng(new Uint8Array(sigBytes));
-        const drawWidth = 220;
+        const availableWidth = sigLineEnd - sigLineStart - 4;
+        const aspectWidth = (sigImage.width / sigImage.height) * SIG_IMAGE_MAX_HEIGHT;
+        const drawWidth = Math.min(aspectWidth, availableWidth);
         const drawHeight = (sigImage.height / sigImage.width) * drawWidth;
+        // Center the signature vertically around the line: bottom of the
+        // image sits right on the rule.
         currentPage.drawImage(sigImage, {
-          x: MARGIN,
-          y: y - drawHeight,
+          x: sigLineStart + 2,
+          y: sigLineY,
           width: drawWidth,
           height: drawHeight,
         });
-        y -= drawHeight + 4;
       } catch {
-        currentPage.drawText("[Signature on file]", {
-          x: MARGIN,
-          y,
+        currentPage.drawText("[signature on file]", {
+          x: sigLineStart + 4,
+          y: sigLineY + 2,
           size: FONT_SIZE,
           font,
           color: rgb(0.4, 0.4, 0.4),
         });
-        y -= LINE_HEIGHT;
       }
-    } else {
-      currentPage.drawText("—", { x: MARGIN, y, size: FONT_SIZE, font, color: rgb(0.4, 0.4, 0.4) });
-      y -= LINE_HEIGHT;
     }
 
-    // Draw signature underline
-    currentPage.drawLine({
-      start: { x: MARGIN, y: y + 2 },
-      end: { x: MARGIN + 260, y: y + 2 },
-      thickness: 0.5,
-      color: rgb(0.5, 0.5, 0.5),
-    });
-    y -= 4;
+    if (hasDate) {
+      const dateX = PAGE_WIDTH - MARGIN - dateColumnWidth;
+      currentPage.drawText(dateLabelText, {
+        x: dateX,
+        y: sigLineY + 2,
+        size: FONT_SIZE,
+        font,
+        color: rgb(0, 0, 0),
+      });
+      currentPage.drawLine({
+        start: { x: dateX + dateLabelWidth, y: sigLineY },
+        end: { x: PAGE_WIDTH - MARGIN, y: sigLineY },
+        thickness: 0.4,
+        color: rgb(0, 0, 0),
+      });
+      if (opts.dateValue && opts.dateValue.trim().length > 0) {
+        currentPage.drawText(opts.dateValue, {
+          x: dateX + dateLabelWidth + 2,
+          y: sigLineY + 2,
+          size: FONT_SIZE,
+          font,
+          color: rgb(0, 0, 0),
+        });
+      }
+    }
 
-    const info: { label: string; value: string | undefined }[] = [];
-    if (opts.printedName) {
-      info.push({ label: opts.printedName.label, value: opts.printedName.value });
+    y = sigLineY - 6;
+
+    if (hasPrintedName) {
+      drawInlineField(opts.printedName!.label, opts.printedName!.value);
     }
-    if (opts.dateValue !== undefined) {
-      info.push({ label: "Date", value: opts.dateValue });
-    }
-    if (info.length > 0) {
-      drawFieldRow(info);
-    }
-    y -= 6;
+    y -= 2;
   }
 
   // ═══════════════════════════════════════════════════════════════
