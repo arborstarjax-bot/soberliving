@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -9,56 +9,70 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  sendWorkspaceInvite,
-  revokeWorkspaceInvite,
+  getWorkspaceInviteLink,
+  regenerateInviteCode,
+  approvePendingMember,
+  denyPendingMember,
   removeWorkspaceMember,
 } from "./actions";
-import type { WorkspaceInvite, WorkspaceMember } from "@/lib/types";
-
-const ROLE_OPTIONS = [
-  { value: "admin", label: "Admin" },
-  { value: "manager", label: "Manager" },
-  { value: "resident", label: "Resident" },
-];
+import type { WorkspaceMember } from "@/lib/types";
+import { Check, X, RefreshCw, Copy, Link } from "lucide-react";
 
 export function MembersSection({
-  workspaceId,
   members,
-  invites,
+  pendingMembers,
 }: {
-  workspaceId: string;
   members: (WorkspaceMember & { user: { email: string; full_name: string } })[];
-  invites: WorkspaceInvite[];
+  pendingMembers: (WorkspaceMember & { user: { email: string; full_name: string } })[];
 }) {
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState("resident");
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
   const [inviteUrl, setInviteUrl] = useState("");
+  const [copied, setCopied] = useState(false);
 
-  function handleInvite() {
-    if (!email.trim()) return;
+  useEffect(() => {
+    getWorkspaceInviteLink().then((result) => {
+      if (result.inviteUrl) setInviteUrl(result.inviteUrl);
+    });
+  }, []);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(inviteUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function handleRegenerate() {
+    if (!confirm("Regenerate invite link? The old link will stop working.")) return;
     startTransition(async () => {
-      const result = await sendWorkspaceInvite(workspaceId, email.trim(), role);
+      const result = await regenerateInviteCode();
       if (result.error) {
         setMessage(result.error);
-        setInviteUrl("");
-      } else if (result.inviteUrl) {
-        setInviteUrl(result.inviteUrl);
-        setMessage("Invite created! Share the link below.");
-        setEmail("");
+      } else {
+        const fresh = await getWorkspaceInviteLink();
+        if (fresh.inviteUrl) setInviteUrl(fresh.inviteUrl);
+        setMessage("Invite link regenerated.");
       }
     });
   }
 
-  function handleRevoke(inviteId: string) {
+  function handleApprove(memberId: string) {
     startTransition(async () => {
-      const result = await revokeWorkspaceInvite(inviteId);
+      const result = await approvePendingMember(memberId);
       if (result.error) setMessage(result.error);
+      else setMessage("Member approved.");
+    });
+  }
+
+  function handleDeny(memberId: string) {
+    if (!confirm("Deny this member's request to join?")) return;
+    startTransition(async () => {
+      const result = await denyPendingMember(memberId);
+      if (result.error) setMessage(result.error);
+      else setMessage("Member denied.");
     });
   }
 
@@ -72,74 +86,113 @@ export function MembersSection({
 
   return (
     <div className="space-y-6">
-      {/* Invite new member */}
+      {/* Invite Link */}
       <Card>
         <CardHeader>
-          <CardTitle>Invite Member</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Link className="h-5 w-5" />
+            Invite Link
+          </CardTitle>
           <CardDescription>
-            Send an invite link to add someone to this workspace
+            Share this link with people to let them request to join your
+            workspace. They&apos;ll need your approval before gaining access.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
-            <div className="space-y-2">
-              <Label htmlFor="invite-email">Email Address</Label>
-              <Input
-                id="invite-email"
-                type="email"
-                placeholder="user@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="invite-role">Role</Label>
-              <select
-                id="invite-role"
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          {inviteUrl && (
+            <div className="flex gap-2">
+              <Input value={inviteUrl} readOnly className="text-xs font-mono" />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCopy}
+                className="shrink-0"
               >
-                {ROLE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                <Copy className="mr-1 h-3.5 w-3.5" />
+                {copied ? "Copied!" : "Copy"}
+              </Button>
             </div>
+          )}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRegenerate}
+              disabled={pending}
+            >
+              <RefreshCw className="mr-1 h-3.5 w-3.5" />
+              Regenerate Link
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              This invalidates the previous link.
+            </p>
           </div>
-          <Button onClick={handleInvite} disabled={pending || !email.trim()}>
-            {pending ? "Sending..." : "Send Invite"}
-          </Button>
           {message && (
             <p
-              className={`text-sm ${message.includes("created") ? "text-green-600" : "text-destructive"}`}
+              className={`text-sm ${message.includes("error") || message.includes("not") ? "text-destructive" : "text-green-600"}`}
             >
               {message}
             </p>
           )}
-          {inviteUrl && (
-            <div className="rounded-md border bg-muted p-3 space-y-2">
-              <p className="text-sm font-medium">Invite Link</p>
-              <div className="flex gap-2">
-                <Input value={inviteUrl} readOnly className="text-xs" />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigator.clipboard.writeText(inviteUrl)}
-                >
-                  Copy
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                This link expires in 7 days.
-              </p>
-            </div>
-          )}
         </CardContent>
       </Card>
 
-      {/* Current Members */}
+      {/* Pending Approval */}
+      {pendingMembers.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              Pending Approval
+              <Badge variant="secondary">{pendingMembers.length}</Badge>
+            </CardTitle>
+            <CardDescription>
+              These users signed up via the invite link and are waiting for your
+              approval.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="divide-y">
+              {pendingMembers.map((m) => (
+                <div
+                  key={m.id}
+                  className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
+                >
+                  <div>
+                    <p className="text-sm font-medium">{m.user.full_name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {m.user.email}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleApprove(m.id)}
+                      disabled={pending}
+                      className="text-green-700 hover:text-green-800 hover:bg-green-50"
+                    >
+                      <Check className="mr-1 h-3.5 w-3.5" />
+                      Approve
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDeny(m.id)}
+                      disabled={pending}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <X className="mr-1 h-3.5 w-3.5" />
+                      Deny
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Active Members */}
       <Card>
         <CardHeader>
           <CardTitle>Members ({members.length})</CardTitle>
@@ -182,45 +235,6 @@ export function MembersSection({
           )}
         </CardContent>
       </Card>
-
-      {/* Pending Invites */}
-      {invites.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Pending Invites ({invites.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="divide-y">
-              {invites.map((inv) => (
-                <div
-                  key={inv.id}
-                  className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
-                >
-                  <div>
-                    <p className="text-sm font-medium">{inv.email}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Expires{" "}
-                      {new Date(inv.expires_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline">{inv.role}</Badge>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleRevoke(inv.id)}
-                      disabled={pending}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      Revoke
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

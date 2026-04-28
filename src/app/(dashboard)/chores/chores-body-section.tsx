@@ -118,7 +118,7 @@ export async function ChoresBodySection({
     { data: pendingSignoffs },
     { data: missedSignoffs },
   ] = await Promise.all([
-    getCachedActiveHouses(),
+    getCachedActiveHouses(user.workspace_id),
     choresQuery,
     rotationsQuery,
     residentsQuery,

@@ -4,7 +4,6 @@ import {
   getWorkspace,
   getWorkspaceSettings,
   getWorkspacePaymentConfig,
-  getWorkspaceInvites,
   getWorkspaceMembers,
 } from "@/lib/workspace";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -22,13 +21,13 @@ export default async function WorkspaceSettingsPage() {
     redirect("/admin");
   }
 
-  const [workspace, settings, paymentConfig, invites, members] =
+  const [workspace, settings, paymentConfig, members, pendingMembers] =
     await Promise.all([
       getWorkspace(user.workspace_id),
       getWorkspaceSettings(user.workspace_id),
       getWorkspacePaymentConfig(user.workspace_id),
-      getWorkspaceInvites(user.workspace_id),
-      getWorkspaceMembers(user.workspace_id),
+      getWorkspaceMembers(user.workspace_id, "active"),
+      getWorkspaceMembers(user.workspace_id, "pending"),
     ]);
 
   if (!workspace) redirect("/admin");
@@ -66,7 +65,14 @@ export default async function WorkspaceSettingsPage() {
           <TabsTrigger value="onboarding">Onboarding</TabsTrigger>
           <TabsTrigger value="payments">Payments</TabsTrigger>
           <TabsTrigger value="curfews">Curfews</TabsTrigger>
-          <TabsTrigger value="members">Members</TabsTrigger>
+          <TabsTrigger value="members">
+            Members
+            {pendingMembers.length > 0 && (
+              <span className="ml-1.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-orange-100 text-xs font-medium text-orange-700">
+                {pendingMembers.length}
+              </span>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="general">
@@ -96,9 +102,8 @@ export default async function WorkspaceSettingsPage() {
 
         <TabsContent value="members">
           <MembersSection
-            workspaceId={workspace.id}
             members={members}
-            invites={invites}
+            pendingMembers={pendingMembers}
           />
         </TabsContent>
       </Tabs>

@@ -34,19 +34,24 @@ export interface CachedHouse {
   name: string;
 }
 
-export const getCachedActiveHouses = unstable_cache(
-  async (): Promise<CachedHouse[]> => {
-    const admin = createAdminClient();
-    const { data } = await admin
-      .from("houses")
-      .select("id, name")
-      .eq("is_active", true)
-      .order("name");
-    return (data ?? []) as CachedHouse[];
-  },
-  ["active-houses"],
-  {
-    tags: [HOUSES_ACTIVE_TAG],
-    revalidate: 300,
-  }
-);
+export function getCachedActiveHouses(workspaceId?: string | null): Promise<CachedHouse[]> {
+  const cacheKey = workspaceId ? `active-houses:${workspaceId}` : "active-houses";
+  return unstable_cache(
+    async (): Promise<CachedHouse[]> => {
+      const admin = createAdminClient();
+      let q = admin
+        .from("houses")
+        .select("id, name")
+        .eq("is_active", true)
+        .order("name");
+      if (workspaceId) q = q.eq("workspace_id", workspaceId);
+      const { data } = await q;
+      return (data ?? []) as CachedHouse[];
+    },
+    [cacheKey],
+    {
+      tags: [HOUSES_ACTIVE_TAG],
+      revalidate: 300,
+    }
+  )();
+}

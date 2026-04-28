@@ -33,7 +33,7 @@ export async function CreatePaymentSection({ user }: { user: SessionUser }) {
 
   const [allHouses, { data: residents }, { data: openCharges }] =
     await Promise.all([
-      getCachedActiveHouses(),
+      getCachedActiveHouses(user.workspace_id),
       residentsQuery,
       openChargesQuery,
     ]);

@@ -12,18 +12,20 @@ export async function NewPostSection({
   userId,
   userRole,
   assignedHouseIds,
+  workspaceId,
 }: {
   userId: string;
   userRole: UserRole;
   assignedHouseIds: string[];
+  workspaceId?: string | null;
 }) {
   let postableHouses: { id: string; name: string }[] = [];
   if (userRole === "admin") {
-    postableHouses = await getCachedActiveHouses();
+    postableHouses = await getCachedActiveHouses(workspaceId);
   } else if (userRole === "manager") {
     if (assignedHouseIds.length > 0) {
       const assignedSet = new Set(assignedHouseIds);
-      const all = await getCachedActiveHouses();
+      const all = await getCachedActiveHouses(workspaceId);
       postableHouses = all.filter((h) => assignedSet.has(h.id));
     }
   } else {

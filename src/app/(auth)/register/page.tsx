@@ -19,21 +19,21 @@ import {
 
 function RegisterForm() {
   const searchParams = useSearchParams();
-  const invite = searchParams.get("invite");
+  const workspaceCode = searchParams.get("workspace");
   const [state, action, pending] = useActionState(signup, undefined);
 
-  const isInvite = !!invite;
+  const isJoin = !!workspaceCode;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold">
-            {isInvite ? "Accept Invitation" : "Create Your Workspace"}
+            {isJoin ? "Join Workspace" : "Create Your Workspace"}
           </CardTitle>
           <CardDescription>
-            {isInvite
-              ? "Create an account to join the workspace."
+            {isJoin
+              ? "Create an account to request access to this workspace."
               : "Sign up and set up your sober living workspace. You\u2019ll be the admin."}
           </CardDescription>
         </CardHeader>
@@ -44,9 +44,21 @@ function RegisterForm() {
             </p>
           ) : (
             <form action={action} className="space-y-4">
-              {invite && (
-                <input type="hidden" name="invite_token" value={invite} />
+              {workspaceCode && (
+                <input type="hidden" name="workspace_code" value={workspaceCode} />
               )}
+
+              <div className="space-y-2">
+                <Label htmlFor="full_name">Full Name</Label>
+                <Input
+                  id="full_name"
+                  name="full_name"
+                  type="text"
+                  autoComplete="name"
+                  placeholder="Jane Doe"
+                  required
+                />
+              </div>
 
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
@@ -75,7 +87,7 @@ function RegisterForm() {
                 </p>
               </div>
 
-              {!isInvite && (
+              {!isJoin && (
                 <div className="space-y-2">
                   <Label htmlFor="workspace_name">Workspace Name</Label>
                   <Input
@@ -97,8 +109,8 @@ function RegisterForm() {
               <Button type="submit" className="w-full" disabled={pending}>
                 {pending
                   ? "Creating account..."
-                  : isInvite
-                    ? "Join Workspace"
+                  : isJoin
+                    ? "Request to Join"
                     : "Create Workspace"}
               </Button>
             </form>
@@ -114,17 +126,6 @@ function RegisterForm() {
               Sign in
             </Link>
           </div>
-          {!isInvite && (
-            <div>
-              Have an invite link?{" "}
-              <Link
-                href="/login"
-                className="ml-1 font-medium text-primary hover:underline"
-              >
-                Sign in to accept it
-              </Link>
-            </div>
-          )}
         </CardFooter>
       </Card>
     </div>
