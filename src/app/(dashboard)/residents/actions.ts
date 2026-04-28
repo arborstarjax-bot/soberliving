@@ -494,6 +494,7 @@ export async function deleteIntakeUser(userId: string) {
     .from("users")
     .select("id, full_name, commitment_signed")
     .eq("id", userId)
+    .eq("workspace_id", currentUser.workspace_id)
     .maybeSingle();
 
   if (!target) return { error: "User not found" };
