@@ -123,11 +123,12 @@ export async function updateHouseCurfews(
   const allDays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
   const removedDays = allDays.filter((d) => !submittedDays.includes(d));
   if (removedDays.length > 0) {
-    await admin
+    const { error: deleteError } = await admin
       .from("house_curfews")
       .delete()
       .eq("house_id", houseId)
       .in("day_of_week", removedDays);
+    if (deleteError) return { error: deleteError.message };
   }
 
   revalidatePath("/admin/workspace");
