@@ -22,6 +22,7 @@ import {
   Folder,
   DollarSign,
   Flag,
+  Building2,
 } from "lucide-react";
 import { useState } from "react";
 import { InstallAppButton } from "@/components/pwa/install-app-button";
@@ -125,6 +126,12 @@ const NAV_ITEMS: NavItem[] = [
     href: "/notifications",
     icon: Bell,
     roles: ["admin", "manager", "resident"],
+  },
+  {
+    label: "Workspace",
+    href: "/admin/workspace",
+    icon: Building2,
+    roles: ["admin"],
   },
   // Intake Review is now a tab inside the Residents page
   // Users & Roles folded into Residents page — /users route still works for direct access

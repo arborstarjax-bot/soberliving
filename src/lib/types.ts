@@ -6,6 +6,73 @@
 
 export type UserRole = "admin" | "manager" | "resident";
 
+export type WorkspaceRole = "owner" | "admin" | "manager" | "resident";
+
+export type PaymentFrequencyOption = "weekly" | "bi-weekly" | "monthly";
+
+export type PaymentMethod = "cash" | "venmo" | "zelle" | "check" | "money_order" | "other";
+
+// --- Workspace Types ---
+
+export interface Workspace {
+  id: string;
+  name: string;
+  slug: string;
+  owner_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkspaceMember {
+  id: string;
+  workspace_id: string;
+  user_id: string;
+  role: WorkspaceRole;
+  invited_by: string | null;
+  joined_at: string;
+}
+
+export interface WorkspaceInvite {
+  id: string;
+  workspace_id: string;
+  email: string;
+  role: string;
+  token: string;
+  invited_by: string;
+  accepted_at: string | null;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface WorkspaceSettings {
+  id: string;
+  workspace_id: string;
+  require_application: boolean;
+  require_commitment: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkspacePaymentConfig {
+  id: string;
+  workspace_id: string;
+  default_rent_amount: number;
+  payment_frequency: PaymentFrequencyOption;
+  payment_due_day: string | null;
+  accepted_methods: PaymentMethod[];
+  late_fee_amount: number;
+  grace_period_days: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HouseCurfew {
+  id: string;
+  house_id: string;
+  day_of_week: string;
+  curfew_time: string;
+}
+
 export type ResidentStatus = "active" | "discharged" | "on_leave";
 
 export type ChoreDay = "monday" | "wednesday" | "friday";
@@ -247,6 +314,8 @@ export interface SessionUser {
   email: string;
   full_name: string;
   role: UserRole;
+  workspace_id: string | null;
+  workspace_role: WorkspaceRole | null;
   assigned_house_ids: string[];
   intake_completed: boolean;
   is_resident: boolean;

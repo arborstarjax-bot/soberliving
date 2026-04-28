@@ -8,8 +8,7 @@ export default async function IntakeLayout({
 }) {
   const user = await requireAuth();
 
-  // Discharged residents can't re-do intake — they're locked out
-  // until staff reactivates them.
+  // Discharged residents can't re-do intake
   if (user.role === "resident" && user.resident_discharged) {
     redirect("/discharged");
   }
