@@ -45,7 +45,7 @@ export async function GrievancesListSection({ user }: { user: SessionUser }) {
     .order("created_at", { ascending: false })
     .limit(200);
   if (user.role === "admin" && user.workspace_house_ids.length > 0) {
-    query = query.in("house_id", user.workspace_house_ids);
+    query = query.or(`house_id.in.(${user.workspace_house_ids.join(",")}),house_id.is.null`);
   } else if (user.role === "admin" && user.workspace_id) {
     query = query.is("house_id", null);
   } else if (user.role === "manager") {

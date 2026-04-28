@@ -487,6 +487,9 @@ export async function deleteIntakeUser(userId: string) {
   if (currentUser.role !== "admin") {
     return { error: "Only admins can delete intake entries" };
   }
+  if (!currentUser.workspace_id) {
+    return { error: "No workspace context" };
+  }
 
   const adminClient = createAdminClient();
 
