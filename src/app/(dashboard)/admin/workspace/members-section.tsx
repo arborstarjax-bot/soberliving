@@ -129,7 +129,7 @@ export function MembersSection({
           </div>
           {message && (
             <p
-              className={`text-sm ${message.includes("error") || message.includes("not") ? "text-destructive" : "text-green-600"}`}
+              className={`text-sm ${message.toLowerCase().includes("error") || message.toLowerCase().includes("not") ? "text-destructive" : "text-green-600"}`}
             >
               {message}
             </p>

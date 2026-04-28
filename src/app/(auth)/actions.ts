@@ -37,7 +37,7 @@ export async function login(
   // to intake; denial flips them to 'rejected' from Intake Review.
   const { data: profile } = await supabase
     .from("users")
-    .select("account_status")
+    .select("account_status, workspace_id")
     .eq("id", data.user?.id ?? "")
     .single();
 
@@ -53,10 +53,16 @@ export async function login(
 
   // Check if workspace membership is pending approval
   const adminClient = createAdminClient();
-  const { data: membership } = await adminClient
+  const userWsId = (profile as { workspace_id?: string | null } | null)?.workspace_id;
+  let membershipQuery = adminClient
     .from("workspace_members")
     .select("status")
-    .eq("user_id", data.user?.id ?? "")
+    .eq("user_id", data.user?.id ?? "");
+  if (userWsId) {
+    membershipQuery = membershipQuery.eq("workspace_id", userWsId);
+  }
+  const { data: membership } = await membershipQuery
+    .limit(1)
     .maybeSingle();
 
   if (membership?.status === "pending") {
@@ -217,6 +223,9 @@ export async function signup(
       .from("users")
       .update({ workspace_id: workspace.id })
       .eq("id", data.user.id);
+
+    // Sign out so the pending user can't access authenticated pages
+    await supabase.auth.signOut();
 
     return {
       success: `Your request to join "${workspace.name}" has been submitted. An admin will review and approve your account.`,

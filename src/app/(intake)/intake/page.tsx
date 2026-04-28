@@ -1,6 +1,7 @@
 import { requireAuth } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import { getWorkspaceSettings } from "@/lib/workspace";
 import { IntakeFormWizard } from "./intake-form-wizard";
 
 export default async function IntakePage() {
@@ -9,6 +10,14 @@ export default async function IntakePage() {
   // Already completed — go to dashboard
   if (user.intake_completed) {
     redirect("/dashboard");
+  }
+
+  // If workspace doesn't require the full application, use quick signup
+  if (user.workspace_id) {
+    const wsSettings = await getWorkspaceSettings(user.workspace_id);
+    if (wsSettings && !wsSettings.require_application) {
+      redirect("/quick-signup");
+    }
   }
 
   // Load any existing draft
