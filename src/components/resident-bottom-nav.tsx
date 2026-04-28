@@ -13,6 +13,7 @@ import {
   Folder,
   Flag,
   Bell,
+  LogOut,
   X,
 } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
@@ -115,11 +116,22 @@ export function ResidentBottomNav({
                 >
                   <Icon className={cn("h-5 w-5", active && "text-blue-700")} />
                   <span className="truncate leading-none">{item.label}</span>
-                  {item.href === "/notifications" && notificationBadge}
+                  {item.href === "/notifications" && !active && notificationBadge}
                 </Link>
               );
             })}
           </nav>
+          <div className="px-4 pb-3">
+            <form action="/api/auth/logout" method="POST">
+              <button
+                type="submit"
+                className="flex w-full items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition"
+              >
+                <LogOut className="h-4 w-4" />
+                Sign Out
+              </button>
+            </form>
+          </div>
         </div>
       </div>
 
