@@ -4,7 +4,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { findPendingBlockerForUser } from "@/lib/blockers";
-import type { SessionUser, UserRole } from "@/lib/types";
+import type { SessionUser, UserRole, WorkspaceRole } from "@/lib/types";
 
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const supabase = await createClient();
@@ -19,11 +19,12 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   // Supabase RTT this saves a full round-trip on every server
   // component render that calls requireAuth() (i.e. every dashboard
   // page load). `cache()` guarantees one execution per request.
-  const [profileRes, roleRes] = await Promise.all([
+  const adminForWorkspace = createAdminClient();
+  const [profileRes, roleRes, workspaceMemberRes] = await Promise.all([
     supabase
       .from("users")
       .select(
-        "id, email, full_name, intake_completed, commitment_signed, is_resident, account_status"
+        "id, email, full_name, intake_completed, commitment_signed, is_resident, account_status, workspace_id"
       )
       .eq("id", user.id)
       .single(),
@@ -33,6 +34,12 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
       .eq("user_id", user.id)
       .limit(1)
       .single(),
+    adminForWorkspace
+      .from("workspace_members")
+      .select("workspace_id, role")
+      .eq("user_id", user.id)
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const profile = profileRes.data;
@@ -167,11 +174,20 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     residentRows.length > 0 &&
     residentRows.every((r) => r.status !== "active");
 
+  const workspaceId: string | null =
+    (profile as { workspace_id?: string | null }).workspace_id ??
+    workspaceMemberRes.data?.workspace_id ??
+    null;
+  const workspaceRole: WorkspaceRole | null =
+    (workspaceMemberRes.data?.role as WorkspaceRole) ?? null;
+
   return {
     id: profile.id,
     email: profile.email,
     full_name: profile.full_name,
     role,
+    workspace_id: workspaceId,
+    workspace_role: workspaceRole,
     assigned_house_ids: assignedHouseIds,
     intake_completed: intakeCompleted,
     is_resident: isResident,

@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { generateSlug } from "@/lib/workspace";
 
 interface AuthState {
   error?: string;
@@ -43,17 +44,9 @@ export async function login(
   const status = (profile as { account_status?: string } | null)
     ?.account_status;
   if (status === "rejected") {
-    // Leave the session intact and route them to the application-denied
-    // page so they can see the reason staff recorded. That page has its
-    // own auth check and signout control — it doesn't require an active
-    // account to render.
     redirect("/application-denied");
   }
   if (status && status !== "active") {
-    // Catch any unexpected non-active status (e.g. a lingering 'pending'
-    // from before the gate was removed). Without this, getSessionUser
-    // returns null and requireAuth bounces them back to /login with a
-    // valid session cookie — infinite loop.
     await supabase.auth.signOut();
     return { error: "Your account is not active. Please contact an administrator." };
   }
@@ -71,8 +64,6 @@ export async function login(
   }
   // Discharged residents (any residents row exists but none are
   // active) land on the lockout page instead of the dashboard.
-  // The dashboard layout also enforces this gate, but checking
-  // here saves one server round-trip on the happy-path sign-in.
   const admin = createAdminClient();
   const { data: residentRows } = await admin
     .from("residents")
@@ -82,8 +73,6 @@ export async function login(
   if (rows.length > 0 && rows.every((r) => r.status !== "active")) {
     redirect("/discharged");
   }
-  // Residents land at /dashboard; the dashboard layout handles
-  // redirecting them onwards to /intake or /sign-commitment as needed.
   redirect("/dashboard");
 }
 
@@ -93,25 +82,55 @@ export async function signup(
 ): Promise<AuthState | undefined> {
   const email = (formData.get("email") as string | null)?.trim() ?? "";
   const password = (formData.get("password") as string | null) ?? "";
+  const workspaceName = (formData.get("workspace_name") as string | null)?.trim() ?? "";
+  const inviteToken = (formData.get("invite_token") as string | null)?.trim() ?? "";
 
   if (!email) {
     return { error: "Email is required" };
   }
-
-  // We no longer collect a name at signup — the authoritative
-  // full_name comes from the intake packet's first/middle/last fields
-  // and gets written back in src/app/(intake)/actions.ts. Seed the
-  // profile with the email local-part so admin lists show something
-  // readable until the user completes intake.
-  const fullName = email.split("@")[0] || email;
   if (password.length < 8) {
     return { error: "Password must be at least 8 characters" };
   }
 
-  const supabase = await createClient();
+  const isInviteFlow = !!inviteToken;
 
-  // Create the auth user. If email confirmation is enabled in Supabase
-  // no session is returned; otherwise signUp also signs the user in.
+  // If creating a workspace, name is required
+  if (!isInviteFlow && !workspaceName) {
+    return { error: "Workspace name is required" };
+  }
+
+  const adminClient = createAdminClient();
+
+  // Validate invite token if present
+  let invite: {
+    id: string;
+    workspace_id: string;
+    role: string;
+    email: string;
+  } | null = null;
+
+  if (isInviteFlow) {
+    const { data: inviteRow } = await adminClient
+      .from("workspace_invites")
+      .select("id, workspace_id, role, email, accepted_at, expires_at")
+      .eq("token", inviteToken)
+      .maybeSingle();
+
+    if (!inviteRow) {
+      return { error: "Invalid invite link" };
+    }
+    if (inviteRow.accepted_at) {
+      return { error: "This invite has already been used" };
+    }
+    if (new Date(inviteRow.expires_at) < new Date()) {
+      return { error: "This invite has expired" };
+    }
+    invite = inviteRow;
+  }
+
+  const fullName = email.split("@")[0] || email;
+
+  const supabase = await createClient();
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -132,19 +151,15 @@ export async function signup(
     return { error: "Failed to create account" };
   }
 
-  // When Supabase has email confirmation enabled and the email is already
-  // registered, signUp() returns a fake user with `identities: []` and no
-  // error (intentional, to avoid email enumeration). Detect that so we
-  // don't clobber the existing user's profile.
   if (Array.isArray(data.user.identities) && data.user.identities.length === 0) {
     return { error: "An account with this email already exists" };
   }
 
-  // Create the public profile (active immediately) and the resident role
-  // assignment. Staff approves/denies the application from Intake Review
-  // after the user submits their intake packet.
-  const admin = createAdminClient();
-  const { error: profileError } = await admin
+  // Determine the role to assign
+  const userRole = isInviteFlow ? (invite!.role === "admin" || invite!.role === "owner" ? "admin" : invite!.role) : "admin";
+
+  // Create profile
+  const { error: profileError } = await adminClient
     .from("users")
     .upsert(
       {
@@ -157,47 +172,92 @@ export async function signup(
     );
 
   if (profileError) {
-    // auth.signUp already committed the auth user. If we leave it in
-    // place the email is now "taken" but has no profile row, so the
-    // user can't re-register and can't log in either (getSessionUser
-    // returns null without a profile, which loops them back to
-    // /login). Roll the auth user back so they can retry.
-    await admin.auth.admin.deleteUser(data.user.id).catch(() => {});
-    return {
-      error:
-        "Failed to create profile: " +
-        profileError.message +
-        ". Please try again.",
-    };
+    await adminClient.auth.admin.deleteUser(data.user.id).catch(() => {});
+    return { error: "Failed to create profile: " + profileError.message + ". Please try again." };
   }
 
-  const { error: roleError } = await admin
+  // Assign user_roles row
+  const { error: roleError } = await adminClient
     .from("user_roles")
     .upsert(
-      { user_id: data.user.id, role: "resident" },
+      { user_id: data.user.id, role: userRole as "admin" | "manager" | "resident" },
       { onConflict: "user_id" }
     );
 
   if (roleError) {
-    // Same rollback reasoning as above — plus remove the half-written
-    // profile row so a retry starts from a clean slate.
-    await admin.from("users").delete().eq("id", data.user.id);
-    await admin.auth.admin.deleteUser(data.user.id).catch(() => {});
-    return {
-      error:
-        "Failed to assign role: " +
-        roleError.message +
-        ". Please try again.",
-    };
+    await adminClient.from("users").delete().eq("id", data.user.id);
+    await adminClient.auth.admin.deleteUser(data.user.id).catch(() => {});
+    return { error: "Failed to assign role: " + roleError.message + ". Please try again." };
   }
 
-  // If Supabase auto-signed the user in (Confirm email is OFF in this
-  // project), data.session is already populated and we can fall through
-  // to the /dashboard redirect. If not, the user's email still needs
-  // confirmation — do NOT attempt signInWithPassword here, since that
-  // would try to bypass the confirmation gate. Always surface the
-  // "check your email" message so the flow respects whatever the
-  // Supabase project's Confirm-email setting is.
+  if (isInviteFlow && invite) {
+    // Join existing workspace
+    const { error: memberError } = await adminClient
+      .from("workspace_members")
+      .insert({
+        workspace_id: invite.workspace_id,
+        user_id: data.user.id,
+        role: invite.role,
+        invited_by: null,
+      });
+
+    if (memberError) {
+      return { error: "Failed to join workspace: " + memberError.message };
+    }
+
+    // Update user's workspace_id
+    await adminClient
+      .from("users")
+      .update({ workspace_id: invite.workspace_id })
+      .eq("id", data.user.id);
+
+    // Mark invite as accepted
+    await adminClient
+      .from("workspace_invites")
+      .update({ accepted_at: new Date().toISOString() })
+      .eq("id", invite.id);
+  } else {
+    // Create new workspace
+    const slug = generateSlug(workspaceName) + "-" + Date.now().toString(36);
+    const { data: workspace, error: wsError } = await adminClient
+      .from("workspaces")
+      .insert({
+        name: workspaceName,
+        slug,
+        owner_id: data.user.id,
+      })
+      .select("id")
+      .single();
+
+    if (wsError || !workspace) {
+      return { error: "Failed to create workspace: " + (wsError?.message ?? "Unknown error") };
+    }
+
+    // Add creator as owner member
+    await adminClient.from("workspace_members").insert({
+      workspace_id: workspace.id,
+      user_id: data.user.id,
+      role: "owner",
+    });
+
+    // Create default settings
+    await adminClient.from("workspace_settings").insert({
+      workspace_id: workspace.id,
+    });
+
+    // Create default payment config
+    await adminClient.from("workspace_payment_config").insert({
+      workspace_id: workspace.id,
+    });
+
+    // Update user's workspace_id
+    await adminClient
+      .from("users")
+      .update({ workspace_id: workspace.id })
+      .eq("id", data.user.id);
+  }
+
+  // Handle session / email confirmation
   if (!data.session) {
     if (!data.user.email_confirmed_at) {
       return {
@@ -205,23 +265,20 @@ export async function signup(
           "Account created. Please check your email to confirm your address, then sign in.",
       };
     }
-    // Edge case: email is already confirmed but Supabase didn't hand
-    // back a session (e.g. anonymous-to-permanent upgrade). Kick off a
-    // normal sign-in so the user lands on /intake on the next tick.
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
     if (signInError) {
       return {
-        success:
-          "Account created. Please sign in to continue.",
+        success: "Account created. Please sign in to continue.",
       };
     }
   }
 
-  // The (dashboard) layout will redirect resident-role + !intake_completed
-  // users to /intake, so sending them to /dashboard is fine and keeps the
-  // redirect logic centralized.
+  // Route based on role
+  if (userRole === "admin" || userRole === "manager") {
+    redirect("/admin");
+  }
   redirect("/dashboard");
 }

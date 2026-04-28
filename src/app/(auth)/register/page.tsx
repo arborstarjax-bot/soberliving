@@ -1,7 +1,9 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
 import { useActionState } from "react";
+import { useSearchParams } from "next/navigation";
 import { signup } from "@/app/(auth)/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,17 +17,24 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-export default function RegisterPage() {
+function RegisterForm() {
+  const searchParams = useSearchParams();
+  const invite = searchParams.get("invite");
   const [state, action, pending] = useActionState(signup, undefined);
+
+  const isInvite = !!invite;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">Create account</CardTitle>
+          <CardTitle className="text-2xl font-bold">
+            {isInvite ? "Accept Invitation" : "Create Your Workspace"}
+          </CardTitle>
           <CardDescription>
-            Sign up to start your application. You&apos;ll complete an intake
-            packet, and staff will review and assign housing.
+            {isInvite
+              ? "Create an account to join the workspace."
+              : "Sign up and set up your sober living workspace. You\u2019ll be the admin."}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -35,6 +44,10 @@ export default function RegisterPage() {
             </p>
           ) : (
             <form action={action} className="space-y-4">
+              {invite && (
+                <input type="hidden" name="invite_token" value={invite} />
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
@@ -46,6 +59,7 @@ export default function RegisterPage() {
                   required
                 />
               </div>
+
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <Input
@@ -60,25 +74,67 @@ export default function RegisterPage() {
                   At least 8 characters.
                 </p>
               </div>
+
+              {!isInvite && (
+                <div className="space-y-2">
+                  <Label htmlFor="workspace_name">Workspace Name</Label>
+                  <Input
+                    id="workspace_name"
+                    name="workspace_name"
+                    type="text"
+                    placeholder="e.g. Jax Sober Living"
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The name of your sober living organization.
+                  </p>
+                </div>
+              )}
+
               {state?.error && (
                 <p className="text-sm text-destructive">{state.error}</p>
               )}
               <Button type="submit" className="w-full" disabled={pending}>
-                {pending ? "Creating account..." : "Sign Up"}
+                {pending
+                  ? "Creating account..."
+                  : isInvite
+                    ? "Join Workspace"
+                    : "Create Workspace"}
               </Button>
             </form>
           )}
         </CardContent>
-        <CardFooter className="justify-center text-sm text-muted-foreground">
-          Already have an account?{" "}
-          <Link
-            href="/login"
-            className="ml-1 font-medium text-primary hover:underline"
-          >
-            Sign in
-          </Link>
+        <CardFooter className="flex flex-col items-center gap-2 text-sm text-muted-foreground">
+          <div>
+            Already have an account?{" "}
+            <Link
+              href="/login"
+              className="ml-1 font-medium text-primary hover:underline"
+            >
+              Sign in
+            </Link>
+          </div>
+          {!isInvite && (
+            <div>
+              Have an invite link?{" "}
+              <Link
+                href="/login"
+                className="ml-1 font-medium text-primary hover:underline"
+              >
+                Sign in to accept it
+              </Link>
+            </div>
+          )}
         </CardFooter>
       </Card>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterForm />
+    </Suspense>
   );
 }
