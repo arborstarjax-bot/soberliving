@@ -18,6 +18,7 @@ import {
 import { generateReceiptPdf } from "@/lib/payments/receipt-pdf";
 import { z } from "zod";
 import { getHouseToday } from "@/lib/timezone";
+import { getWorkspaceSettings } from "@/lib/workspace";
 
 const FACILITY_NAME = "Sober Living";
 
@@ -199,7 +200,17 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     return { error: `Bed assignment failed: ${bedError.message}` };
   }
 
+  // Check workspace commitment setting — auto-sign if not required
+  let commitmentStatus: "pending_resident_signature" | "active" = "pending_resident_signature";
+  if (currentUser.workspace_id) {
+    const wsSettings = await getWorkspaceSettings(currentUser.workspace_id);
+    if (wsSettings && !wsSettings.require_commitment) {
+      commitmentStatus = "active";
+    }
+  }
+
   // Create house commitment record
+  const now = new Date().toISOString();
   const { data: commitmentRow, error: commitError } = await adminClient
     .from("house_commitments")
     .insert({
@@ -217,9 +228,12 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
       property_location: propertyLocation,
       notes: data.notes || null,
       staff_signature: data.staffSignature,
-      staff_signed_at: new Date().toISOString(),
+      staff_signed_at: now,
       staff_signer_id: currentUser.id,
-      status: "pending_resident_signature",
+      status: commitmentStatus,
+      ...(commitmentStatus === "active"
+        ? { resident_signed_at: now }
+        : {}),
       // Existing-tenant activation flags — consumed by the charge
       // openers in lib/payments/charges.ts.
       billing_anchor_date:
@@ -239,6 +253,15 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
   }
 
   const commitmentId = commitmentRow.id as string;
+
+  // When commitment is auto-signed (workspace doesn't require it),
+  // mark the user as commitment_signed so they aren't gated.
+  if (commitmentStatus === "active") {
+    await adminClient
+      .from("users")
+      .update({ commitment_signed: true })
+      .eq("id", data.userId);
+  }
 
   // Create check-in restrictions if provided
   if (data.checkInRestrictions && data.checkInRestrictions.length > 0) {
