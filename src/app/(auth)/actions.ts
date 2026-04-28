@@ -125,6 +125,9 @@ export async function signup(
     if (new Date(inviteRow.expires_at) < new Date()) {
       return { error: "This invite has expired" };
     }
+    if (inviteRow.email.toLowerCase() !== email.toLowerCase()) {
+      return { error: "This invite was sent to a different email address" };
+    }
     invite = inviteRow;
   }
 
@@ -234,27 +237,44 @@ export async function signup(
     }
 
     // Add creator as owner member
-    await adminClient.from("workspace_members").insert({
+    const { error: ownerError } = await adminClient.from("workspace_members").insert({
       workspace_id: workspace.id,
       user_id: data.user.id,
       role: "owner",
     });
 
+    if (ownerError) {
+      await adminClient.from("workspaces").delete().eq("id", workspace.id);
+      return { error: "Failed to set up workspace membership: " + ownerError.message };
+    }
+
     // Create default settings
-    await adminClient.from("workspace_settings").insert({
+    const { error: settingsError } = await adminClient.from("workspace_settings").insert({
       workspace_id: workspace.id,
     });
+
+    if (settingsError) {
+      return { error: "Failed to create workspace settings: " + settingsError.message };
+    }
 
     // Create default payment config
-    await adminClient.from("workspace_payment_config").insert({
+    const { error: payConfigError } = await adminClient.from("workspace_payment_config").insert({
       workspace_id: workspace.id,
     });
 
+    if (payConfigError) {
+      return { error: "Failed to create payment config: " + payConfigError.message };
+    }
+
     // Update user's workspace_id
-    await adminClient
+    const { error: userWsError } = await adminClient
       .from("users")
       .update({ workspace_id: workspace.id })
       .eq("id", data.user.id);
+
+    if (userWsError) {
+      return { error: "Failed to link workspace to user: " + userWsError.message };
+    }
   }
 
   // Handle session / email confirmation

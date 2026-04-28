@@ -102,8 +102,10 @@ export async function updateHouseCurfews(
     return { error: "House not found in your workspace" };
   }
 
-  // Delete existing curfews and replace
-  await admin.from("house_curfews").delete().eq("house_id", houseId);
+  // Upsert provided curfew days, then delete any days not in the set.
+  // This avoids the delete-then-insert race where a failed insert
+  // would leave the house with no curfews at all.
+  const submittedDays = curfews.map((c) => c.day_of_week);
 
   if (curfews.length > 0) {
     const rows = curfews.map((c) => ({
@@ -111,8 +113,21 @@ export async function updateHouseCurfews(
       day_of_week: c.day_of_week,
       curfew_time: c.curfew_time,
     }));
-    const { error } = await admin.from("house_curfews").insert(rows);
+    const { error } = await admin
+      .from("house_curfews")
+      .upsert(rows, { onConflict: "house_id,day_of_week" });
     if (error) return { error: error.message };
+  }
+
+  // Remove days that were toggled off
+  const allDays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+  const removedDays = allDays.filter((d) => !submittedDays.includes(d));
+  if (removedDays.length > 0) {
+    await admin
+      .from("house_curfews")
+      .delete()
+      .eq("house_id", houseId)
+      .in("day_of_week", removedDays);
   }
 
   revalidatePath("/admin/workspace");
