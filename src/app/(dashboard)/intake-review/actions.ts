@@ -488,15 +488,19 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     description: `${currentUser.full_name} completed intake review for ${targetUser.full_name} — assigned to ${house?.name || "house"}${data.moveInPayment ? ` (move-in payment: $${(data.moveInPayment.adminAmount + data.moveInPayment.rentAmount).toFixed(2)})` : ""}`,
   });
 
-  // Notify the applicant that their application was approved and there's
-  // a commitment waiting for their signature, plus admins + this house's
-  // managers for awareness. Skip the acting staff member.
+  // Notify the applicant that their application was approved. When
+  // commitment is required, direct them to sign it; otherwise welcome
+  // them straight to the dashboard.
+  const houseName = house?.name ?? "your assigned house";
   await sendNotification({
     userId: data.userId,
     type: "intake_approved",
     title: "Application Approved",
-    message: `Your application was approved. Please sign your house commitment to finalize your move-in at ${house?.name ?? "your assigned house"}.`,
-    actionUrl: "/sign-commitment",
+    message:
+      commitmentStatus === "active"
+        ? `Your application was approved. Welcome to ${houseName}!`
+        : `Your application was approved. Please sign your house commitment to finalize your move-in at ${houseName}.`,
+    actionUrl: commitmentStatus === "active" ? "/dashboard" : "/sign-commitment",
     entityType: "user",
     entityId: data.userId,
   });
