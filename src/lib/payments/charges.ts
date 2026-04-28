@@ -170,6 +170,7 @@ export async function openRentChargesForCommitment(
 
   if (!commitment || commitment.status !== "active") return 0;
   if (!commitment.resident_id) return 0;
+  if (!commitment.rent_amount || commitment.rent_amount <= 0) return 0;
 
   const frequency = normalizePaymentFrequency(commitment.payment_frequency);
 
@@ -411,6 +412,7 @@ export async function materializeNextRentCharge(commitmentId: string): Promise<{
 
   if (!commitment || commitment.status !== "active") return null;
   if (!commitment.resident_id) return null;
+  if (!commitment.rent_amount || commitment.rent_amount <= 0) return null;
 
   const frequency = normalizePaymentFrequency(commitment.payment_frequency);
 
