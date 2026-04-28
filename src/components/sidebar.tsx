@@ -208,10 +208,12 @@ export function Sidebar({
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground active:bg-sidebar-accent/60"
               )}
             >
-              <item.icon className="h-4 w-4 shrink-0" />
+              <span className="relative shrink-0">
+                <item.icon className="h-4 w-4" />
+                {(item.href === "/notifications" && !isActive && notificationBadge) ||
+                 (item.href === "/bulletin" && !isActive && bulletinBadge)}
+              </span>
               {item.label}
-              {item.href === "/notifications" && !isActive && notificationBadge}
-              {item.href === "/bulletin" && !isActive && bulletinBadge}
             </Link>
           );
         })}
@@ -280,7 +282,17 @@ export function Sidebar({
             <Menu className="h-5 w-5" />
           )}
         </button>
-        <span className="ml-2 font-semibold">Sober Living</span>
+        <span className="ml-2 font-semibold flex-1">Sober Living</span>
+        {role === "resident" && (
+          <Link
+            href="/notifications"
+            className="relative inline-flex items-center justify-center h-11 w-11 -mr-2 rounded-md text-sidebar-foreground hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60 active:scale-95 transition"
+            aria-label="Notifications"
+          >
+            <Bell className="h-5 w-5" />
+            {notificationBadge}
+          </Link>
+        )}
       </div>
 
       {/* Mobile overlay */}
