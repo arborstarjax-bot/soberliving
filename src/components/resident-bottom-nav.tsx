@@ -15,7 +15,8 @@ import {
   LogOut,
   X,
 } from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { usePrefetchRoutes } from "@/lib/use-prefetch-routes";
 
 interface BottomNavItem {
   label: string;
@@ -60,6 +61,12 @@ export function ResidentBottomNav({
   );
 
   const moreIsActive = MORE_ITEMS.some((item) => isActive(item.href));
+
+  const allRoutes = useMemo(
+    () => [...primaryItems, ...MORE_ITEMS].map((item) => item.href),
+    [primaryItems]
+  );
+  usePrefetchRoutes(allRoutes);
 
   // Close More panel on route change
   useEffect(() => {

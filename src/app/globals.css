@@ -148,6 +148,15 @@
   }
 }
 
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-page-enter {
+  animation: page-enter 150ms ease-out;
+}
+
 @layer utilities {
   /* Hide the scrollbar track for horizontally-scrollable tab strips
      and pill rows on mobile, while keeping scroll behavior intact.

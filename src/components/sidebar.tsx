@@ -24,8 +24,9 @@ import {
   Flag,
   Building2,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { InstallAppButton } from "@/components/pwa/install-app-button";
+import { usePrefetchRoutes } from "@/lib/use-prefetch-routes";
 
 interface NavItem {
   label: string;
@@ -167,12 +168,17 @@ export function Sidebar({
 
   const filteredItems = NAV_ITEMS.filter((item) => {
     if (!item.roles.includes(role)) return false;
-    // Hide Leave Requests for residents with No Leave restriction
     if (item.href === "/leave-requests" && hasNoLeaveRestriction) return false;
-    // Incidents is now a tab inside Discipline — hide from nav
     if (item.href === "/incidents") return false;
     return true;
   });
+
+  const routesToPrefetch = useMemo(
+    () => filteredItems.map((item) => item.href),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [role, hasNoLeaveRestriction]
+  );
+  usePrefetchRoutes(routesToPrefetch);
 
   const navContent = (
     <>

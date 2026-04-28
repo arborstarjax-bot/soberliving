@@ -283,14 +283,14 @@ export function ResidentsTabs({
                 {!p.is_active && <Badge variant="destructive">Inactive</Badge>}
               </div>
               {p.phone && (
-                <a
-                  href={`tel:${p.phone}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); window.location.href = `tel:${p.phone}`; }}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
                 >
                   <Phone className="h-3 w-3" />
                   {p.phone}
-                </a>
+                </button>
               )}
               <p className="text-xs text-muted-foreground">
                 {p.house_name}
