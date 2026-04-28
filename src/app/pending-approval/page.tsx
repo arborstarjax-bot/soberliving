@@ -25,8 +25,10 @@ export default async function PendingApprovalPage() {
     redirect("/dashboard");
   }
 
-  // If denied, send to login
+  // If denied, sign out and send to login
   if (user.workspace_member_status === "denied") {
+    const supabase = await createClient();
+    await supabase.auth.signOut();
     redirect("/login");
   }
 

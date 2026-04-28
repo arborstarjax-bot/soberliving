@@ -44,19 +44,20 @@ export default async function DashboardLayout({
     redirect("/pending-approval");
   }
 
+  // Check whether the workspace requires commitment agreements.
+  // Used by both the initial commitment gate and the pending-amendment gate.
+  let commitmentRequired = true;
+  if (user.workspace_id) {
+    const wsSettings = await getWorkspaceSettings(user.workspace_id);
+    if (wsSettings && !wsSettings.require_commitment) {
+      commitmentRequired = false;
+    }
+  }
+
   // Redirect residents who completed intake but haven't signed their commitment agreement.
   // Skip if the workspace doesn't require commitment.
-  if (user.role === "resident" && user.intake_completed && !user.commitment_signed) {
-    if (user.workspace_id) {
-      const wsSettings = await getWorkspaceSettings(user.workspace_id);
-      if (wsSettings && !wsSettings.require_commitment) {
-        // Skip commitment — let them through to the dashboard
-      } else {
-        redirect("/sign-commitment");
-      }
-    } else {
-      redirect("/sign-commitment");
-    }
+  if (user.role === "resident" && user.intake_completed && !user.commitment_signed && commitmentRequired) {
+    redirect("/sign-commitment");
   }
 
   // Redirect residents who have a pending amendment awaiting
@@ -66,7 +67,8 @@ export default async function DashboardLayout({
   // could keep using the app and never see the updated agreement.
   // requireAuth computes has_pending_commitment via a live query
   // against house_commitments, so this is always source-of-truth.
-  if (user.role === "resident" && user.has_pending_commitment) {
+  // Skip when workspace doesn't require commitments.
+  if (user.role === "resident" && user.has_pending_commitment && commitmentRequired) {
     redirect("/sign-commitment");
   }
 
