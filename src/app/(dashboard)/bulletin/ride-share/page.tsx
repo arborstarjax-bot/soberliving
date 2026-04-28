@@ -47,7 +47,7 @@ export default async function RideSharePage({
 
   let visibleHouseIds: string[] | null = null;
   if (user.role === "admin") {
-    visibleHouseIds = user.workspace_house_ids.length > 0
+    visibleHouseIds = user.workspace_id
       ? user.workspace_house_ids
       : null;
   } else if (user.role === "resident") {

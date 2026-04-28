@@ -18,6 +18,8 @@ export async function BlockersListSection({ user }: { user: SessionUser }) {
     .eq("status", "active");
   if (user.role === "admin" && user.workspace_house_ids.length > 0) {
     residentsQuery = residentsQuery.in("house_id", user.workspace_house_ids);
+  } else if (user.role === "admin" && user.workspace_id) {
+    residentsQuery = residentsQuery.is("house_id", null);
   } else if (user.role === "manager") {
     residentsQuery = residentsQuery.in("house_id", user.assigned_house_ids);
   }
