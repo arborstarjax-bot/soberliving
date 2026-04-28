@@ -36,9 +36,8 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
       .single(),
     adminForWorkspace
       .from("workspace_members")
-      .select("workspace_id, role")
+      .select("workspace_id, role, status")
       .eq("user_id", user.id)
-      .eq("status", "active")
       .limit(1)
       .maybeSingle(),
   ]);
@@ -192,8 +191,11 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     residentRows.every((r) => r.status !== "active");
 
   const workspaceId: string | null = profileWsId;
+  const memberStatus = (workspaceMemberRes.data?.status as string) ?? null;
   const workspaceRole: WorkspaceRole | null =
-    (workspaceMemberRes.data?.role as WorkspaceRole) ?? null;
+    memberStatus === "active"
+      ? (workspaceMemberRes.data?.role as WorkspaceRole) ?? null
+      : null;
   const workspaceHouseIds: string[] =
     workspaceHouseRes.data?.map((h) => h.id) ?? [];
 
@@ -212,6 +214,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     has_pending_commitment: hasPendingCommitment,
     pending_blocker_id: pendingBlockerId,
     resident_discharged: residentDischarged,
+    workspace_member_status: memberStatus as SessionUser["workspace_member_status"],
   };
 });
 
