@@ -254,7 +254,12 @@ export async function signup(
     });
 
     if (settingsError) {
-      return { error: "Failed to create workspace settings: " + settingsError.message };
+      await adminClient.from("workspace_members").delete().eq("workspace_id", workspace.id);
+      await adminClient.from("workspaces").delete().eq("id", workspace.id);
+      await adminClient.from("user_roles").delete().eq("user_id", data.user.id);
+      await adminClient.from("users").delete().eq("id", data.user.id);
+      await adminClient.auth.admin.deleteUser(data.user.id).catch(() => {});
+      return { error: "Failed to create workspace settings: " + settingsError.message + ". Please try again." };
     }
 
     // Create default payment config
@@ -263,7 +268,13 @@ export async function signup(
     });
 
     if (payConfigError) {
-      return { error: "Failed to create payment config: " + payConfigError.message };
+      await adminClient.from("workspace_settings").delete().eq("workspace_id", workspace.id);
+      await adminClient.from("workspace_members").delete().eq("workspace_id", workspace.id);
+      await adminClient.from("workspaces").delete().eq("id", workspace.id);
+      await adminClient.from("user_roles").delete().eq("user_id", data.user.id);
+      await adminClient.from("users").delete().eq("id", data.user.id);
+      await adminClient.auth.admin.deleteUser(data.user.id).catch(() => {});
+      return { error: "Failed to create payment config: " + payConfigError.message + ". Please try again." };
     }
 
     // Update user's workspace_id
@@ -273,7 +284,14 @@ export async function signup(
       .eq("id", data.user.id);
 
     if (userWsError) {
-      return { error: "Failed to link workspace to user: " + userWsError.message };
+      await adminClient.from("workspace_payment_config").delete().eq("workspace_id", workspace.id);
+      await adminClient.from("workspace_settings").delete().eq("workspace_id", workspace.id);
+      await adminClient.from("workspace_members").delete().eq("workspace_id", workspace.id);
+      await adminClient.from("workspaces").delete().eq("id", workspace.id);
+      await adminClient.from("user_roles").delete().eq("user_id", data.user.id);
+      await adminClient.from("users").delete().eq("id", data.user.id);
+      await adminClient.auth.admin.deleteUser(data.user.id).catch(() => {});
+      return { error: "Failed to link workspace to user: " + userWsError.message + ". Please try again." };
     }
   }
 
