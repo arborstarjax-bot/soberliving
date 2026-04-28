@@ -10,6 +10,7 @@ import { ApplicationReview } from "./application-review";
 import { EditPendingCommitmentDialog } from "./edit-pending-commitment-dialog";
 import { ResendCommitmentButton } from "./resend-commitment-button";
 import { formatDateOnly, getHouseToday } from "@/lib/timezone";
+import { getWorkspaceSettings } from "@/lib/workspace";
 
 type Tab = "pending" | "approved" | "denied";
 
@@ -69,6 +70,12 @@ export default async function IntakeReviewPage({
         .eq("is_active", true)
         .order("name"),
     ]);
+
+  // Fetch workspace settings to determine if commitment is required
+  const wsSettings = currentUser.workspace_id
+    ? await getWorkspaceSettings(currentUser.workspace_id)
+    : null;
+  const requireCommitment = wsSettings?.require_commitment !== false;
 
   const intakeUsers = intakeUsersRaw ?? [];
   const commitments = commitmentsRaw ?? [];
@@ -191,6 +198,7 @@ export default async function IntakeReviewPage({
                   formData={fd}
                   signatures={sigs}
                   staffSignedOffAt={staffSignedOffAt}
+                  requireCommitment={requireCommitment}
                 />
               </CardContent>
             </Card>
