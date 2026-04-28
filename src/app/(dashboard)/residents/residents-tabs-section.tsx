@@ -33,7 +33,7 @@ export async function ResidentsTabsSection({
   let residentsQuery = supabase
     .from("residents")
     .select(
-      "id, full_name, status, move_in_date, sobriety_date, house_id, user_id, houses(name)"
+      "id, full_name, phone, status, move_in_date, sobriety_date, house_id, user_id, houses(name)"
     )
     .order("full_name");
   if (houseFilter) {
@@ -106,6 +106,7 @@ export async function ResidentsTabsSection({
   const normalizedResidents = (residents ?? []).map((r) => ({
     id: r.id,
     full_name: r.full_name,
+    phone: (r as Record<string, unknown>).phone as string | null,
     status: r.status,
     move_in_date: r.move_in_date,
     sobriety_date: r.sobriety_date,
