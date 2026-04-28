@@ -343,6 +343,9 @@ export interface SessionUser {
   // use assigned_house_ids instead. Used by getAccessibleHouseFilter
   // to scope admin queries to their workspace.
   workspace_house_ids: string[];
+  // Workspace membership status: "active", "pending", or "denied".
+  // Pending users can complete intake but not access the dashboard.
+  workspace_member_status: "active" | "pending" | "denied" | null;
 }
 
 // --- Blockers ---

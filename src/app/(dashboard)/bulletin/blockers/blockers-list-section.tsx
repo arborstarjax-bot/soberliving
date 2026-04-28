@@ -44,6 +44,8 @@ export async function BlockersListSection({ user }: { user: SessionUser }) {
     .limit(100);
   if (wsUserIds && wsUserIds.length > 0) {
     blockersQuery = blockersQuery.in("created_by", wsUserIds);
+  } else if (wsUserIds && wsUserIds.length === 0) {
+    blockersQuery = blockersQuery.eq("created_by", user.id);
   } else if (user.role === "manager") {
     blockersQuery = blockersQuery.eq("created_by", user.id);
   }

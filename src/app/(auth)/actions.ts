@@ -51,7 +51,7 @@ export async function login(
     return { error: "Your account is not active. Please contact an administrator." };
   }
 
-  // Check if workspace membership is pending approval
+  // Check if workspace membership was denied
   const adminClient = createAdminClient();
   const userWsId = (profile as { workspace_id?: string | null } | null)?.workspace_id;
   let membershipQuery = adminClient
@@ -65,14 +65,13 @@ export async function login(
     .limit(1)
     .maybeSingle();
 
-  if (membership?.status === "pending") {
-    await supabase.auth.signOut();
-    return { error: "Your account is pending admin approval. You'll be notified once approved." };
-  }
   if (membership?.status === "denied") {
     await supabase.auth.signOut();
     return { error: "Your request to join this workspace was denied. Please contact the administrator." };
   }
+
+  // Pending members are allowed through — they can still complete
+  // intake/quick-signup. The dashboard layout gates them after that.
 
   // Redirect based on role
   const { data: roleRecord } = await supabase
@@ -223,13 +222,6 @@ export async function signup(
       .from("users")
       .update({ workspace_id: workspace.id })
       .eq("id", data.user.id);
-
-    // Sign out so the pending user can't access authenticated pages
-    await supabase.auth.signOut();
-
-    return {
-      success: `Your request to join "${workspace.name}" has been submitted. An admin will review and approve your account.`,
-    };
   } else {
     // Create new workspace
     const slug = generateSlug(workspaceName) + "-" + Date.now().toString(36);

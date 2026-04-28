@@ -34,6 +34,16 @@ export default async function DashboardLayout({
     redirect("/intake");
   }
 
+  // Gate pending workspace members after intake: they've submitted their
+  // application/registration but still need admin approval before proceeding.
+  if (
+    user.role === "resident" &&
+    user.intake_completed &&
+    user.workspace_member_status === "pending"
+  ) {
+    redirect("/pending-approval");
+  }
+
   // Redirect residents who completed intake but haven't signed their commitment agreement.
   // Skip if the workspace doesn't require commitment.
   if (user.role === "resident" && user.intake_completed && !user.commitment_signed) {
