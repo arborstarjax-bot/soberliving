@@ -15,7 +15,7 @@ export default async function UsersPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireRole("admin");
+  const user = await requireRole("admin");
   const sp = await searchParams;
 
   return (
@@ -32,7 +32,7 @@ export default async function UsersPage({
       </div>
 
       <Suspense fallback={<ListSkeleton rows={8} rowClassName="h-16 w-full" />}>
-        <UsersListSection searchParams={sp} />
+        <UsersListSection searchParams={sp} workspaceId={user.workspace_id} />
       </Suspense>
     </div>
   );

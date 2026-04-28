@@ -99,7 +99,7 @@ export function ResidentBottomNav({
               <X className="h-4 w-4" />
             </button>
           </div>
-          <nav className="grid grid-cols-4 gap-1 p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          <nav className="grid grid-cols-4 gap-1 p-3">
             {MORE_ITEMS.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.href);
@@ -121,7 +121,7 @@ export function ResidentBottomNav({
               );
             })}
           </nav>
-          <div className="px-4 pb-3">
+          <div className="px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
             <form action="/api/auth/logout" method="POST">
               <button
                 type="submit"

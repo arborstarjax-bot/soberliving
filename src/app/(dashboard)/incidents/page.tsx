@@ -44,7 +44,7 @@ export default async function IncidentsPage({ searchParams }: IncidentsPageProps
   let residentsQuery = supabase.from("residents").select("id, full_name, house_id").eq("status", "active").order("full_name");
   if (houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
   const [allHouses, { data: residents }] = await Promise.all([
-    getCachedActiveHouses(),
+    getCachedActiveHouses(user.workspace_id),
     residentsQuery,
   ]);
   const houses = houseFilter

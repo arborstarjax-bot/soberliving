@@ -102,9 +102,6 @@ export async function updateHouseCurfews(
     return { error: "House not found in your workspace" };
   }
 
-  // Upsert provided curfew days, then delete any days not in the set.
-  // This avoids the delete-then-insert race where a failed insert
-  // would leave the house with no curfews at all.
   const submittedDays = curfews.map((c) => c.day_of_week);
 
   if (curfews.length > 0) {
@@ -119,7 +116,6 @@ export async function updateHouseCurfews(
     if (error) return { error: error.message };
   }
 
-  // Remove days that were toggled off
   const allDays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
   const removedDays = allDays.filter((d) => !submittedDays.includes(d));
   if (removedDays.length > 0) {
@@ -135,83 +131,103 @@ export async function updateHouseCurfews(
   return {};
 }
 
-// --- Invite Members ---
+// --- Workspace Invite Link ---
 
-export async function sendWorkspaceInvite(
-  workspaceId: string,
-  email: string,
-  role: string
-) {
+export async function getWorkspaceInviteLink() {
   const user = await requireRole("admin");
-  if (!user.workspace_id || user.workspace_id !== workspaceId) {
-    return { error: "Not authorized" };
-  }
+  if (!user.workspace_id) return { error: "Not authorized", inviteUrl: "" };
 
   const admin = createAdminClient();
-
-  // Check if already a member
-  const { data: existing } = await admin
-    .from("workspace_members")
-    .select("id")
-    .eq("workspace_id", workspaceId)
-    .eq("user_id", (
-      await admin.from("users").select("id").eq("email", email).maybeSingle()
-    ).data?.id ?? "")
-    .maybeSingle();
-
-  if (existing) {
-    return { error: "This user is already a member of the workspace" };
-  }
-
-  // Check for pending invite
-  const { data: pendingInvite } = await admin
-    .from("workspace_invites")
-    .select("id")
-    .eq("workspace_id", workspaceId)
-    .eq("email", email)
-    .is("accepted_at", null)
-    .gt("expires_at", new Date().toISOString())
-    .maybeSingle();
-
-  if (pendingInvite) {
-    return { error: "An invite is already pending for this email" };
-  }
-
-  const { data: inviteRow, error } = await admin
-    .from("workspace_invites")
-    .insert({
-      workspace_id: workspaceId,
-      email,
-      role,
-      invited_by: user.id,
-    })
-    .select("token")
+  const { data: ws } = await admin
+    .from("workspaces")
+    .select("invite_code")
+    .eq("id", user.workspace_id)
     .single();
 
-  if (error) return { error: error.message };
+  if (!ws) return { error: "Workspace not found", inviteUrl: "" };
 
   const appUrl = await getAppOrigin();
-  const inviteUrl = `${appUrl}/register?invite=${inviteRow.token}`;
-
-  revalidatePath("/admin/workspace");
-  return { inviteUrl };
+  return { inviteUrl: `${appUrl}/register?workspace=${ws.invite_code}` };
 }
 
-export async function revokeWorkspaceInvite(inviteId: string) {
+export async function regenerateInviteCode() {
   const user = await requireRole("admin");
   if (!user.workspace_id) return { error: "Not authorized" };
 
   const admin = createAdminClient();
+  // Generate a new random invite code
+  const { data, error } = await admin.rpc("gen_random_bytes_hex", { len: 16 }).single();
+
+  // Fallback: generate code in JS if RPC not available
+  const newCode = data ?? Array.from(crypto.getRandomValues(new Uint8Array(16)))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  const { error: updateError } = await admin
+    .from("workspaces")
+    .update({ invite_code: newCode })
+    .eq("id", user.workspace_id);
+
+  if (updateError) return { error: updateError.message };
+  revalidatePath("/admin/workspace");
+  return {};
+}
+
+// --- Approve / Deny Pending Members ---
+
+export async function approvePendingMember(memberId: string) {
+  const user = await requireRole("admin");
+  if (!user.workspace_id) return { error: "Not authorized" };
+
+  const admin = createAdminClient();
+
+  const { data: member } = await admin
+    .from("workspace_members")
+    .select("id, status, workspace_id")
+    .eq("id", memberId)
+    .eq("workspace_id", user.workspace_id)
+    .maybeSingle();
+
+  if (!member) return { error: "Member not found" };
+  if (member.status !== "pending") return { error: "Member is not pending approval" };
+
   const { error } = await admin
-    .from("workspace_invites")
-    .delete()
-    .eq("id", inviteId)
-    .eq("workspace_id", user.workspace_id);
+    .from("workspace_members")
+    .update({ status: "active" })
+    .eq("id", memberId);
 
   if (error) return { error: error.message };
   revalidatePath("/admin/workspace");
   return {};
 }
+
+export async function denyPendingMember(memberId: string) {
+  const user = await requireRole("admin");
+  if (!user.workspace_id) return { error: "Not authorized" };
+
+  const admin = createAdminClient();
+
+  const { data: member } = await admin
+    .from("workspace_members")
+    .select("id, status, workspace_id")
+    .eq("id", memberId)
+    .eq("workspace_id", user.workspace_id)
+    .maybeSingle();
+
+  if (!member) return { error: "Member not found" };
+  if (member.status !== "pending") return { error: "Member is not pending approval" };
+
+  const { error } = await admin
+    .from("workspace_members")
+    .update({ status: "denied" })
+    .eq("id", memberId);
+
+  if (error) return { error: error.message };
+  revalidatePath("/admin/workspace");
+  return {};
+}
+
+// --- Remove Members ---
 
 export async function removeWorkspaceMember(memberId: string) {
   const user = await requireRole("admin");
@@ -219,7 +235,6 @@ export async function removeWorkspaceMember(memberId: string) {
 
   const admin = createAdminClient();
 
-  // Don't allow removing the owner
   const { data: member } = await admin
     .from("workspace_members")
     .select("role, user_id")

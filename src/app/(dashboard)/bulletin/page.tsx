@@ -64,6 +64,7 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
           userId={user.id}
           userRole={user.role}
           assignedHouseIds={user.assigned_house_ids ?? []}
+          workspaceId={user.workspace_id}
         />
       </Suspense>
 

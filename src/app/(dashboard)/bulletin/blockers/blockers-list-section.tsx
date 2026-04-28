@@ -33,7 +33,7 @@ export async function BlockersListSection({ user }: { user: SessionUser }) {
 
   const [allHouses, { data: residentRows }, { data: blockers }] =
     await Promise.all([
-      getCachedActiveHouses(),
+      getCachedActiveHouses(user.workspace_id),
       residentsQuery,
       blockersQuery,
     ]);

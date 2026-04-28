@@ -51,6 +51,23 @@ export async function login(
     return { error: "Your account is not active. Please contact an administrator." };
   }
 
+  // Check if workspace membership is pending approval
+  const adminClient = createAdminClient();
+  const { data: membership } = await adminClient
+    .from("workspace_members")
+    .select("status")
+    .eq("user_id", data.user?.id ?? "")
+    .maybeSingle();
+
+  if (membership?.status === "pending") {
+    await supabase.auth.signOut();
+    return { error: "Your account is pending admin approval. You'll be notified once approved." };
+  }
+  if (membership?.status === "denied") {
+    await supabase.auth.signOut();
+    return { error: "Your request to join this workspace was denied. Please contact the administrator." };
+  }
+
   // Redirect based on role
   const { data: roleRecord } = await supabase
     .from("user_roles")
@@ -64,8 +81,7 @@ export async function login(
   }
   // Discharged residents (any residents row exists but none are
   // active) land on the lockout page instead of the dashboard.
-  const admin = createAdminClient();
-  const { data: residentRows } = await admin
+  const { data: residentRows } = await adminClient
     .from("residents")
     .select("status")
     .eq("user_id", data.user?.id ?? "");
@@ -82,56 +98,44 @@ export async function signup(
 ): Promise<AuthState | undefined> {
   const email = (formData.get("email") as string | null)?.trim() ?? "";
   const password = (formData.get("password") as string | null) ?? "";
+  const fullName = (formData.get("full_name") as string | null)?.trim() ?? "";
   const workspaceName = (formData.get("workspace_name") as string | null)?.trim() ?? "";
-  const inviteToken = (formData.get("invite_token") as string | null)?.trim() ?? "";
+  const workspaceCode = (formData.get("workspace_code") as string | null)?.trim() ?? "";
 
   if (!email) {
     return { error: "Email is required" };
+  }
+  if (!fullName) {
+    return { error: "Full name is required" };
   }
   if (password.length < 8) {
     return { error: "Password must be at least 8 characters" };
   }
 
-  const isInviteFlow = !!inviteToken;
+  const isJoinFlow = !!workspaceCode;
 
   // If creating a workspace, name is required
-  if (!isInviteFlow && !workspaceName) {
+  if (!isJoinFlow && !workspaceName) {
     return { error: "Workspace name is required" };
   }
 
   const adminClient = createAdminClient();
 
-  // Validate invite token if present
-  let invite: {
-    id: string;
-    workspace_id: string;
-    role: string;
-    email: string;
-  } | null = null;
+  // Validate workspace invite code if joining
+  let workspace: { id: string; name: string } | null = null;
 
-  if (isInviteFlow) {
-    const { data: inviteRow } = await adminClient
-      .from("workspace_invites")
-      .select("id, workspace_id, role, email, accepted_at, expires_at")
-      .eq("token", inviteToken)
+  if (isJoinFlow) {
+    const { data: wsRow } = await adminClient
+      .from("workspaces")
+      .select("id, name")
+      .eq("invite_code", workspaceCode)
       .maybeSingle();
 
-    if (!inviteRow) {
-      return { error: "Invalid invite link" };
+    if (!wsRow) {
+      return { error: "Invalid invite link. Please check with your administrator." };
     }
-    if (inviteRow.accepted_at) {
-      return { error: "This invite has already been used" };
-    }
-    if (new Date(inviteRow.expires_at) < new Date()) {
-      return { error: "This invite has expired" };
-    }
-    if (inviteRow.email.toLowerCase() !== email.toLowerCase()) {
-      return { error: "This invite was sent to a different email address" };
-    }
-    invite = inviteRow;
+    workspace = wsRow;
   }
-
-  const fullName = email.split("@")[0] || email;
 
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signUp({
@@ -159,7 +163,7 @@ export async function signup(
   }
 
   // Determine the role to assign
-  const userRole = isInviteFlow ? (invite!.role === "admin" || invite!.role === "owner" ? "admin" : invite!.role) : "admin";
+  const userRole = isJoinFlow ? "resident" : "admin";
 
   // Create profile
   const { error: profileError } = await adminClient
@@ -193,36 +197,34 @@ export async function signup(
     return { error: "Failed to assign role: " + roleError.message + ". Please try again." };
   }
 
-  if (isInviteFlow && invite) {
-    // Join existing workspace
+  if (isJoinFlow && workspace) {
+    // Join workspace with PENDING status — admin must approve
     const { error: memberError } = await adminClient
       .from("workspace_members")
       .insert({
-        workspace_id: invite.workspace_id,
+        workspace_id: workspace.id,
         user_id: data.user.id,
-        role: invite.role,
-        invited_by: null,
+        role: "resident",
+        status: "pending",
       });
 
     if (memberError) {
-      return { error: "Failed to join workspace: " + memberError.message };
+      return { error: "Failed to request workspace access: " + memberError.message };
     }
 
     // Update user's workspace_id
     await adminClient
       .from("users")
-      .update({ workspace_id: invite.workspace_id })
+      .update({ workspace_id: workspace.id })
       .eq("id", data.user.id);
 
-    // Mark invite as accepted
-    await adminClient
-      .from("workspace_invites")
-      .update({ accepted_at: new Date().toISOString() })
-      .eq("id", invite.id);
+    return {
+      success: `Your request to join "${workspace.name}" has been submitted. An admin will review and approve your account.`,
+    };
   } else {
     // Create new workspace
     const slug = generateSlug(workspaceName) + "-" + Date.now().toString(36);
-    const { data: workspace, error: wsError } = await adminClient
+    const { data: newWorkspace, error: wsError } = await adminClient
       .from("workspaces")
       .insert({
         name: workspaceName,
@@ -232,30 +234,31 @@ export async function signup(
       .select("id")
       .single();
 
-    if (wsError || !workspace) {
+    if (wsError || !newWorkspace) {
       return { error: "Failed to create workspace: " + (wsError?.message ?? "Unknown error") };
     }
 
-    // Add creator as owner member
+    // Add creator as owner member (active immediately)
     const { error: ownerError } = await adminClient.from("workspace_members").insert({
-      workspace_id: workspace.id,
+      workspace_id: newWorkspace.id,
       user_id: data.user.id,
       role: "owner",
+      status: "active",
     });
 
     if (ownerError) {
-      await adminClient.from("workspaces").delete().eq("id", workspace.id);
+      await adminClient.from("workspaces").delete().eq("id", newWorkspace.id);
       return { error: "Failed to set up workspace membership: " + ownerError.message };
     }
 
     // Create default settings
     const { error: settingsError } = await adminClient.from("workspace_settings").insert({
-      workspace_id: workspace.id,
+      workspace_id: newWorkspace.id,
     });
 
     if (settingsError) {
-      await adminClient.from("workspace_members").delete().eq("workspace_id", workspace.id);
-      await adminClient.from("workspaces").delete().eq("id", workspace.id);
+      await adminClient.from("workspace_members").delete().eq("workspace_id", newWorkspace.id);
+      await adminClient.from("workspaces").delete().eq("id", newWorkspace.id);
       await adminClient.from("user_roles").delete().eq("user_id", data.user.id);
       await adminClient.from("users").delete().eq("id", data.user.id);
       await adminClient.auth.admin.deleteUser(data.user.id).catch(() => {});
@@ -264,13 +267,13 @@ export async function signup(
 
     // Create default payment config
     const { error: payConfigError } = await adminClient.from("workspace_payment_config").insert({
-      workspace_id: workspace.id,
+      workspace_id: newWorkspace.id,
     });
 
     if (payConfigError) {
-      await adminClient.from("workspace_settings").delete().eq("workspace_id", workspace.id);
-      await adminClient.from("workspace_members").delete().eq("workspace_id", workspace.id);
-      await adminClient.from("workspaces").delete().eq("id", workspace.id);
+      await adminClient.from("workspace_settings").delete().eq("workspace_id", newWorkspace.id);
+      await adminClient.from("workspace_members").delete().eq("workspace_id", newWorkspace.id);
+      await adminClient.from("workspaces").delete().eq("id", newWorkspace.id);
       await adminClient.from("user_roles").delete().eq("user_id", data.user.id);
       await adminClient.from("users").delete().eq("id", data.user.id);
       await adminClient.auth.admin.deleteUser(data.user.id).catch(() => {});
@@ -280,14 +283,14 @@ export async function signup(
     // Update user's workspace_id
     const { error: userWsError } = await adminClient
       .from("users")
-      .update({ workspace_id: workspace.id })
+      .update({ workspace_id: newWorkspace.id })
       .eq("id", data.user.id);
 
     if (userWsError) {
-      await adminClient.from("workspace_payment_config").delete().eq("workspace_id", workspace.id);
-      await adminClient.from("workspace_settings").delete().eq("workspace_id", workspace.id);
-      await adminClient.from("workspace_members").delete().eq("workspace_id", workspace.id);
-      await adminClient.from("workspaces").delete().eq("id", workspace.id);
+      await adminClient.from("workspace_payment_config").delete().eq("workspace_id", newWorkspace.id);
+      await adminClient.from("workspace_settings").delete().eq("workspace_id", newWorkspace.id);
+      await adminClient.from("workspace_members").delete().eq("workspace_id", newWorkspace.id);
+      await adminClient.from("workspaces").delete().eq("id", newWorkspace.id);
       await adminClient.from("user_roles").delete().eq("user_id", data.user.id);
       await adminClient.from("users").delete().eq("id", data.user.id);
       await adminClient.auth.admin.deleteUser(data.user.id).catch(() => {});
@@ -314,8 +317,8 @@ export async function signup(
     }
   }
 
-  // Route based on role
-  if (userRole === "admin" || userRole === "manager") {
+  // Route based on role — workspace creator is always admin
+  if (userRole === "admin") {
     redirect("/admin");
   }
   redirect("/dashboard");

@@ -338,6 +338,11 @@ export interface SessionUser {
   // page — login, email, and documents are preserved so they can
   // return later, but they can't navigate the app while discharged.
   resident_discharged: boolean;
+  // House IDs that belong to the user's workspace. For admins this is
+  // all houses in their workspace (not all houses in the DB). Managers
+  // use assigned_house_ids instead. Used by getAccessibleHouseFilter
+  // to scope admin queries to their workspace.
+  workspace_house_ids: string[];
 }
 
 // --- Blockers ---

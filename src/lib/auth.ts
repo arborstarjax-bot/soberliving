@@ -38,6 +38,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
       .from("workspace_members")
       .select("workspace_id, role")
       .eq("user_id", user.id)
+      .eq("status", "active")
       .limit(1)
       .maybeSingle(),
   ]);
@@ -74,6 +75,20 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
           .eq("user_id", user.id)
           .is("unassigned_at", null)
       : Promise.resolve({ data: null as { house_id: string }[] | null });
+
+  // Admin workspace scoping: load all house IDs that belong to the
+  // admin's workspace so getAccessibleHouseFilter can limit queries.
+  // Use profile.workspace_id (from Phase 1) or workspace_members lookup.
+  const profileWsId = (profile as { workspace_id?: string | null }).workspace_id
+    ?? workspaceMemberRes.data?.workspace_id
+    ?? null;
+  const workspaceHousePromise =
+    role === "admin" && profileWsId
+      ? adminForWorkspace
+          .from("houses")
+          .select("id")
+          .eq("workspace_id", profileWsId)
+      : Promise.resolve({ data: null as { id: string }[] | null });
 
   // house_commitments has no resident-scoped SELECT policy, so every
   // reader uses the admin client (matches sign-commitment page,
@@ -151,11 +166,13 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     pendingCommitmentRes,
     pendingBlockerId,
     residentStatusRes,
+    workspaceHouseRes,
   ] = await Promise.all([
     assignmentsPromise,
     pendingCommitmentPromise,
     pendingBlockerPromise,
     residentStatusPromise,
+    workspaceHousePromise,
   ]);
 
   const assignedHouseIds: string[] =
@@ -174,12 +191,11 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     residentRows.length > 0 &&
     residentRows.every((r) => r.status !== "active");
 
-  const workspaceId: string | null =
-    (profile as { workspace_id?: string | null }).workspace_id ??
-    workspaceMemberRes.data?.workspace_id ??
-    null;
+  const workspaceId: string | null = profileWsId;
   const workspaceRole: WorkspaceRole | null =
     (workspaceMemberRes.data?.role as WorkspaceRole) ?? null;
+  const workspaceHouseIds: string[] =
+    workspaceHouseRes.data?.map((h) => h.id) ?? [];
 
   return {
     id: profile.id,
@@ -189,6 +205,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     workspace_id: workspaceId,
     workspace_role: workspaceRole,
     assigned_house_ids: assignedHouseIds,
+    workspace_house_ids: workspaceHouseIds,
     intake_completed: intakeCompleted,
     is_resident: isResident,
     commitment_signed: commitmentSigned,

@@ -23,7 +23,7 @@ export async function NewBlockerSection({ user }: { user: SessionUser }) {
   }
 
   const [allHouses, { data: residentRows }] = await Promise.all([
-    getCachedActiveHouses(),
+    getCachedActiveHouses(user.workspace_id),
     residentsQuery,
   ]);
 

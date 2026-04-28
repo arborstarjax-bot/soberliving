@@ -16,6 +16,7 @@ import { UserActions } from "./user-actions";
 
 interface UsersListSectionProps {
   searchParams: Record<string, string | string[] | undefined>;
+  workspaceId?: string | null;
 }
 
 /**
@@ -28,7 +29,7 @@ interface UsersListSectionProps {
  * stable. The common admin lookup ("find Jane Doe") works
  * naturally with alphabetical order.
  */
-export async function UsersListSection({ searchParams }: UsersListSectionProps) {
+export async function UsersListSection({ searchParams, workspaceId }: UsersListSectionProps) {
   const supabase = await createClient();
   const cursor = parseCursor(searchParams.c);
 
@@ -40,6 +41,7 @@ export async function UsersListSection({ searchParams }: UsersListSectionProps) 
     .order("full_name", { ascending: true })
     .order("id", { ascending: true })
     .limit(DEFAULT_PAGE_SIZE + 1);
+  if (workspaceId) query = query.eq("workspace_id", workspaceId);
 
   query = applyCursor(query, cursor, {
     tsColumn: "full_name",
@@ -49,7 +51,7 @@ export async function UsersListSection({ searchParams }: UsersListSectionProps) 
 
   const [{ data: rawUsers, error }, houses] = await Promise.all([
     query,
-    getCachedActiveHouses(),
+    getCachedActiveHouses(workspaceId),
   ]);
 
   if (error) {

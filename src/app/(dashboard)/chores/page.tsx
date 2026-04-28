@@ -37,7 +37,7 @@ export default async function ChoresPage({ searchParams }: ChoresPageProps) {
   // data. `selectedHouseId` is null when "All Houses" is active or
   // the provided id is outside the user's accessible set.
   const houseFilter = isStaff ? getAccessibleHouseFilter(user) : null;
-  const allHouses = isStaff ? await getCachedActiveHouses() : [];
+  const allHouses = isStaff ? await getCachedActiveHouses(user.workspace_id) : [];
   const accessibleHouses = houseFilter
     ? allHouses.filter((h) => houseFilter.includes(h.id))
     : allHouses;

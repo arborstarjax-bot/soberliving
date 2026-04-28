@@ -87,13 +87,15 @@ export async function getWorkspaceInvites(
 }
 
 export async function getWorkspaceMembers(
-  workspaceId: string
+  workspaceId: string,
+  status: "active" | "pending" | "denied" = "active"
 ): Promise<(WorkspaceMember & { user: { email: string; full_name: string } })[]> {
   const admin = createAdminClient();
   const { data } = await admin
     .from("workspace_members")
     .select("*, user:users(email, full_name)")
     .eq("workspace_id", workspaceId)
+    .eq("status", status)
     .order("joined_at");
   return (data ?? []) as (WorkspaceMember & { user: { email: string; full_name: string } })[];
 }

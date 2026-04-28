@@ -118,7 +118,7 @@ export default async function DisciplinePage() {
     { data: activeRestrictions },
     { data: pastRestrictions },
   ] = await Promise.all([
-    getCachedActiveHouses(),
+    getCachedActiveHouses(user.workspace_id),
     residentsQuery,
     demeritsQuery,
     warningsQuery,
