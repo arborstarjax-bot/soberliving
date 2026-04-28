@@ -16,8 +16,23 @@ export async function BlockersListSection({ user }: { user: SessionUser }) {
     .from("residents")
     .select("user_id, house_id")
     .eq("status", "active");
-  if (user.role === "manager") {
+  if (user.role === "admin" && user.workspace_house_ids.length > 0) {
+    residentsQuery = residentsQuery.in("house_id", user.workspace_house_ids);
+  } else if (user.role === "admin" && user.workspace_id) {
+    residentsQuery = residentsQuery.is("house_id", null);
+  } else if (user.role === "manager") {
     residentsQuery = residentsQuery.in("house_id", user.assigned_house_ids);
+  }
+
+  // Scope blockers to workspace: fetch workspace user IDs so we can
+  // filter blockers by author. Only admins/managers create blockers.
+  let wsUserIds: string[] | null = null;
+  if (user.role === "admin" && user.workspace_id) {
+    const { data: wsUsers } = await admin
+      .from("users")
+      .select("id")
+      .eq("workspace_id", user.workspace_id);
+    wsUserIds = wsUsers?.map((u) => u.id) ?? [];
   }
 
   let blockersQuery = admin
@@ -27,13 +42,17 @@ export async function BlockersListSection({ user }: { user: SessionUser }) {
     )
     .order("created_at", { ascending: false })
     .limit(100);
-  if (user.role === "manager") {
+  if (wsUserIds && wsUserIds.length > 0) {
+    blockersQuery = blockersQuery.in("created_by", wsUserIds);
+  } else if (wsUserIds && wsUserIds.length === 0) {
+    blockersQuery = blockersQuery.eq("created_by", user.id);
+  } else if (user.role === "manager") {
     blockersQuery = blockersQuery.eq("created_by", user.id);
   }
 
   const [allHouses, { data: residentRows }, { data: blockers }] =
     await Promise.all([
-      getCachedActiveHouses(),
+      getCachedActiveHouses(user.workspace_id),
       residentsQuery,
       blockersQuery,
     ]);

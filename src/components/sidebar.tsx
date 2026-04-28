@@ -22,9 +22,11 @@ import {
   Folder,
   DollarSign,
   Flag,
+  Building2,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { InstallAppButton } from "@/components/pwa/install-app-button";
+import { usePrefetchRoutes } from "@/lib/use-prefetch-routes";
 
 interface NavItem {
   label: string;
@@ -126,6 +128,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: Bell,
     roles: ["admin", "manager", "resident"],
   },
+  {
+    label: "Workspace",
+    href: "/admin/workspace",
+    icon: Building2,
+    roles: ["admin"],
+  },
   // Intake Review is now a tab inside the Residents page
   // Users & Roles folded into Residents page — /users route still works for direct access
   // Activity Log is no longer a primary nav item — reachable from the
@@ -160,12 +168,17 @@ export function Sidebar({
 
   const filteredItems = NAV_ITEMS.filter((item) => {
     if (!item.roles.includes(role)) return false;
-    // Hide Leave Requests for residents with No Leave restriction
     if (item.href === "/leave-requests" && hasNoLeaveRestriction) return false;
-    // Incidents is now a tab inside Discipline — hide from nav
     if (item.href === "/incidents") return false;
     return true;
   });
+
+  const routesToPrefetch = useMemo(
+    () => filteredItems.map((item) => item.href),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [role, hasNoLeaveRestriction]
+  );
+  usePrefetchRoutes(routesToPrefetch);
 
   const navContent = (
     <>
@@ -201,10 +214,12 @@ export function Sidebar({
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground active:bg-sidebar-accent/60"
               )}
             >
-              <item.icon className="h-4 w-4 shrink-0" />
+              <span className="relative shrink-0">
+                <item.icon className="h-4 w-4" />
+                {(item.href === "/notifications" && !isActive && notificationBadge) ||
+                 (item.href === "/bulletin" && !isActive && bulletinBadge)}
+              </span>
               {item.label}
-              {item.href === "/notifications" && !isActive && notificationBadge}
-              {item.href === "/bulletin" && !isActive && bulletinBadge}
             </Link>
           );
         })}
@@ -273,7 +288,17 @@ export function Sidebar({
             <Menu className="h-5 w-5" />
           )}
         </button>
-        <span className="ml-2 font-semibold">Sober Living</span>
+        <span className="ml-2 font-semibold flex-1">Sober Living</span>
+        {role === "resident" && (
+          <Link
+            href="/notifications"
+            className="relative inline-flex items-center justify-center h-11 w-11 -mr-2 rounded-md text-sidebar-foreground hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60 active:scale-95 transition"
+            aria-label="Notifications"
+          >
+            <Bell className="h-5 w-5" />
+            {notificationBadge}
+          </Link>
+        )}
       </div>
 
       {/* Mobile overlay */}

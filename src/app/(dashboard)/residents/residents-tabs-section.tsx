@@ -5,6 +5,7 @@ import { getDaysSober } from "@/lib/milestones";
 import { getHouseToday } from "@/lib/timezone";
 import { getCheckInBatches } from "../check-ins/actions";
 import { ResidentsTabs } from "./residents-tabs";
+import { getWorkspaceSettings } from "@/lib/workspace";
 
 /**
  * Heavy data gather for the Residents page. Rendered inside a
@@ -32,7 +33,7 @@ export async function ResidentsTabsSection({
   let residentsQuery = supabase
     .from("residents")
     .select(
-      "id, full_name, status, move_in_date, sobriety_date, house_id, user_id, houses(name)"
+      "id, full_name, phone, status, move_in_date, sobriety_date, house_id, user_id, houses(name)"
     )
     .order("full_name");
   if (houseFilter) {
@@ -105,6 +106,7 @@ export async function ResidentsTabsSection({
   const normalizedResidents = (residents ?? []).map((r) => ({
     id: r.id,
     full_name: r.full_name,
+    phone: (r as Record<string, unknown>).phone as string | null,
     status: r.status,
     move_in_date: r.move_in_date,
     sobriety_date: r.sobriety_date,
@@ -347,6 +349,11 @@ export async function ResidentsTabsSection({
     (checkInBatchesResult as { batches?: CheckInBatch[] } | null)?.batches ??
     [];
 
+  const wsSettings = user.workspace_id
+    ? await getWorkspaceSettings(user.workspace_id)
+    : null;
+  const requireCommitment = wsSettings?.require_commitment !== false;
+
   return (
     <ResidentsTabs
       houses={houses ?? []}
@@ -360,6 +367,7 @@ export async function ResidentsTabsSection({
       intakeAwaiting={intakeAwaiting}
       intakeDenied={intakeDenied}
       checkInBatches={checkInBatches}
+      requireCommitment={requireCommitment}
     />
   );
 }

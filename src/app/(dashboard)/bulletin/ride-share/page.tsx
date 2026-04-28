@@ -24,11 +24,11 @@ export default async function RideSharePage({
   let postableHouses: { id: string; name: string }[] = [];
   let myHouseId: string | null = null;
   if (user.role === "admin") {
-    postableHouses = await getCachedActiveHouses();
+    postableHouses = await getCachedActiveHouses(user.workspace_id);
   } else if (user.role === "manager") {
     if (user.assigned_house_ids.length > 0) {
       const assigned = new Set(user.assigned_house_ids);
-      const all = await getCachedActiveHouses();
+      const all = await getCachedActiveHouses(user.workspace_id);
       postableHouses = all.filter((h) => assigned.has(h.id));
     }
   } else {
@@ -46,7 +46,11 @@ export default async function RideSharePage({
   }
 
   let visibleHouseIds: string[] | null = null;
-  if (user.role === "resident") {
+  if (user.role === "admin") {
+    visibleHouseIds = user.workspace_id
+      ? user.workspace_house_ids
+      : null;
+  } else if (user.role === "resident") {
     visibleHouseIds = myHouseId ? [myHouseId] : [];
   } else if (user.role === "manager") {
     visibleHouseIds =

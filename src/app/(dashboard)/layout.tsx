@@ -2,7 +2,9 @@ import { Suspense } from "react";
 import { requireAuth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
+import { ResidentBottomNav } from "@/components/resident-bottom-nav";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { getWorkspaceSettings } from "@/lib/workspace";
 import { NotificationBadge } from "./notification-badge";
 import { BulletinBadge } from "./bulletin-badge";
 
@@ -20,14 +22,41 @@ export default async function DashboardLayout({
     redirect("/discharged");
   }
 
-  // Redirect resident-role users who haven't completed intake
-  // Only applies to role=resident, NOT admins/managers who are also marked as residents
+  // Redirect resident-role users who haven't completed intake.
+  // Route to quick-signup when the workspace doesn't require application.
   if (user.role === "resident" && !user.intake_completed) {
+    if (user.workspace_id) {
+      const wsSettings = await getWorkspaceSettings(user.workspace_id);
+      if (wsSettings && !wsSettings.require_application) {
+        redirect("/quick-signup");
+      }
+    }
     redirect("/intake");
   }
 
-  // Redirect residents who completed intake but haven't signed their commitment agreement
-  if (user.role === "resident" && user.intake_completed && !user.commitment_signed) {
+  // Gate pending workspace members after intake: they've submitted their
+  // application/registration but still need admin approval before proceeding.
+  if (
+    user.role === "resident" &&
+    user.intake_completed &&
+    user.workspace_member_status === "pending"
+  ) {
+    redirect("/pending-approval");
+  }
+
+  // Check whether the workspace requires commitment agreements.
+  // Used by both the initial commitment gate and the pending-amendment gate.
+  let commitmentRequired = true;
+  if (user.workspace_id) {
+    const wsSettings = await getWorkspaceSettings(user.workspace_id);
+    if (wsSettings && !wsSettings.require_commitment) {
+      commitmentRequired = false;
+    }
+  }
+
+  // Redirect residents who completed intake but haven't signed their commitment agreement.
+  // Skip if the workspace doesn't require commitment.
+  if (user.role === "resident" && user.intake_completed && !user.commitment_signed && commitmentRequired) {
     redirect("/sign-commitment");
   }
 
@@ -38,7 +67,8 @@ export default async function DashboardLayout({
   // could keep using the app and never see the updated agreement.
   // requireAuth computes has_pending_commitment via a live query
   // against house_commitments, so this is always source-of-truth.
-  if (user.role === "resident" && user.has_pending_commitment) {
+  // Skip when workspace doesn't require commitments.
+  if (user.role === "resident" && user.has_pending_commitment && commitmentRequired) {
     redirect("/sign-commitment");
   }
 
@@ -79,17 +109,11 @@ export default async function DashboardLayout({
     user.role === "resident"
       ? (async () => {
           const supabase = await createClient();
-          const { data: myResident } = await supabase
-            .from("residents")
-            .select("id")
-            .eq("user_id", user.id)
-            .eq("status", "active")
-            .maybeSingle();
-          if (!myResident) return false;
-          const { data: noLeave } = await supabase
+          const { data } = await supabase
             .from("restrictions")
-            .select("id")
-            .eq("resident_id", myResident.id)
+            .select("id, residents!inner(user_id)")
+            .eq("residents.user_id", user.id)
+            .eq("residents.status", "active")
             .eq("is_active", true)
             .in("restriction_type", [
               "no_leave",
@@ -98,7 +122,7 @@ export default async function DashboardLayout({
             ])
             .limit(1)
             .maybeSingle();
-          return !!noLeave;
+          return !!data;
         })()
       : Promise.resolve(false);
 
@@ -111,42 +135,59 @@ export default async function DashboardLayout({
     redirect(`/check-in/${pendingCheckInRes.data.id}`);
   }
 
+  const isResident = user.role === "resident";
+
+  const notificationBadge = (
+    <Suspense fallback={null}>
+      <NotificationBadge userId={user.id} />
+    </Suspense>
+  );
+
+  const bulletinBadge = (
+    <Suspense fallback={null}>
+      <BulletinBadge
+        userId={user.id}
+        userRole={user.role}
+        assignedHouseIds={user.assigned_house_ids}
+      />
+    </Suspense>
+  );
+
+  if (isResident) {
+    return (
+      <div className="flex flex-col lg:flex-row h-dvh overflow-hidden">
+        {/* Desktop: sidebar. Mobile: bottom nav replaces it. */}
+        <Sidebar
+          role={user.role}
+          userName={user.full_name}
+          hasNoLeaveRestriction={hasNoLeaveRestriction}
+          notificationBadge={notificationBadge}
+          bulletinBadge={bulletinBadge}
+        />
+        <main className="flex-1 overflow-y-auto min-w-0">
+          <div className="animate-page-enter container mx-auto p-4 lg:p-6 max-w-2xl lg:max-w-7xl pt-[max(1rem,env(safe-area-inset-top))] pb-[max(5rem,calc(4rem+env(safe-area-inset-bottom)))] lg:pb-[max(1.5rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
+            {children}
+          </div>
+        </main>
+        <ResidentBottomNav
+          hasNoLeaveRestriction={hasNoLeaveRestriction}
+          bulletinBadge={bulletinBadge}
+        />
+      </div>
+    );
+  }
+
   return (
-    // h-dvh (dynamic viewport height) instead of h-screen so the shell
-    // tracks mobile browser chrome (address bar collapse, keyboard
-    // open). 100vh on iOS Safari is locked to the tallest possible
-    // height which makes the bottom of the app hide behind the URL bar.
-    //
-    // flex-col on mobile so the Sidebar's mobile top bar (first child)
-    // spans the full width above <main>. lg:flex-row puts the desktop
-    // sidebar on the left of <main> at lg+. Without flex-col on
-    // mobile the top bar would be treated as a narrow left-column
-    // flex item instead of a full-width sticky header.
     <div className="flex flex-col lg:flex-row h-dvh overflow-hidden">
       <Sidebar
         role={user.role}
         userName={user.full_name}
         hasNoLeaveRestriction={hasNoLeaveRestriction}
-        notificationBadge={
-          <Suspense fallback={null}>
-            <NotificationBadge userId={user.id} />
-          </Suspense>
-        }
-        bulletinBadge={
-          <Suspense fallback={null}>
-            <BulletinBadge
-              userId={user.id}
-              userRole={user.role}
-              assignedHouseIds={user.assigned_house_ids}
-            />
-          </Suspense>
-        }
+        notificationBadge={notificationBadge}
+        bulletinBadge={bulletinBadge}
       />
       <main className="flex-1 overflow-y-auto min-w-0">
-        {/* Safe-area insets so the main scroll region respects the
-            iPhone notch, Dynamic Island, and home-indicator rail. No
-            visual change on desktop — the env() values resolve to 0. */}
-        <div className="container mx-auto p-4 lg:p-6 max-w-7xl pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] lg:pt-[max(1.5rem,env(safe-area-inset-top))] lg:pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+        <div className="animate-page-enter container mx-auto p-4 lg:p-6 max-w-7xl pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] lg:pt-[max(1.5rem,env(safe-area-inset-top))] lg:pb-[max(1.5rem,env(safe-area-inset-bottom))]">
           {children}
         </div>
       </main>

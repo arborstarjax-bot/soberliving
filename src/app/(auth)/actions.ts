@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { generateSlug } from "@/lib/workspace";
 
 interface AuthState {
   error?: string;
@@ -36,27 +37,41 @@ export async function login(
   // to intake; denial flips them to 'rejected' from Intake Review.
   const { data: profile } = await supabase
     .from("users")
-    .select("account_status")
+    .select("account_status, workspace_id")
     .eq("id", data.user?.id ?? "")
     .single();
 
   const status = (profile as { account_status?: string } | null)
     ?.account_status;
   if (status === "rejected") {
-    // Leave the session intact and route them to the application-denied
-    // page so they can see the reason staff recorded. That page has its
-    // own auth check and signout control — it doesn't require an active
-    // account to render.
     redirect("/application-denied");
   }
   if (status && status !== "active") {
-    // Catch any unexpected non-active status (e.g. a lingering 'pending'
-    // from before the gate was removed). Without this, getSessionUser
-    // returns null and requireAuth bounces them back to /login with a
-    // valid session cookie — infinite loop.
     await supabase.auth.signOut();
     return { error: "Your account is not active. Please contact an administrator." };
   }
+
+  // Check if workspace membership was denied
+  const adminClient = createAdminClient();
+  const userWsId = (profile as { workspace_id?: string | null } | null)?.workspace_id;
+  let membershipQuery = adminClient
+    .from("workspace_members")
+    .select("status")
+    .eq("user_id", data.user?.id ?? "");
+  if (userWsId) {
+    membershipQuery = membershipQuery.eq("workspace_id", userWsId);
+  }
+  const { data: membership } = await membershipQuery
+    .limit(1)
+    .maybeSingle();
+
+  if (membership?.status === "denied") {
+    await supabase.auth.signOut();
+    return { error: "Your request to join this workspace was denied. Please contact the administrator." };
+  }
+
+  // Pending members are allowed through — they can still complete
+  // intake/quick-signup. The dashboard layout gates them after that.
 
   // Redirect based on role
   const { data: roleRecord } = await supabase
@@ -71,10 +86,7 @@ export async function login(
   }
   // Discharged residents (any residents row exists but none are
   // active) land on the lockout page instead of the dashboard.
-  // The dashboard layout also enforces this gate, but checking
-  // here saves one server round-trip on the happy-path sign-in.
-  const admin = createAdminClient();
-  const { data: residentRows } = await admin
+  const { data: residentRows } = await adminClient
     .from("residents")
     .select("status")
     .eq("user_id", data.user?.id ?? "");
@@ -82,8 +94,6 @@ export async function login(
   if (rows.length > 0 && rows.every((r) => r.status !== "active")) {
     redirect("/discharged");
   }
-  // Residents land at /dashboard; the dashboard layout handles
-  // redirecting them onwards to /intake or /sign-commitment as needed.
   redirect("/dashboard");
 }
 
@@ -93,25 +103,46 @@ export async function signup(
 ): Promise<AuthState | undefined> {
   const email = (formData.get("email") as string | null)?.trim() ?? "";
   const password = (formData.get("password") as string | null) ?? "";
+  const fullName = (formData.get("full_name") as string | null)?.trim() ?? "";
+  const workspaceName = (formData.get("workspace_name") as string | null)?.trim() ?? "";
+  const workspaceCode = (formData.get("workspace_code") as string | null)?.trim() ?? "";
 
   if (!email) {
     return { error: "Email is required" };
   }
-
-  // We no longer collect a name at signup — the authoritative
-  // full_name comes from the intake packet's first/middle/last fields
-  // and gets written back in src/app/(intake)/actions.ts. Seed the
-  // profile with the email local-part so admin lists show something
-  // readable until the user completes intake.
-  const fullName = email.split("@")[0] || email;
+  if (!fullName) {
+    return { error: "Full name is required" };
+  }
   if (password.length < 8) {
     return { error: "Password must be at least 8 characters" };
   }
 
-  const supabase = await createClient();
+  const isJoinFlow = !!workspaceCode;
 
-  // Create the auth user. If email confirmation is enabled in Supabase
-  // no session is returned; otherwise signUp also signs the user in.
+  // If creating a workspace, name is required
+  if (!isJoinFlow && !workspaceName) {
+    return { error: "Workspace name is required" };
+  }
+
+  const adminClient = createAdminClient();
+
+  // Validate workspace invite code if joining
+  let workspace: { id: string; name: string } | null = null;
+
+  if (isJoinFlow) {
+    const { data: wsRow } = await adminClient
+      .from("workspaces")
+      .select("id, name")
+      .eq("invite_code", workspaceCode)
+      .maybeSingle();
+
+    if (!wsRow) {
+      return { error: "Invalid invite link. Please check with your administrator." };
+    }
+    workspace = wsRow;
+  }
+
+  const supabase = await createClient();
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -132,19 +163,15 @@ export async function signup(
     return { error: "Failed to create account" };
   }
 
-  // When Supabase has email confirmation enabled and the email is already
-  // registered, signUp() returns a fake user with `identities: []` and no
-  // error (intentional, to avoid email enumeration). Detect that so we
-  // don't clobber the existing user's profile.
   if (Array.isArray(data.user.identities) && data.user.identities.length === 0) {
     return { error: "An account with this email already exists" };
   }
 
-  // Create the public profile (active immediately) and the resident role
-  // assignment. Staff approves/denies the application from Intake Review
-  // after the user submits their intake packet.
-  const admin = createAdminClient();
-  const { error: profileError } = await admin
+  // Determine the role to assign
+  const userRole = isJoinFlow ? "resident" : "admin";
+
+  // Create profile
+  const { error: profileError } = await adminClient
     .from("users")
     .upsert(
       {
@@ -157,47 +184,122 @@ export async function signup(
     );
 
   if (profileError) {
-    // auth.signUp already committed the auth user. If we leave it in
-    // place the email is now "taken" but has no profile row, so the
-    // user can't re-register and can't log in either (getSessionUser
-    // returns null without a profile, which loops them back to
-    // /login). Roll the auth user back so they can retry.
-    await admin.auth.admin.deleteUser(data.user.id).catch(() => {});
-    return {
-      error:
-        "Failed to create profile: " +
-        profileError.message +
-        ". Please try again.",
-    };
+    await adminClient.auth.admin.deleteUser(data.user.id).catch(() => {});
+    return { error: "Failed to create profile: " + profileError.message + ". Please try again." };
   }
 
-  const { error: roleError } = await admin
+  // Assign user_roles row
+  const { error: roleError } = await adminClient
     .from("user_roles")
     .upsert(
-      { user_id: data.user.id, role: "resident" },
+      { user_id: data.user.id, role: userRole as "admin" | "manager" | "resident" },
       { onConflict: "user_id" }
     );
 
   if (roleError) {
-    // Same rollback reasoning as above — plus remove the half-written
-    // profile row so a retry starts from a clean slate.
-    await admin.from("users").delete().eq("id", data.user.id);
-    await admin.auth.admin.deleteUser(data.user.id).catch(() => {});
-    return {
-      error:
-        "Failed to assign role: " +
-        roleError.message +
-        ". Please try again.",
-    };
+    await adminClient.from("users").delete().eq("id", data.user.id);
+    await adminClient.auth.admin.deleteUser(data.user.id).catch(() => {});
+    return { error: "Failed to assign role: " + roleError.message + ". Please try again." };
   }
 
-  // If Supabase auto-signed the user in (Confirm email is OFF in this
-  // project), data.session is already populated and we can fall through
-  // to the /dashboard redirect. If not, the user's email still needs
-  // confirmation — do NOT attempt signInWithPassword here, since that
-  // would try to bypass the confirmation gate. Always surface the
-  // "check your email" message so the flow respects whatever the
-  // Supabase project's Confirm-email setting is.
+  if (isJoinFlow && workspace) {
+    // Join workspace with PENDING status — admin must approve
+    const { error: memberError } = await adminClient
+      .from("workspace_members")
+      .insert({
+        workspace_id: workspace.id,
+        user_id: data.user.id,
+        role: "resident",
+        status: "pending",
+      });
+
+    if (memberError) {
+      return { error: "Failed to request workspace access: " + memberError.message };
+    }
+
+    // Update user's workspace_id
+    await adminClient
+      .from("users")
+      .update({ workspace_id: workspace.id })
+      .eq("id", data.user.id);
+  } else {
+    // Create new workspace
+    const slug = generateSlug(workspaceName) + "-" + Date.now().toString(36);
+    const { data: newWorkspace, error: wsError } = await adminClient
+      .from("workspaces")
+      .insert({
+        name: workspaceName,
+        slug,
+        owner_id: data.user.id,
+      })
+      .select("id")
+      .single();
+
+    if (wsError || !newWorkspace) {
+      return { error: "Failed to create workspace: " + (wsError?.message ?? "Unknown error") };
+    }
+
+    // Add creator as owner member (active immediately)
+    const { error: ownerError } = await adminClient.from("workspace_members").insert({
+      workspace_id: newWorkspace.id,
+      user_id: data.user.id,
+      role: "owner",
+      status: "active",
+    });
+
+    if (ownerError) {
+      await adminClient.from("workspaces").delete().eq("id", newWorkspace.id);
+      return { error: "Failed to set up workspace membership: " + ownerError.message };
+    }
+
+    // Create default settings
+    const { error: settingsError } = await adminClient.from("workspace_settings").insert({
+      workspace_id: newWorkspace.id,
+    });
+
+    if (settingsError) {
+      await adminClient.from("workspace_members").delete().eq("workspace_id", newWorkspace.id);
+      await adminClient.from("workspaces").delete().eq("id", newWorkspace.id);
+      await adminClient.from("user_roles").delete().eq("user_id", data.user.id);
+      await adminClient.from("users").delete().eq("id", data.user.id);
+      await adminClient.auth.admin.deleteUser(data.user.id).catch(() => {});
+      return { error: "Failed to create workspace settings: " + settingsError.message + ". Please try again." };
+    }
+
+    // Create default payment config
+    const { error: payConfigError } = await adminClient.from("workspace_payment_config").insert({
+      workspace_id: newWorkspace.id,
+    });
+
+    if (payConfigError) {
+      await adminClient.from("workspace_settings").delete().eq("workspace_id", newWorkspace.id);
+      await adminClient.from("workspace_members").delete().eq("workspace_id", newWorkspace.id);
+      await adminClient.from("workspaces").delete().eq("id", newWorkspace.id);
+      await adminClient.from("user_roles").delete().eq("user_id", data.user.id);
+      await adminClient.from("users").delete().eq("id", data.user.id);
+      await adminClient.auth.admin.deleteUser(data.user.id).catch(() => {});
+      return { error: "Failed to create payment config: " + payConfigError.message + ". Please try again." };
+    }
+
+    // Update user's workspace_id
+    const { error: userWsError } = await adminClient
+      .from("users")
+      .update({ workspace_id: newWorkspace.id })
+      .eq("id", data.user.id);
+
+    if (userWsError) {
+      await adminClient.from("workspace_payment_config").delete().eq("workspace_id", newWorkspace.id);
+      await adminClient.from("workspace_settings").delete().eq("workspace_id", newWorkspace.id);
+      await adminClient.from("workspace_members").delete().eq("workspace_id", newWorkspace.id);
+      await adminClient.from("workspaces").delete().eq("id", newWorkspace.id);
+      await adminClient.from("user_roles").delete().eq("user_id", data.user.id);
+      await adminClient.from("users").delete().eq("id", data.user.id);
+      await adminClient.auth.admin.deleteUser(data.user.id).catch(() => {});
+      return { error: "Failed to link workspace to user: " + userWsError.message + ". Please try again." };
+    }
+  }
+
+  // Handle session / email confirmation
   if (!data.session) {
     if (!data.user.email_confirmed_at) {
       return {
@@ -205,23 +307,20 @@ export async function signup(
           "Account created. Please check your email to confirm your address, then sign in.",
       };
     }
-    // Edge case: email is already confirmed but Supabase didn't hand
-    // back a session (e.g. anonymous-to-permanent upgrade). Kick off a
-    // normal sign-in so the user lands on /intake on the next tick.
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
     if (signInError) {
       return {
-        success:
-          "Account created. Please sign in to continue.",
+        success: "Account created. Please sign in to continue.",
       };
     }
   }
 
-  // The (dashboard) layout will redirect resident-role + !intake_completed
-  // users to /intake, so sending them to /dashboard is fine and keeps the
-  // redirect logic centralized.
+  // Route based on role — workspace creator is always admin
+  if (userRole === "admin") {
+    redirect("/admin");
+  }
   redirect("/dashboard");
 }

@@ -23,7 +23,9 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
   // at most and the feed Suspense key needs it.
   const houseFilter = getAccessibleHouseFilter(user);
   let visibleHouseIds: string[] | null = null; // null = all
-  if (user.role === "resident") {
+  if (user.role === "admin") {
+    visibleHouseIds = houseFilter;
+  } else if (user.role === "resident") {
     const supabase = createAdminClient();
     const { data: resident } = await supabase
       .from("residents")
@@ -64,6 +66,7 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
           userId={user.id}
           userRole={user.role}
           assignedHouseIds={user.assigned_house_ids ?? []}
+          workspaceId={user.workspace_id}
         />
       </Suspense>
 

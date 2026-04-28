@@ -5,6 +5,14 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: "5mb",
     },
+    // Cache client-side RSC payloads for dynamic pages so that
+    // navigating back-and-forth (e.g. residents → dashboard →
+    // residents) reuses the cached response for 30s instead of
+    // hitting the server again. Static pages already cache for 5min.
+    staleTimes: {
+      dynamic: 30,
+      static: 300,
+    },
   },
   // Serve the service worker with headers that guarantee browsers
   // re-check it on every navigation instead of using the default

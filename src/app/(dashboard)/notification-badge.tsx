@@ -24,8 +24,8 @@ export async function NotificationBadge({ userId }: { userId: string }) {
   if (n === 0) return null;
 
   return (
-    <span className="ml-auto text-xs font-bold text-yellow-400">
-      +{n > CAP ? `${CAP}` : n}
+    <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white leading-none">
+      {n > CAP ? `${CAP}+` : n}
     </span>
   );
 }

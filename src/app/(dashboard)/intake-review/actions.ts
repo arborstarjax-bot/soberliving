@@ -18,6 +18,7 @@ import {
 import { generateReceiptPdf } from "@/lib/payments/receipt-pdf";
 import { z } from "zod";
 import { getHouseToday } from "@/lib/timezone";
+import { getWorkspaceSettings } from "@/lib/workspace";
 
 const FACILITY_NAME = "Sober Living";
 
@@ -49,7 +50,7 @@ const completeIntakeReviewSchema = z.object({
   roomId: z.string().uuid(),
   bedId: z.string().uuid(),
   paymentFrequency: z.enum(["weekly", "monthly"]),
-  rentAmount: z.number().positive(),
+  rentAmount: z.number().min(0),
   adminFee: z.number().min(0),
   rentDueDate: z.string().min(1),
   commitmentStartDate: z.string().min(1),
@@ -199,7 +200,17 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     return { error: `Bed assignment failed: ${bedError.message}` };
   }
 
+  // Check workspace commitment setting — auto-sign if not required
+  let commitmentStatus: "pending_resident_signature" | "active" = "pending_resident_signature";
+  if (currentUser.workspace_id) {
+    const wsSettings = await getWorkspaceSettings(currentUser.workspace_id);
+    if (wsSettings && !wsSettings.require_commitment) {
+      commitmentStatus = "active";
+    }
+  }
+
   // Create house commitment record
+  const now = new Date().toISOString();
   const { data: commitmentRow, error: commitError } = await adminClient
     .from("house_commitments")
     .insert({
@@ -217,9 +228,12 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
       property_location: propertyLocation,
       notes: data.notes || null,
       staff_signature: data.staffSignature,
-      staff_signed_at: new Date().toISOString(),
+      staff_signed_at: now,
       staff_signer_id: currentUser.id,
-      status: "pending_resident_signature",
+      status: commitmentStatus,
+      ...(commitmentStatus === "active"
+        ? { resident_signed_at: now }
+        : {}),
       // Existing-tenant activation flags — consumed by the charge
       // openers in lib/payments/charges.ts.
       billing_anchor_date:
@@ -239,6 +253,15 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
   }
 
   const commitmentId = commitmentRow.id as string;
+
+  // When commitment is auto-signed (workspace doesn't require it),
+  // mark the user as commitment_signed so they aren't gated.
+  if (commitmentStatus === "active") {
+    await adminClient
+      .from("users")
+      .update({ commitment_signed: true })
+      .eq("id", data.userId);
+  }
 
   // Create check-in restrictions if provided
   if (data.checkInRestrictions && data.checkInRestrictions.length > 0) {
@@ -465,15 +488,19 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     description: `${currentUser.full_name} completed intake review for ${targetUser.full_name} — assigned to ${house?.name || "house"}${data.moveInPayment ? ` (move-in payment: $${(data.moveInPayment.adminAmount + data.moveInPayment.rentAmount).toFixed(2)})` : ""}`,
   });
 
-  // Notify the applicant that their application was approved and there's
-  // a commitment waiting for their signature, plus admins + this house's
-  // managers for awareness. Skip the acting staff member.
+  // Notify the applicant that their application was approved. When
+  // commitment is required, direct them to sign it; otherwise welcome
+  // them straight to the dashboard.
+  const houseName = house?.name ?? "your assigned house";
   await sendNotification({
     userId: data.userId,
     type: "intake_approved",
     title: "Application Approved",
-    message: `Your application was approved. Please sign your house commitment to finalize your move-in at ${house?.name ?? "your assigned house"}.`,
-    actionUrl: "/sign-commitment",
+    message:
+      commitmentStatus === "active"
+        ? `Your application was approved. Welcome to ${houseName}!`
+        : `Your application was approved. Please sign your house commitment to finalize your move-in at ${houseName}.`,
+    actionUrl: commitmentStatus === "active" ? "/dashboard" : "/sign-commitment",
     entityType: "user",
     entityId: data.userId,
   });
@@ -491,10 +518,23 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     { excludeUserId: currentUser.id }
   );
 
+  // Auto-approve workspace membership when admin completes intake review.
+  // The resident was "pending" in workspace_members — completing intake
+  // review is the admin's approval action.
+  if (currentUser.workspace_id) {
+    await adminClient
+      .from("workspace_members")
+      .update({ status: "active" })
+      .eq("user_id", data.userId)
+      .eq("workspace_id", currentUser.workspace_id)
+      .eq("status", "pending");
+  }
+
   revalidatePath("/intake-review");
   revalidatePath("/users");
   revalidatePath("/residents");
   revalidatePath("/discipline");
+  revalidatePath("/admin/workspace");
   return {};
 }
 

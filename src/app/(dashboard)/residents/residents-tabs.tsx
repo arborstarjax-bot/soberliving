@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Users } from "lucide-react";
+import { Users, Phone } from "lucide-react";
 import Link from "next/link";
 import { DeleteResidentButton } from "./delete-resident-button";
 import { MarkCompleteButton } from "../intake-review/mark-complete-button";
@@ -13,6 +13,7 @@ import { ReopenButton } from "../intake-review/reopen-button";
 import { EditPendingCommitmentDialog } from "../intake-review/edit-pending-commitment-dialog";
 import { ResendCommitmentButton } from "../intake-review/resend-commitment-button";
 import { ResendInviteButton } from "../users/resend-invite-button";
+import { DeleteIntakeButton } from "./delete-intake-button";
 import { SendCheckInDialog } from "./check-ins/send-checkin-dialog";
 import { CheckInList } from "./check-ins/checkin-list";
 import { formatDateOnly } from "@/lib/timezone";
@@ -20,6 +21,7 @@ import { formatDateOnly } from "@/lib/timezone";
 interface Resident {
   id: string;
   full_name: string;
+  phone: string | null;
   status: string;
   move_in_date: string;
   sobriety_date: string | null;
@@ -120,6 +122,7 @@ interface CheckInBatch {
 interface UnifiedPerson {
   key: string;
   full_name: string;
+  phone: string | null;
   staffRole: string | null; // "admin" | "manager" | null
   isResident: boolean;
   residentId: string | null;
@@ -147,6 +150,7 @@ interface ResidentsTabsProps {
   intakeAwaiting?: IntakeAwaitingUser[];
   intakeDenied?: IntakeDeniedUser[];
   checkInBatches?: CheckInBatch[];
+  requireCommitment?: boolean;
 }
 
 export function ResidentsTabs({
@@ -161,6 +165,7 @@ export function ResidentsTabs({
   intakeAwaiting = [],
   intakeDenied = [],
   checkInBatches = [],
+  requireCommitment = true,
 }: ResidentsTabsProps) {
   const [topTab, setTopTab] = useState<string>("residents");
   const [intakeSubTab, setIntakeSubTab] = useState<"pending" | "denied">(
@@ -182,6 +187,7 @@ export function ResidentsTabs({
     unifiedPeople.push({
       key: `staff-${s.user_id}`,
       full_name: s.full_name,
+      phone: matchingResident?.phone ?? null,
       staffRole: s.role,
       isResident: s.is_also_resident,
       residentId: s.resident_id,
@@ -204,6 +210,7 @@ export function ResidentsTabs({
     unifiedPeople.push({
       key: `resident-${r.id}`,
       full_name: r.full_name,
+      phone: r.phone,
       staffRole: null,
       isResident: true,
       residentId: r.id,
@@ -275,6 +282,16 @@ export function ResidentsTabs({
                 )}
                 {!p.is_active && <Badge variant="destructive">Inactive</Badge>}
               </div>
+              {p.phone && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); window.location.href = `tel:${p.phone}`; }}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                >
+                  <Phone className="h-3 w-3" />
+                  {p.phone}
+                </button>
+              )}
               <p className="text-xs text-muted-foreground">
                 {p.house_name}
                 {p.move_in_date && ` · Moved in ${formatDateOnly(p.move_in_date)}`}
@@ -542,6 +559,9 @@ export function ResidentsTabs({
                           userName={user.full_name}
                           email={user.email}
                         />
+                        {isAdmin && (
+                          <DeleteIntakeButton userId={user.id} userName={user.full_name} />
+                        )}
                       </div>
                     </div>
                   ))}
@@ -590,6 +610,9 @@ export function ResidentsTabs({
                           userName={user.full_name}
                           email={user.email}
                         />
+                        {isAdmin && (
+                          <DeleteIntakeButton userId={user.id} userName={user.full_name} />
+                        )}
                       </div>
                     </div>
                   ))}
@@ -624,6 +647,7 @@ export function ResidentsTabs({
                       formData={user.intakeFormData}
                       signatures={user.intakeSignatures}
                       staffSignedOffAt={user.staffSignedOffAt}
+                      requireCommitment={requireCommitment}
                     />
                   </div>
                 ))}
@@ -687,6 +711,9 @@ export function ResidentsTabs({
                         >
                           Pending Resident Signature
                         </Badge>
+                        {isAdmin && (
+                          <DeleteIntakeButton userId={user.id} userName={user.full_name} />
+                        )}
                       </div>
                     </div>
                   ))}
@@ -747,10 +774,13 @@ export function ResidentsTabs({
                       <div className="flex shrink-0 items-center gap-2">
                         <Badge variant="destructive">Denied</Badge>
                         {isAdmin && (
-                          <ReopenButton
-                            userId={user.id}
-                            userName={user.full_name}
-                          />
+                          <>
+                            <ReopenButton
+                              userId={user.id}
+                              userName={user.full_name}
+                            />
+                            <DeleteIntakeButton userId={user.id} userName={user.full_name} />
+                          </>
                         )}
                       </div>
                     </div>

@@ -4,7 +4,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { findPendingBlockerForUser } from "@/lib/blockers";
-import type { SessionUser, UserRole } from "@/lib/types";
+import type { SessionUser, UserRole, WorkspaceRole } from "@/lib/types";
 
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const supabase = await createClient();
@@ -19,11 +19,12 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   // Supabase RTT this saves a full round-trip on every server
   // component render that calls requireAuth() (i.e. every dashboard
   // page load). `cache()` guarantees one execution per request.
-  const [profileRes, roleRes] = await Promise.all([
+  const adminForWorkspace = createAdminClient();
+  const [profileRes, roleRes, workspaceMemberRes] = await Promise.all([
     supabase
       .from("users")
       .select(
-        "id, email, full_name, intake_completed, commitment_signed, is_resident, account_status"
+        "id, email, full_name, intake_completed, commitment_signed, is_resident, account_status, workspace_id"
       )
       .eq("id", user.id)
       .single(),
@@ -33,6 +34,12 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
       .eq("user_id", user.id)
       .limit(1)
       .single(),
+    adminForWorkspace
+      .from("workspace_members")
+      .select("workspace_id, role, status")
+      .eq("user_id", user.id)
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const profile = profileRes.data;
@@ -67,6 +74,20 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
           .eq("user_id", user.id)
           .is("unassigned_at", null)
       : Promise.resolve({ data: null as { house_id: string }[] | null });
+
+  // Admin workspace scoping: load all house IDs that belong to the
+  // admin's workspace so getAccessibleHouseFilter can limit queries.
+  // Use profile.workspace_id (from Phase 1) or workspace_members lookup.
+  const profileWsId = (profile as { workspace_id?: string | null }).workspace_id
+    ?? workspaceMemberRes.data?.workspace_id
+    ?? null;
+  const workspaceHousePromise =
+    role === "admin" && profileWsId
+      ? adminForWorkspace
+          .from("houses")
+          .select("id")
+          .eq("workspace_id", profileWsId)
+      : Promise.resolve({ data: null as { id: string }[] | null });
 
   // house_commitments has no resident-scoped SELECT policy, so every
   // reader uses the admin client (matches sign-commitment page,
@@ -144,11 +165,13 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     pendingCommitmentRes,
     pendingBlockerId,
     residentStatusRes,
+    workspaceHouseRes,
   ] = await Promise.all([
     assignmentsPromise,
     pendingCommitmentPromise,
     pendingBlockerPromise,
     residentStatusPromise,
+    workspaceHousePromise,
   ]);
 
   const assignedHouseIds: string[] =
@@ -167,18 +190,31 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     residentRows.length > 0 &&
     residentRows.every((r) => r.status !== "active");
 
+  const workspaceId: string | null = profileWsId;
+  const memberStatus = (workspaceMemberRes.data?.status as string) ?? null;
+  const workspaceRole: WorkspaceRole | null =
+    memberStatus === "active"
+      ? (workspaceMemberRes.data?.role as WorkspaceRole) ?? null
+      : null;
+  const workspaceHouseIds: string[] =
+    workspaceHouseRes.data?.map((h) => h.id) ?? [];
+
   return {
     id: profile.id,
     email: profile.email,
     full_name: profile.full_name,
     role,
+    workspace_id: workspaceId,
+    workspace_role: workspaceRole,
     assigned_house_ids: assignedHouseIds,
+    workspace_house_ids: workspaceHouseIds,
     intake_completed: intakeCompleted,
     is_resident: isResident,
     commitment_signed: commitmentSigned,
     has_pending_commitment: hasPendingCommitment,
     pending_blocker_id: pendingBlockerId,
     resident_discharged: residentDischarged,
+    workspace_member_status: memberStatus as SessionUser["workspace_member_status"],
   };
 });
 

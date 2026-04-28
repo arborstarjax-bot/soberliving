@@ -32,9 +32,10 @@ interface IntakeReviewFormProps {
   userId: string;
   userName: string;
   houses: House[];
+  requireCommitment: boolean;
 }
 
-export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormProps) {
+export function IntakeReviewForm({ userId, userName, houses, requireCommitment }: IntakeReviewFormProps) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -203,10 +204,10 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
     if (!bedId) return setError("Please select a bed");
     if (!staffSignature) return setError("Staff signature is required");
 
-    const rent = parseFloat(rentAmount);
-    const fee = parseFloat(adminFee);
-    if (isNaN(rent) || rent <= 0) return setError("Invalid rent amount");
-    if (isNaN(fee) || fee < 0) return setError("Invalid admin fee");
+    const rent = requireCommitment ? parseFloat(rentAmount) : 0;
+    const fee = requireCommitment ? parseFloat(adminFee) : 0;
+    if (requireCommitment && (isNaN(rent) || rent <= 0)) return setError("Invalid rent amount");
+    if (requireCommitment && (isNaN(fee) || fee < 0)) return setError("Invalid admin fee");
 
     // Move-in payment validation. Either the admin has ticked
     // "no payment collected", or they've entered a real amount
@@ -219,41 +220,40 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
       paidAt: string;
       note?: string;
     } | null = null;
-    if (isExistingTenant) {
-      if (!nextRentDueDate) {
-        return setError("Select the next rent due date for this tenant");
+    if (requireCommitment) {
+      if (isExistingTenant) {
+        if (!nextRentDueDate) {
+          return setError("Select the next rent due date for this tenant");
+        }
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const [ny, nm, nd] = nextRentDueDate.split("-").map(Number);
+        const nextDt = new Date(ny, (nm ?? 1) - 1, nd ?? 1);
+        if (nextDt.getTime() < today.getTime()) {
+          return setError("Next rent due date cannot be in the past");
+        }
+      } else if (!moveInNoPayment) {
+        if (collectedAmount <= 0) {
+          return setError(
+            'Enter an amount for Admin Fee or Rent, or check "No payment collected at move-in"'
+          );
+        }
+        if (!moveInPaidAt) {
+          return setError("Select a payment date");
+        }
+        if (collectedAmount < expectedMoveInTotal && !moveInNote.trim()) {
+          return setError(
+            "Partial move-in payments require a note explaining the arrangement"
+          );
+        }
+        moveInPayload = {
+          adminAmount: collectedAdmin,
+          rentAmount: collectedRent,
+          method: moveInMethod,
+          paidAt: moveInPaidAt,
+          note: moveInNote.trim() || undefined,
+        };
       }
-      // Sanity check — next rent must be today or later, otherwise the
-      // charge opener will backfill it immediately, which defeats the
-      // purpose of marking the tenant as caught up.
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const [ny, nm, nd] = nextRentDueDate.split("-").map(Number);
-      const nextDt = new Date(ny, (nm ?? 1) - 1, nd ?? 1);
-      if (nextDt.getTime() < today.getTime()) {
-        return setError("Next rent due date cannot be in the past");
-      }
-    } else if (!moveInNoPayment) {
-      if (collectedAmount <= 0) {
-        return setError(
-          'Enter an amount for Admin Fee or Rent, or check "No payment collected at move-in"'
-        );
-      }
-      if (!moveInPaidAt) {
-        return setError("Select a payment date");
-      }
-      if (collectedAmount < expectedMoveInTotal && !moveInNote.trim()) {
-        return setError(
-          "Partial move-in payments require a note explaining the arrangement"
-        );
-      }
-      moveInPayload = {
-        adminAmount: collectedAdmin,
-        rentAmount: collectedRent,
-        method: moveInMethod,
-        paidAt: moveInPaidAt,
-        note: moveInNote.trim() || undefined,
-      };
     }
 
     startTransition(async () => {
@@ -262,19 +262,19 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
         houseId,
         roomId,
         bedId,
-        paymentFrequency,
+        paymentFrequency: requireCommitment ? paymentFrequency : "monthly",
         rentAmount: rent,
         adminFee: fee,
-        rentDueDate,
-        commitmentStartDate,
-        commitmentTerm,
+        rentDueDate: requireCommitment ? rentDueDate : "N/A",
+        commitmentStartDate: requireCommitment ? commitmentStartDate : getHouseToday(),
+        commitmentTerm: requireCommitment ? commitmentTerm : "N/A",
         notes: notes || undefined,
         staffSignature,
         checkInRestrictions: checkInRestrictions.length > 0 ? checkInRestrictions : undefined,
-        moveInPayment: isExistingTenant ? null : moveInPayload,
-        existingTenant: isExistingTenant,
-        nextRentDueDate: isExistingTenant ? nextRentDueDate : undefined,
-        skipInitialAdminFee: skipAdminFee,
+        moveInPayment: requireCommitment ? (isExistingTenant ? null : moveInPayload) : null,
+        existingTenant: requireCommitment ? isExistingTenant : false,
+        nextRentDueDate: requireCommitment && isExistingTenant ? nextRentDueDate : undefined,
+        skipInitialAdminFee: requireCommitment ? skipAdminFee : true,
       });
 
       if (result.error) {
@@ -292,7 +292,9 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
           Intake review completed for {userName}!
         </p>
         <p className="text-sm text-green-600 mt-1">
-          The house commitment agreement is now ready for the resident to sign.
+          {requireCommitment
+            ? "The house commitment agreement is now ready for the resident to sign."
+            : "Housing has been assigned. The resident can now access the app."}
         </p>
       </div>
     );
@@ -300,7 +302,7 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
 
   return (
     <div className="space-y-6 border-t pt-4">
-      <h3 className="font-semibold text-lg">Housing Assignment & Rent Configuration</h3>
+      <h3 className="font-semibold text-lg">{requireCommitment ? "Housing Assignment & Rent Configuration" : "Housing Assignment"}</h3>
 
       {error && (
         <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
@@ -375,8 +377,8 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
         </div>
       </div>
 
-      {/* Rent Configuration */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Rent Configuration — only shown when commitment is required */}
+      {requireCommitment && <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="space-y-2">
           <Label>Payment Frequency *</Label>
           <select
@@ -449,7 +451,7 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
             placeholder="e.g. 181 days"
           />
         </div>
-      </div>
+      </div>}
 
       {/* Notes */}
       <div className="space-y-2">
@@ -561,8 +563,8 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
         )}
       </div>
 
-      {/* Move-In Payment */}
-      <div className="border-t pt-4 space-y-3">
+      {/* Move-In Payment — only shown when commitment is required */}
+      {requireCommitment && <div className="border-t pt-4 space-y-3">
         <div>
           <h3 className="font-semibold text-lg">Move-In Payment</h3>
           <p className="text-sm text-muted-foreground">
@@ -799,7 +801,7 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Staff Signature */}
       <div className="border-t pt-4">
@@ -820,7 +822,11 @@ export function IntakeReviewForm({ userId, userName, houses }: IntakeReviewFormP
           disabled={isPending || !staffSignature}
           size="lg"
         >
-          {isPending ? "Completing Review..." : "Complete Intake Review & Sign Commitment"}
+          {isPending
+            ? "Completing Review..."
+            : requireCommitment
+              ? "Complete Intake Review & Sign Commitment"
+              : "Complete Intake Review & Assign Housing"}
         </Button>
       </div>
     </div>

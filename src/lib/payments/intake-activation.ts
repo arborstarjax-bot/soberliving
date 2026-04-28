@@ -92,23 +92,25 @@ export function buildInitialCharges(
     });
   }
 
-  const anchor = parseIsoDate(input.commitmentStartDate);
-  const rentPeriodEnd = toIsoDate(periodEndFor(anchor, input.frequency));
-  // Rent is due the day BEFORE the cycle anchor. The first cycle
-  // charge must follow the same rule as subsequent cycles so past-
-  // due detection is consistent across the whole commitment.
-  const rentDueDate = toIsoDate(computeRentDueDate(anchor));
+  if (input.rentAmount > 0) {
+    const anchor = parseIsoDate(input.commitmentStartDate);
+    const rentPeriodEnd = toIsoDate(periodEndFor(anchor, input.frequency));
+    // Rent is due the day BEFORE the cycle anchor. The first cycle
+    // charge must follow the same rule as subsequent cycles so past-
+    // due detection is consistent across the whole commitment.
+    const rentDueDate = toIsoDate(computeRentDueDate(anchor));
 
-  rows.push({
-    resident_id: input.residentId,
-    house_id: input.houseId,
-    commitment_id: input.commitmentId,
-    charge_type: "rent",
-    amount: input.rentAmount,
-    due_date: rentDueDate,
-    period_start: input.commitmentStartDate,
-    period_end: rentPeriodEnd,
-  });
+    rows.push({
+      resident_id: input.residentId,
+      house_id: input.houseId,
+      commitment_id: input.commitmentId,
+      charge_type: "rent",
+      amount: input.rentAmount,
+      due_date: rentDueDate,
+      period_start: input.commitmentStartDate,
+      period_end: rentPeriodEnd,
+    });
+  }
 
   return rows;
 }

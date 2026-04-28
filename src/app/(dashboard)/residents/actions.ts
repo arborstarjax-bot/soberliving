@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
@@ -479,6 +479,61 @@ export async function deleteResident(residentId: string) {
 
   revalidatePath("/residents");
   revalidatePath(`/houses/${resident.house_id}`);
+  return {};
+}
+
+export async function deleteIntakeUser(userId: string) {
+  const currentUser = await requireAuth();
+  if (currentUser.role !== "admin") {
+    return { error: "Only admins can delete intake entries" };
+  }
+
+  const adminClient = createAdminClient();
+
+  const { data: target } = await adminClient
+    .from("users")
+    .select("id, full_name, commitment_signed")
+    .eq("id", userId)
+    .eq("workspace_id", currentUser.workspace_id)
+    .maybeSingle();
+
+  if (!target) return { error: "User not found" };
+  if (target.commitment_signed) {
+    return { error: "Cannot delete a user who has already signed their commitment. Use discharge instead." };
+  }
+
+  // Remove workspace membership
+  if (currentUser.workspace_id) {
+    await adminClient
+      .from("workspace_members")
+      .delete()
+      .eq("user_id", userId)
+      .eq("workspace_id", currentUser.workspace_id);
+  }
+
+  // Remove notifications, user roles, and the user record
+  await adminClient.from("notifications").delete().eq("user_id", userId);
+  await adminClient.from("user_roles").delete().eq("user_id", userId);
+
+  // Remove any resident record that was created during intake
+  await adminClient.from("residents").delete().eq("user_id", userId);
+
+  // Remove house commitments created during intake
+  await adminClient.from("house_commitments").delete().eq("user_id", userId);
+
+  // Delete the users row (which also cascades the auth user via trigger)
+  const { error } = await adminClient.from("users").delete().eq("id", userId);
+  if (error) return { error: error.message };
+
+  await logActivity({
+    actorId: currentUser.id,
+    eventType: "intake_user_deleted",
+    entityType: "user",
+    entityId: userId,
+    description: `Intake entry for ${target.full_name} deleted by ${currentUser.full_name}`,
+  });
+
+  revalidatePath("/residents");
   return {};
 }
 
