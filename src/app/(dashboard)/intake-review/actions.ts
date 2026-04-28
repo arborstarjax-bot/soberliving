@@ -50,7 +50,7 @@ const completeIntakeReviewSchema = z.object({
   roomId: z.string().uuid(),
   bedId: z.string().uuid(),
   paymentFrequency: z.enum(["weekly", "monthly"]),
-  rentAmount: z.number().positive(),
+  rentAmount: z.number().min(0),
   adminFee: z.number().min(0),
   rentDueDate: z.string().min(1),
   commitmentStartDate: z.string().min(1),
@@ -514,10 +514,23 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     { excludeUserId: currentUser.id }
   );
 
+  // Auto-approve workspace membership when admin completes intake review.
+  // The resident was "pending" in workspace_members — completing intake
+  // review is the admin's approval action.
+  if (currentUser.workspace_id) {
+    await adminClient
+      .from("workspace_members")
+      .update({ status: "active" })
+      .eq("user_id", data.userId)
+      .eq("workspace_id", currentUser.workspace_id)
+      .eq("status", "pending");
+  }
+
   revalidatePath("/intake-review");
   revalidatePath("/users");
   revalidatePath("/residents");
   revalidatePath("/discipline");
+  revalidatePath("/admin/workspace");
   return {};
 }
 

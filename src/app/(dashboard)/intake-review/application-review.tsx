@@ -26,6 +26,7 @@ interface Props {
   signatures: Record<string, string>;
   /** ISO timestamp stored on form_data.staff_signed_off_at when staff has signed. */
   staffSignedOffAt: string | null;
+  requireCommitment: boolean;
 }
 
 /**
@@ -55,6 +56,7 @@ export function ApplicationReview({
   formData: fd,
   signatures,
   staffSignedOffAt,
+  requireCommitment,
 }: Props) {
   const [step, setStep] = useState<"review" | "signoff" | "assign">("review");
   const [signedOffLocal, setSignedOffLocal] = useState<boolean>(
@@ -78,7 +80,7 @@ export function ApplicationReview({
             label="2. Staff sign-off"
           />
           <ArrowRight className="h-3.5 w-3.5" />
-          <StepPill active={step === "assign"} done={false} label="3. Assign housing & rent" />
+          <StepPill active={step === "assign"} done={false} label={requireCommitment ? "3. Assign housing & rent" : "3. Assign housing"} />
         </div>
         <div className="flex items-center gap-2">
           {step === "review" && (
@@ -188,6 +190,7 @@ export function ApplicationReview({
             userId={userId}
             userName={userName}
             houses={houses}
+            requireCommitment={requireCommitment}
           />
         ) : (
           <div className="rounded-lg border border-yellow-300 bg-yellow-50/60 p-4 text-sm flex items-start gap-2">

@@ -147,6 +147,7 @@ interface ResidentsTabsProps {
   intakeAwaiting?: IntakeAwaitingUser[];
   intakeDenied?: IntakeDeniedUser[];
   checkInBatches?: CheckInBatch[];
+  requireCommitment?: boolean;
 }
 
 export function ResidentsTabs({
@@ -161,6 +162,7 @@ export function ResidentsTabs({
   intakeAwaiting = [],
   intakeDenied = [],
   checkInBatches = [],
+  requireCommitment = true,
 }: ResidentsTabsProps) {
   const [topTab, setTopTab] = useState<string>("residents");
   const [intakeSubTab, setIntakeSubTab] = useState<"pending" | "denied">(
@@ -624,6 +626,7 @@ export function ResidentsTabs({
                       formData={user.intakeFormData}
                       signatures={user.intakeSignatures}
                       staffSignedOffAt={user.staffSignedOffAt}
+                      requireCommitment={requireCommitment}
                     />
                   </div>
                 ))}
