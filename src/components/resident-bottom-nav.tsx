@@ -4,15 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard,
+  Home,
   ClipboardCheck,
+  ShieldAlert,
   CalendarClock,
   MessageSquare,
   MoreHorizontal,
-  ShieldAlert,
   Folder,
   Flag,
-  Bell,
   LogOut,
   X,
 } from "lucide-react";
@@ -25,28 +24,25 @@ interface BottomNavItem {
 }
 
 const PRIMARY_ITEMS: BottomNavItem[] = [
-  { label: "Home", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Home", href: "/dashboard", icon: Home },
   { label: "Chores", href: "/chores", icon: ClipboardCheck },
-  { label: "Bulletin", href: "/bulletin", icon: MessageSquare },
+  { label: "Discipline", href: "/discipline", icon: ShieldAlert },
   { label: "Leave", href: "/leave-requests", icon: CalendarClock },
+  { label: "Bulletin", href: "/bulletin", icon: MessageSquare },
 ];
 
 const MORE_ITEMS: BottomNavItem[] = [
-  { label: "Discipline", href: "/discipline", icon: ShieldAlert },
   { label: "My Documents", href: "/my-documents", icon: Folder },
   { label: "Report", href: "/report", icon: Flag },
-  { label: "Notifications", href: "/notifications", icon: Bell },
 ];
 
 interface ResidentBottomNavProps {
   hasNoLeaveRestriction?: boolean;
-  notificationBadge?: React.ReactNode;
   bulletinBadge?: React.ReactNode;
 }
 
 export function ResidentBottomNav({
   hasNoLeaveRestriction,
-  notificationBadge = null,
   bulletinBadge = null,
 }: ResidentBottomNavProps) {
   const pathname = usePathname();
@@ -87,19 +83,19 @@ export function ResidentBottomNav({
           moreOpen ? "translate-y-0" : "translate-y-full"
         )}
       >
-        <div className="rounded-t-2xl bg-white border-t border-gray-200 shadow-2xl">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-            <span className="text-sm font-semibold text-gray-700">More</span>
+        <div className="rounded-t-2xl bg-sidebar border-t border-sidebar-border shadow-2xl">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-sidebar-border">
+            <span className="text-sm font-semibold text-sidebar-foreground">More</span>
             <button
               type="button"
               onClick={() => setMoreOpen(false)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-sidebar-foreground/60 hover:bg-sidebar-accent"
               aria-label="Close"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
-          <nav className="grid grid-cols-4 gap-1 p-3">
+          <nav className="grid grid-cols-3 gap-1 p-3">
             {MORE_ITEMS.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.href);
@@ -110,13 +106,12 @@ export function ResidentBottomNav({
                   className={cn(
                     "flex flex-col items-center gap-1.5 rounded-xl px-2 py-3 text-xs font-medium transition",
                     active
-                      ? "bg-blue-50 text-blue-700"
-                      : "text-gray-600 hover:bg-gray-50 active:bg-gray-100"
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60"
                   )}
                 >
-                  <Icon className={cn("h-5 w-5", active && "text-blue-700")} />
+                  <Icon className={cn("h-5 w-5", active && "text-sidebar-accent-foreground")} />
                   <span className="truncate leading-none">{item.label}</span>
-                  {item.href === "/notifications" && !active && notificationBadge}
                 </Link>
               );
             })}
@@ -125,7 +120,7 @@ export function ResidentBottomNav({
             <form action="/api/auth/logout" method="POST">
               <button
                 type="submit"
-                className="flex w-full items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition"
+                className="flex w-full items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60 transition"
               >
                 <LogOut className="h-4 w-4" />
                 Sign Out
@@ -138,7 +133,7 @@ export function ResidentBottomNav({
       {/* Bottom navigation bar */}
       <nav
         aria-label="Resident navigation"
-        className="fixed inset-x-0 bottom-0 z-30 border-t border-gray-200 bg-white/95 backdrop-blur lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-sidebar-border bg-sidebar lg:hidden"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <ul
@@ -155,20 +150,22 @@ export function ResidentBottomNav({
                 <Link
                   href={item.href}
                   className={cn(
-                    "flex w-full flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium transition active:bg-gray-100",
+                    "flex w-full flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium transition",
                     active
-                      ? "text-blue-700"
-                      : "text-gray-500 hover:text-gray-800"
+                      ? "text-white"
+                      : "text-sidebar-foreground/60 hover:text-sidebar-foreground"
                   )}
                 >
-                  <Icon
-                    className={cn("h-[22px] w-[22px]", active && "text-blue-700")}
-                    aria-hidden="true"
-                  />
+                  <span className="relative">
+                    <Icon
+                      className={cn("h-[22px] w-[22px]", active && "text-white")}
+                      aria-hidden="true"
+                    />
+                    {item.href === "/bulletin" && !active && bulletinBadge}
+                  </span>
                   <span className="max-w-full truncate leading-none">
                     {item.label}
                   </span>
-                  {item.href === "/bulletin" && !active && bulletinBadge}
                 </Link>
               </li>
             );
@@ -179,16 +176,16 @@ export function ResidentBottomNav({
               type="button"
               onClick={() => setMoreOpen(!moreOpen)}
               className={cn(
-                "flex w-full flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium transition active:bg-gray-100",
+                "flex w-full flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium transition",
                 moreIsActive || moreOpen
-                  ? "text-blue-700"
-                  : "text-gray-500 hover:text-gray-800"
+                  ? "text-white"
+                  : "text-sidebar-foreground/60 hover:text-sidebar-foreground"
               )}
             >
               <MoreHorizontal
                 className={cn(
                   "h-[22px] w-[22px]",
-                  (moreIsActive || moreOpen) && "text-blue-700"
+                  (moreIsActive || moreOpen) && "text-white"
                 )}
                 aria-hidden="true"
               />

@@ -177,7 +177,6 @@ export default async function DashboardLayout({
         </main>
         <ResidentBottomNav
           hasNoLeaveRestriction={hasNoLeaveRestriction}
-          notificationBadge={notificationBadge}
           bulletinBadge={bulletinBadge}
         />
       </div>
