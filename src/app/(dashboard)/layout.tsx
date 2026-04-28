@@ -109,17 +109,11 @@ export default async function DashboardLayout({
     user.role === "resident"
       ? (async () => {
           const supabase = await createClient();
-          const { data: myResident } = await supabase
-            .from("residents")
-            .select("id")
-            .eq("user_id", user.id)
-            .eq("status", "active")
-            .maybeSingle();
-          if (!myResident) return false;
-          const { data: noLeave } = await supabase
+          const { data } = await supabase
             .from("restrictions")
-            .select("id")
-            .eq("resident_id", myResident.id)
+            .select("id, residents!inner(user_id)")
+            .eq("residents.user_id", user.id)
+            .eq("residents.status", "active")
             .eq("is_active", true)
             .in("restriction_type", [
               "no_leave",
@@ -128,7 +122,7 @@ export default async function DashboardLayout({
             ])
             .limit(1)
             .maybeSingle();
-          return !!noLeave;
+          return !!data;
         })()
       : Promise.resolve(false);
 
