@@ -149,9 +149,17 @@ export default async function DashboardLayout({
 
   if (isResident) {
     return (
-      <div className="flex min-h-dvh flex-col bg-white">
-        <main className="flex-1 min-w-0">
-          <div className="container mx-auto p-4 max-w-2xl pt-[max(1rem,env(safe-area-inset-top))] pb-[max(5rem,calc(4rem+env(safe-area-inset-bottom)))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
+      <div className="flex flex-col lg:flex-row h-dvh overflow-hidden">
+        {/* Desktop: sidebar. Mobile: bottom nav replaces it. */}
+        <Sidebar
+          role={user.role}
+          userName={user.full_name}
+          hasNoLeaveRestriction={hasNoLeaveRestriction}
+          notificationBadge={notificationBadge}
+          bulletinBadge={bulletinBadge}
+        />
+        <main className="flex-1 overflow-y-auto min-w-0">
+          <div className="container mx-auto p-4 lg:p-6 max-w-2xl lg:max-w-7xl pt-[max(1rem,env(safe-area-inset-top))] pb-[max(5rem,calc(4rem+env(safe-area-inset-bottom)))] lg:pb-[max(1.5rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
             {children}
           </div>
         </main>
