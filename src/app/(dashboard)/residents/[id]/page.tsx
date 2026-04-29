@@ -2,6 +2,7 @@ import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { canAccessHouse } from "@/lib/permissions";
+import { getWorkspaceSettings } from "@/lib/workspace";
 import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +46,11 @@ export default async function ResidentDetailPage(
   ) {
     redirect("/dashboard");
   }
+
+  const wsSettings = user.workspace_id
+    ? await getWorkspaceSettings(user.workspace_id)
+    : null;
+  const paymentsEnabled = wsSettings?.enable_payments !== false;
 
   // Bed assignments
   const { data: bedAssignments } = await supabase
@@ -445,7 +451,7 @@ export default async function ResidentDetailPage(
       {/* Outstanding balance — prominent at the top so staff see it
           before digging into the Payments tab. Shown on every active
           resident, including $0.00 cases so it's not visually jumpy. */}
-      {resident.status === "active" && (
+      {paymentsEnabled && resident.status === "active" && (
         <Card
           className={
             outstandingTotal > 0
@@ -604,9 +610,11 @@ export default async function ResidentDetailPage(
           <TabsTrigger value="leave">
             Leave ({leaveRequests?.length ?? 0})
           </TabsTrigger>
-          <TabsTrigger value="payments">
-            Payments ({(residentOpenCharges ?? []).length})
-          </TabsTrigger>
+          {paymentsEnabled && (
+            <TabsTrigger value="payments">
+              Payments ({(residentOpenCharges ?? []).length})
+            </TabsTrigger>
+          )}
           {isStaff && (
             <TabsTrigger value="notes">
               Notes ({notes?.length ?? 0})
@@ -808,7 +816,7 @@ export default async function ResidentDetailPage(
           </div>
         </TabsContent>
 
-        <TabsContent value="payments" className="mt-4">
+        {paymentsEnabled && <TabsContent value="payments" className="mt-4">
           <ResidentPaymentsPanel
             openCharges={residentOpenCharges ?? []}
             recentPayments={residentRecentPayments ?? []}
@@ -908,7 +916,7 @@ export default async function ResidentDetailPage(
                 : null
             }
           />
-        </TabsContent>
+        </TabsContent>}
 
         <TabsContent value="leave" className="mt-4">
           {leaveRequests && leaveRequests.length > 0 ? (
