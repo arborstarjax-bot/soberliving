@@ -1,5 +1,6 @@
 import { requireAuth } from "@/lib/auth";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { getWorkspaceSettings } from "@/lib/workspace";
 import { redirect } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { MyDocumentsView } from "./my-documents-view";
@@ -46,6 +47,11 @@ export default async function MyDocumentsPage() {
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
+  const wsSettings = user.workspace_id
+    ? await getWorkspaceSettings(user.workspace_id)
+    : null;
+  const paymentsEnabled = wsSettings?.enable_payments !== false;
+
   const typed: DocRow[] = (docs ?? []) as DocRow[];
   const grouped = new Map<string, DocRow[]>();
   for (const d of typed) {
@@ -57,6 +63,7 @@ export default async function MyDocumentsPage() {
 
   const groups = [...TYPE_ORDER, "other"]
     .filter((k) => (grouped.get(k)?.length ?? 0) > 0)
+    .filter((k) => paymentsEnabled || k !== "payment_receipt")
     .map((k) => ({
       key: k,
       label: TYPE_LABELS[k] ?? "Documents",
@@ -85,7 +92,7 @@ export default async function MyDocumentsPage() {
       <div>
         <h1 className="text-2xl font-bold">My Documents</h1>
         <p className="text-sm text-muted-foreground">
-          Your application, signed house commitment, payment receipts, and
+          Your application, signed house commitment,{paymentsEnabled ? " payment receipts," : ""} and
           other documents we&apos;ve saved for you.
         </p>
       </div>

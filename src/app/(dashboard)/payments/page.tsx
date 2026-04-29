@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
+import { getWorkspaceSettings } from "@/lib/workspace";
 import { ListSkeleton } from "@/components/ui/skeleton";
 import { StaffPaymentsSection } from "./staff-payments-section";
 import { CreatePaymentSection } from "./create-payment-section";
@@ -25,11 +26,15 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
   const user = await requireAuth();
   const isStaff = user.role === "admin" || user.role === "manager";
 
-  // Residents no longer have a payments view. Redirect to dashboard
-  // so any deep link (old notification, browser history) lands
-  // somewhere coherent instead of a blank page.
   if (!isStaff) {
     redirect("/dashboard");
+  }
+
+  const wsSettings = user.workspace_id
+    ? await getWorkspaceSettings(user.workspace_id)
+    : null;
+  if (wsSettings?.enable_payments === false) {
+    redirect("/admin");
   }
 
   // searchParams is reserved for future filters (e.g. ?house=xxx).

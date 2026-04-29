@@ -251,6 +251,7 @@ export function DashboardGrid({
       </ExpandCard>
       <ExpandCard
         label="New Intakes"
+        sublabel="This week"
         value={newIntakes.length}
         icon={<UserPlus className="h-5 w-5" />}
         href="/intake-review"
