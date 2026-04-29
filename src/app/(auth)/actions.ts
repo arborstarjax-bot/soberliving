@@ -214,6 +214,9 @@ export async function signup(
       });
 
     if (memberError) {
+      await adminClient.from("user_roles").delete().eq("user_id", data.user.id);
+      await adminClient.from("users").delete().eq("id", data.user.id);
+      await adminClient.auth.admin.deleteUser(data.user.id).catch(() => {});
       return { error: "Failed to request workspace access: " + memberError.message };
     }
 
@@ -236,6 +239,9 @@ export async function signup(
       .single();
 
     if (wsError || !newWorkspace) {
+      await adminClient.from("user_roles").delete().eq("user_id", data.user.id);
+      await adminClient.from("users").delete().eq("id", data.user.id);
+      await adminClient.auth.admin.deleteUser(data.user.id).catch(() => {});
       return { error: "Failed to create workspace: " + (wsError?.message ?? "Unknown error") };
     }
 
@@ -249,6 +255,9 @@ export async function signup(
 
     if (ownerError) {
       await adminClient.from("workspaces").delete().eq("id", newWorkspace.id);
+      await adminClient.from("user_roles").delete().eq("user_id", data.user.id);
+      await adminClient.from("users").delete().eq("id", data.user.id);
+      await adminClient.auth.admin.deleteUser(data.user.id).catch(() => {});
       return { error: "Failed to set up workspace membership: " + ownerError.message };
     }
 
