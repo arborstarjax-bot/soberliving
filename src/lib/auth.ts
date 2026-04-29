@@ -14,13 +14,24 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
 
   if (!user) return null;
 
-  // Phase 1: users profile and role lookup are both keyed on user.id
-  // only — fire in parallel instead of sequentially. On a 50–100ms
-  // Supabase RTT this saves a full round-trip on every server
-  // component render that calls requireAuth() (i.e. every dashboard
-  // page load). `cache()` guarantees one execution per request.
-  const adminForWorkspace = createAdminClient();
-  const [profileRes, roleRes, workspaceMemberRes] = await Promise.all([
+  // --- Single fan-out: fire ALL queries in parallel ---
+  // Previously split into Phase 1 (profile + role + workspace member)
+  // then Phase 2 (assignments, commitments, blockers, etc.) — two
+  // sequential round-trips (~200ms). Now every query that only needs
+  // user.id fires at once. Queries whose results are role-dependent
+  // are evaluated after the fan-out; the extra data is harmlessly
+  // discarded for roles that don't need it.
+  const admin = createAdminClient();
+
+  const [
+    profileRes,
+    roleRes,
+    workspaceMemberRes,
+    assignmentsRes,
+    pendingCommitmentRes,
+    pendingBlockerId,
+    residentStatusRes,
+  ] = await Promise.all([
     supabase
       .from("users")
       .select(
@@ -34,156 +45,91 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
       .eq("user_id", user.id)
       .limit(1)
       .single(),
-    adminForWorkspace
+    admin
       .from("workspace_members")
       .select("workspace_id, role, status")
       .eq("user_id", user.id)
       .limit(1)
       .maybeSingle(),
+    // Manager assignments — harmlessly empty for non-managers
+    supabase
+      .from("manager_house_assignments")
+      .select("house_id")
+      .eq("user_id", user.id)
+      .is("unassigned_at", null),
+    // Pending commitment — harmlessly empty for non-residents
+    admin
+      .from("house_commitments")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("status", "pending_resident_signature")
+      .limit(1)
+      .maybeSingle(),
+    // Pending blocker — harmlessly null for non-residents
+    findPendingBlockerForUser(user.id, admin).then(async (id) => {
+      if (!id) return null;
+      const [blockerRes, ackRes] = await Promise.all([
+        admin
+          .from("blockers")
+          .select("id, archived_at")
+          .eq("id", id)
+          .maybeSingle(),
+        admin
+          .from("blocker_acknowledgments")
+          .select("blocker_id")
+          .eq("blocker_id", id)
+          .eq("user_id", user.id)
+          .maybeSingle(),
+      ]);
+      const stillPending =
+        !!blockerRes.data &&
+        !blockerRes.data.archived_at &&
+        !ackRes.data;
+      return stillPending ? id : null;
+    }),
+    // Resident discharge status — harmlessly empty for non-residents
+    admin
+      .from("residents")
+      .select("status")
+      .eq("user_id", user.id),
   ]);
 
   const profile = profileRes.data;
   if (!profile) return null;
 
-  // Gate pending / rejected accounts at the session layer. Defense in
-  // depth: the login action already blocks these, but this also catches
-  // users whose status was changed while they were holding a stale
-  // session cookie.
   const status = (profile as { account_status?: string | null })
     .account_status;
   if (status && status !== "active") return null;
 
   const role: UserRole = roleRes.data?.role ?? "resident";
-
-  // Read intake/commitment status from the users table
-  // (submitIntakeForm and signCommitment both write to users, not residents)
   const isResident = role === "resident" || profile.is_resident === true;
 
-  // Phase 2: manager-assignment + resident-only gating queries all
-  // depend only on (profile.id, role) and are independent of each
-  // other — fan them out in parallel. For admins nothing fires at
-  // all; for managers only the assignment lookup runs; for residents
-  // the full trio runs concurrently.
-  const admin = isResident ? createAdminClient() : null;
-
-  const assignmentsPromise =
-    role === "manager"
-      ? supabase
-          .from("manager_house_assignments")
-          .select("house_id")
-          .eq("user_id", user.id)
-          .is("unassigned_at", null)
-      : Promise.resolve({ data: null as { house_id: string }[] | null });
-
-  // Admin workspace scoping: load all house IDs that belong to the
-  // admin's workspace so getAccessibleHouseFilter can limit queries.
-  // Use profile.workspace_id (from Phase 1) or workspace_members lookup.
+  // Resolve workspace_id from profile or workspace_members lookup
   const profileWsId = (profile as { workspace_id?: string | null }).workspace_id
     ?? workspaceMemberRes.data?.workspace_id
     ?? null;
-  const workspaceHousePromise =
-    role === "admin" && profileWsId
-      ? adminForWorkspace
-          .from("houses")
-          .select("id")
-          .eq("workspace_id", profileWsId)
-      : Promise.resolve({ data: null as { id: string }[] | null });
 
-  // house_commitments has no resident-scoped SELECT policy, so every
-  // reader uses the admin client (matches sign-commitment page,
-  // proposeAmendment, intake-review, residents profile, etc.).
-  const pendingCommitmentPromise =
-    isResident && admin
-      ? admin
-          .from("house_commitments")
-          .select("id")
-          .eq("user_id", profile.id)
-          .eq("status", "pending_resident_signature")
-          .limit(1)
-          .maybeSingle()
-      : Promise.resolve({ data: null as { id: string } | null });
-
-  // Gate residents into /acknowledge/[id] if any active blocker is
-  // targeted at them and not yet signed. Admins/managers can't be
-  // the target of a blocker. Resolution is FIFO — oldest pending id
-  // first so multi-blocker scenarios step through one at a time.
-  //
-  // After findPendingBlockerForUser returns a candidate, re-verify
-  // the row still exists, is not archived, and has no ack from this
-  // user. If the candidate is stale (e.g. orphaned rows from a
-  // manually-recreated auth.users account, a race with
-  // maybeAutoArchiveBlocker, or a cross-request state drift) we
-  // null it out instead of exposing it on the session — otherwise
-  // every layout that reads pending_blocker_id would blindly redirect
-  // the resident into /acknowledge/[id], which would bounce them
-  // right back (blocker missing/acked → redirect /dashboard) and
-  // the browser hits its 20-redirect cap on a blank page.
-  //
-  // Centralizing this guarantee here means every consumer —
-  // (dashboard)/layout, (check-in)/layout, future gates — can
-  // trust pending_blocker_id without having to re-verify.
-  const pendingBlockerPromise =
-    isResident && admin
-      ? findPendingBlockerForUser(profile.id, admin).then(async (id) => {
-          if (!id) return null;
-          const [blockerRes, ackRes] = await Promise.all([
-            admin
-              .from("blockers")
-              .select("id, archived_at")
-              .eq("id", id)
-              .maybeSingle(),
-            admin
-              .from("blocker_acknowledgments")
-              .select("blocker_id")
-              .eq("blocker_id", id)
-              .eq("user_id", profile.id)
-              .maybeSingle(),
-          ]);
-          const stillPending =
-            !!blockerRes.data &&
-            !blockerRes.data.archived_at &&
-            !ackRes.data;
-          return stillPending ? id : null;
-        })
-      : Promise.resolve(null);
-
-  // Detect "discharged" residents: any residents row exists for
-  // this user but none are currently active. Used by the layout
-  // to hard-gate them onto /discharged. Role admin/manager users
-  // who were also residents don't need this gate — their elevated
-  // role takes over.
-  const residentStatusPromise =
-    role === "resident" && admin
-      ? admin
-          .from("residents")
-          .select("status")
-          .eq("user_id", profile.id)
-      : Promise.resolve({ data: null as { status: string }[] | null });
-
-  const [
-    assignmentsRes,
-    pendingCommitmentRes,
-    pendingBlockerId,
-    residentStatusRes,
-    workspaceHouseRes,
-  ] = await Promise.all([
-    assignmentsPromise,
-    pendingCommitmentPromise,
-    pendingBlockerPromise,
-    residentStatusPromise,
-    workspaceHousePromise,
-  ]);
+  // Admin workspace house scoping — only needed for admins, fires as a
+  // single follow-up query. Admins are a minority of users so the extra
+  // round-trip only affects them, not the resident hot path.
+  let workspaceHouseIds: string[] = [];
+  if (role === "admin" && profileWsId) {
+    const { data } = await admin
+      .from("houses")
+      .select("id")
+      .eq("workspace_id", profileWsId);
+    workspaceHouseIds = data?.map((h) => h.id) ?? [];
+  }
 
   const assignedHouseIds: string[] =
-    assignmentsRes.data?.map((a) => a.house_id) ?? [];
-  const hasPendingCommitment = !!pendingCommitmentRes.data;
+    role === "manager"
+      ? (assignmentsRes.data?.map((a) => a.house_id) ?? [])
+      : [];
+  const hasPendingCommitment = isResident ? !!pendingCommitmentRes.data : false;
 
   const intakeCompleted = profile.intake_completed === true;
   const commitmentSigned = profile.commitment_signed === true;
 
-  // A resident is "discharged" when at least one residents row
-  // exists for them and none are currently active. Pre-intake
-  // residents (no rows yet) fall through to the normal intake flow.
   const residentRows = residentStatusRes.data ?? [];
   const residentDischarged =
     role === "resident" &&
@@ -196,8 +142,6 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     memberStatus === "active"
       ? (workspaceMemberRes.data?.role as WorkspaceRole) ?? null
       : null;
-  const workspaceHouseIds: string[] =
-    workspaceHouseRes.data?.map((h) => h.id) ?? [];
 
   return {
     id: profile.id,
@@ -212,7 +156,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     is_resident: isResident,
     commitment_signed: commitmentSigned,
     has_pending_commitment: hasPendingCommitment,
-    pending_blocker_id: pendingBlockerId,
+    pending_blocker_id: isResident ? pendingBlockerId : null,
     resident_discharged: residentDischarged,
     workspace_member_status: memberStatus as SessionUser["workspace_member_status"],
   };

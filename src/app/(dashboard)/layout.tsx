@@ -22,20 +22,63 @@ export default async function DashboardLayout({
     redirect("/discharged");
   }
 
-  // Redirect resident-role users who haven't completed intake.
-  // Route to quick-signup when the workspace doesn't require application.
+  // --- Single parallel fan-out ---
+  // Previously the layout awaited workspace settings, then check-in,
+  // then leave-restriction, then workspace name sequentially — 4 round-
+  // trips (~400ms). Now everything fires in one Promise.all (~100ms).
+  const adminClient = createAdminClient();
+
+  const [wsSettings, ws, pendingCheckInRes, hasNoLeaveRestriction] =
+    await Promise.all([
+      user.workspace_id
+        ? getWorkspaceSettings(user.workspace_id)
+        : Promise.resolve(null),
+      user.workspace_id
+        ? getWorkspace(user.workspace_id)
+        : Promise.resolve(null),
+      adminClient
+        .from("check_in_responses")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("status", "pending")
+        .limit(1)
+        .maybeSingle(),
+      user.role === "resident"
+        ? (async () => {
+            const supabase = await createClient();
+            const { data } = await supabase
+              .from("restrictions")
+              .select("id, residents!inner(user_id)")
+              .eq("residents.user_id", user.id)
+              .eq("residents.status", "active")
+              .eq("is_active", true)
+              .in("restriction_type", [
+                "no_leave",
+                "no_overnight",
+                "house_commitment",
+              ])
+              .limit(1)
+              .maybeSingle();
+            return !!data;
+          })()
+        : Promise.resolve(false),
+    ]);
+
+  const commitmentRequired = wsSettings?.require_commitment !== false;
+  const paymentsEnabled = wsSettings?.enable_payments !== false;
+  const workspaceName = ws?.name ?? "Sober Living";
+
+  // --- Redirect gates (evaluated after the single fan-out) ---
+
+  // Resident who hasn't completed intake.
   if (user.role === "resident" && !user.intake_completed) {
-    if (user.workspace_id) {
-      const wsSettings = await getWorkspaceSettings(user.workspace_id);
-      if (wsSettings && !wsSettings.require_application) {
-        redirect("/quick-signup");
-      }
+    if (wsSettings && !wsSettings.require_application) {
+      redirect("/quick-signup");
     }
     redirect("/intake");
   }
 
-  // Gate pending workspace members after intake: they've submitted their
-  // application/registration but still need admin approval before proceeding.
+  // Pending workspace members: submitted intake but awaiting admin approval.
   if (
     user.role === "resident" &&
     user.intake_completed &&
@@ -44,102 +87,25 @@ export default async function DashboardLayout({
     redirect("/pending-approval");
   }
 
-  // Check workspace settings for commitment requirement and payment toggle.
-  let commitmentRequired = true;
-  let paymentsEnabled = true;
-  if (user.workspace_id) {
-    const wsSettings = await getWorkspaceSettings(user.workspace_id);
-    if (wsSettings && !wsSettings.require_commitment) {
-      commitmentRequired = false;
-    }
-    if (wsSettings && !wsSettings.enable_payments) {
-      paymentsEnabled = false;
-    }
-  }
-
-  // Redirect residents who completed intake but haven't signed their commitment agreement.
-  // Skip if the workspace doesn't require commitment.
+  // Unsigned commitment agreement (skip when workspace doesn't require it).
   if (user.role === "resident" && user.intake_completed && !user.commitment_signed && commitmentRequired) {
     redirect("/sign-commitment");
   }
 
-  // Redirect residents who have a pending amendment awaiting
-  // their signature. commitment_signed stays true on the user row
-  // after the original commitment is signed, so without this check
-  // a resident whose admin just proposed a rent-change amendment
-  // could keep using the app and never see the updated agreement.
-  // requireAuth computes has_pending_commitment via a live query
-  // against house_commitments, so this is always source-of-truth.
-  // Skip when workspace doesn't require commitments.
+  // Pending amendment awaiting resident signature.
   if (user.role === "resident" && user.has_pending_commitment && commitmentRequired) {
     redirect("/sign-commitment");
   }
 
-  // Redirect residents with an outstanding blocker they haven't
-  // acknowledged yet. Blockers are admin/manager-authored messages
-  // that require a signed ack before the resident can proceed —
-  // same gating model as /sign-commitment. pending_blocker_id is
-  // FIFO (oldest-first) so multi-blocker scenarios resolve in order.
-  // getSessionUser re-verifies the candidate before exposing it, so
-  // if this field is truthy the blocker is guaranteed to still be
-  // pending (not archived, not already acked). See src/lib/auth.ts.
+  // Outstanding blocker requiring acknowledgment.
   if (user.role === "resident" && user.pending_blocker_id) {
     redirect(`/acknowledge/${user.pending_blocker_id}`);
   }
 
-  // Critical-path queries that can influence the rendered shell:
-  //   • pendingCheckIn can redirect the request entirely
-  //   • hasNoLeaveRestriction controls whether the Overnight Request
-  //     nav link is filtered out (must be known before the sidebar
-  //     renders, otherwise the link would flash in then disappear)
-  //
-  // Run them in parallel — previously this was two sequential
-  // awaits which added a full round-trip on every resident
-  // navigation. The unread-count work has moved into Suspense
-  // islands (NotificationBadge / BulletinBadge) so it no longer
-  // blocks the shell at all.
-  const adminClient = createAdminClient();
-
-  const pendingCheckInPromise = adminClient
-    .from("check_in_responses")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("status", "pending")
-    .limit(1)
-    .maybeSingle();
-
-  const noLeavePromise =
-    user.role === "resident"
-      ? (async () => {
-          const supabase = await createClient();
-          const { data } = await supabase
-            .from("restrictions")
-            .select("id, residents!inner(user_id)")
-            .eq("residents.user_id", user.id)
-            .eq("residents.status", "active")
-            .eq("is_active", true)
-            .in("restriction_type", [
-              "no_leave",
-              "no_overnight",
-              "house_commitment",
-            ])
-            .limit(1)
-            .maybeSingle();
-          return !!data;
-        })()
-      : Promise.resolve(false);
-
-  const [pendingCheckInRes, hasNoLeaveRestriction] = await Promise.all([
-    pendingCheckInPromise,
-    noLeavePromise,
-  ]);
-
+  // Pending check-in response.
   if (pendingCheckInRes.data) {
     redirect(`/check-in/${pendingCheckInRes.data.id}`);
   }
-
-  const ws = user.workspace_id ? await getWorkspace(user.workspace_id) : null;
-  const workspaceName = ws?.name ?? "Sober Living";
 
   const isResident = user.role === "resident";
 
