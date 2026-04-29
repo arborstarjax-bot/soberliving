@@ -34,7 +34,7 @@ function RegisterForm() {
           <CardDescription>
             {isJoin
               ? "Create an account to request access to this workspace."
-              : "Sign up and set up your sober living workspace. You\u2019ll be the admin."}
+              : "Sign up and set up your workspace. You\u2019ll be the admin."}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -94,11 +94,11 @@ function RegisterForm() {
                     id="workspace_name"
                     name="workspace_name"
                     type="text"
-                    placeholder="e.g. Jax Sober Living"
+                    placeholder="e.g. Sunrise Recovery"
                     required
                   />
                   <p className="text-xs text-muted-foreground">
-                    The name of your sober living organization.
+                    The name of your organization.
                   </p>
                 </div>
               )}

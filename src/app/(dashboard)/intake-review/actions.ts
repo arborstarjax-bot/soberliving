@@ -18,9 +18,11 @@ import {
 import { generateReceiptPdf } from "@/lib/payments/receipt-pdf";
 import { z } from "zod";
 import { getHouseToday } from "@/lib/timezone";
-import { getWorkspaceSettings } from "@/lib/workspace";
+import { getWorkspace, getWorkspaceSettings } from "@/lib/workspace";
 
-const FACILITY_NAME = "Sober Living";
+// Receipt PDF uses the workspace name for branding. Fetched dynamically
+// via getWorkspace() below. This constant is the fallback.
+const DEFAULT_FACILITY_NAME = "Sober Living";
 
 const moveInPaymentSchema = z
   .object({
@@ -92,6 +94,12 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
   // logistics, move-in day) but don't approve/deny or assign housing.
   const currentUser = await requireRole("admin");
   const adminClient = createAdminClient();
+
+  // Resolve workspace name for branding
+  const ws = currentUser.workspace_id
+    ? await getWorkspace(currentUser.workspace_id)
+    : null;
+  const facilityName = ws?.name ?? DEFAULT_FACILITY_NAME;
 
   const parsed = completeIntakeReviewSchema.safeParse(formData);
   if (!parsed.success) {
@@ -433,7 +441,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
         const pdfBytes = await generateReceiptPdf({
           receiptNumber,
           paidAt: mi.paidAt,
-          facilityName: FACILITY_NAME,
+          facilityName: facilityName,
           houseName: house?.name ?? "",
           houseAddress: house?.address ?? null,
           residentName: targetUser.full_name,
@@ -972,7 +980,7 @@ export async function submitStaffSignoff(
   } else {
     await adminClient.from("documents").insert({
       user_id: userId,
-      name: "Jax Sober Living Intake Packet",
+      name: "Intake Packet",
       document_type: "intake_packet",
       storage_path: fileName,
       file_size: pdfBuffer.length,

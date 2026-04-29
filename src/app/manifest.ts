@@ -19,10 +19,10 @@ import type { MetadataRoute } from "next";
 //   without clipping the "SL" glyph.
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Sober Living",
-    short_name: "Sober Living",
+    name: "HouseFlow",
+    short_name: "HouseFlow",
     description:
-      "Sober living house management — intake, housing, payments, chores, and discipline in one app.",
+      "House management — intake, housing, payments, chores, and discipline in one app.",
     start_url: "/dashboard",
     scope: "/",
     display: "standalone",

@@ -147,6 +147,7 @@ const NAV_ITEMS: NavItem[] = [
 interface SidebarProps {
   role: UserRole;
   userName: string;
+  workspaceName?: string;
   hasNoLeaveRestriction?: boolean;
   enablePayments?: boolean;
   // Badges are passed as React nodes (not numbers) so the server
@@ -160,6 +161,7 @@ interface SidebarProps {
 export function Sidebar({
   role,
   userName,
+  workspaceName = "Sober Living",
   hasNoLeaveRestriction,
   enablePayments = true,
   notificationBadge = null,
@@ -192,7 +194,7 @@ export function Sidebar({
           onClick={() => setMobileOpen(false)}
         >
           <Home className="h-5 w-5" />
-          <span>Sober Living</span>
+          <span>{workspaceName}</span>
         </Link>
       </div>
 
@@ -269,6 +271,9 @@ export function Sidebar({
             Sign Out
           </button>
         </form>
+        <p className="px-3 pt-2 pb-1 text-[10px] text-sidebar-foreground/40 text-center">
+          Powered by HouseFlow
+        </p>
       </div>
     </>
   );
@@ -291,7 +296,7 @@ export function Sidebar({
             <Menu className="h-5 w-5" />
           )}
         </button>
-        <span className="ml-2 font-semibold flex-1">Sober Living</span>
+        <span className="ml-2 font-semibold flex-1">{workspaceName}</span>
         {role === "resident" && (
           <Link
             href="/notifications"

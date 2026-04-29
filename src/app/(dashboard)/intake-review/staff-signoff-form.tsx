@@ -13,6 +13,7 @@ import { getHouseToday } from "@/lib/timezone";
 interface Props {
   userId: string;
   userName: string;
+  facilityName: string;
   /** Existing form_data stored on the intake_forms row. */
   formData: Record<string, unknown>;
   /** Existing resident-side signatures (ignored — we only read for regen). */
@@ -33,6 +34,7 @@ interface Props {
 export function StaffSignoffForm({
   userId,
   userName,
+  facilityName,
   formData,
   signatures,
   onSigned,
@@ -63,7 +65,8 @@ export function StaffSignoffForm({
         const pdfBase64 = await generateIntakePdf(
           stringFormData,
           signatures,
-          { signature, printedName: printedName.trim(), date }
+          { signature, printedName: printedName.trim(), date },
+          facilityName
         );
 
         const res = await submitStaffSignoff({

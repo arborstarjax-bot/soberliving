@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sober Living",
+  title: "HouseFlow",
   description: "Sober living house management platform",
   // Points browsers + app stores at the web app manifest emitted by
   // src/app/manifest.ts. Next 16 advertises this automatically, but
@@ -36,7 +36,7 @@ export const metadata: Metadata = {
   // touch icon reference below will pick them up automatically.
   appleWebApp: {
     capable: true,
-    title: "Sober Living",
+    title: "HouseFlow",
     statusBarStyle: "black-translucent",
   },
   formatDetection: {

@@ -22,9 +22,9 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">Sober Living</CardTitle>
+          <CardTitle className="text-2xl font-bold">HouseFlow</CardTitle>
           <CardDescription>
-            Sign in to manage your houses
+            Sign in to your account
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -66,14 +66,21 @@ export default function LoginPage() {
             </Button>
           </form>
         </CardContent>
-        <CardFooter className="justify-center text-sm text-muted-foreground">
-          Don&apos;t have an account?{" "}
-          <Link
-            href="/register"
-            className="ml-1 font-medium text-primary hover:underline"
-          >
-            Sign up
-          </Link>
+        <CardFooter className="flex flex-col items-center gap-2 text-sm text-muted-foreground">
+          <div>
+            Don&apos;t have an account?{" "}
+            <Link
+              href="/register"
+              className="ml-1 font-medium text-primary hover:underline"
+            >
+              Sign up
+            </Link>
+          </div>
+          <div className="text-xs">
+            <Link href="/terms" className="hover:underline">Terms</Link>
+            {" · "}
+            <Link href="/privacy" className="hover:underline">Privacy</Link>
+          </div>
         </CardFooter>
       </Card>
     </div>

@@ -5,7 +5,7 @@ import { getDaysSober } from "@/lib/milestones";
 import { getHouseToday } from "@/lib/timezone";
 import { getCheckInBatches } from "../check-ins/actions";
 import { ResidentsTabs } from "./residents-tabs";
-import { getWorkspaceSettings } from "@/lib/workspace";
+import { getWorkspace, getWorkspaceSettings } from "@/lib/workspace";
 
 /**
  * Heavy data gather for the Residents page. Rendered inside a
@@ -353,6 +353,8 @@ export async function ResidentsTabsSection({
     ? await getWorkspaceSettings(user.workspace_id)
     : null;
   const requireCommitment = wsSettings?.require_commitment !== false;
+  const ws = user.workspace_id ? await getWorkspace(user.workspace_id) : null;
+  const facilityName = ws?.name ?? "Sober Living";
 
   return (
     <ResidentsTabs
@@ -368,6 +370,7 @@ export async function ResidentsTabsSection({
       intakeDenied={intakeDenied}
       checkInBatches={checkInBatches}
       requireCommitment={requireCommitment}
+      facilityName={facilityName}
     />
   );
 }

@@ -14,12 +14,7 @@ import {
 import { generateReceiptPdf } from "@/lib/payments/receipt-pdf";
 import { materializeNextRentCharge } from "@/lib/payments/charges";
 import { sendNotification } from "@/lib/notifications";
-
-// Facility display name shown in the receipt header. Centralised here
-// so rebranding is a one-line change. Could be lifted to an env var or
-// a `facility_settings` table later — not worth the DB round trip
-// right now.
-const FACILITY_NAME = "Sober Living";
+import { getWorkspace } from "@/lib/workspace";
 
 async function allocateReceiptNumber(): Promise<{
   number: string;
@@ -44,6 +39,9 @@ export async function createPayment(
 ) {
   const user = await requireAuth();
   if (user.role === "resident") return { error: "Not authorized" };
+
+  const ws = user.workspace_id ? await getWorkspace(user.workspace_id) : null;
+  const facilityName = ws?.name ?? "Sober Living";
 
   const parsed = createPaymentSchema.safeParse({
     resident_id: formData.get("resident_id"),
@@ -202,7 +200,7 @@ export async function createPayment(
       const pdfBytes = await generateReceiptPdf({
         receiptNumber,
         paidAt: paidAtIso,
-        facilityName: FACILITY_NAME,
+        facilityName: facilityName,
         houseName: house.name,
         houseAddress: house.address ?? null,
         residentName: resident.full_name,

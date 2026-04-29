@@ -72,7 +72,7 @@ export async function submitIntakeForm(
   if (!uploadError) {
     await adminClient.from("documents").insert({
       user_id: user.id,
-      name: "Jax Sober Living Intake Packet",
+      name: "Intake Packet",
       document_type: "intake_packet",
       storage_path: fileName,
       file_size: pdfBuffer.length,

@@ -151,6 +151,7 @@ interface ResidentsTabsProps {
   intakeDenied?: IntakeDeniedUser[];
   checkInBatches?: CheckInBatch[];
   requireCommitment?: boolean;
+  facilityName?: string;
 }
 
 export function ResidentsTabs({
@@ -166,6 +167,7 @@ export function ResidentsTabs({
   intakeDenied = [],
   checkInBatches = [],
   requireCommitment = true,
+  facilityName = "Sober Living",
 }: ResidentsTabsProps) {
   const [topTab, setTopTab] = useState<string>("residents");
   const [intakeSubTab, setIntakeSubTab] = useState<"pending" | "denied">(
@@ -648,6 +650,7 @@ export function ResidentsTabs({
                       signatures={user.intakeSignatures}
                       staffSignedOffAt={user.staffSignedOffAt}
                       requireCommitment={requireCommitment}
+                      facilityName={facilityName}
                     />
                   </div>
                 ))}

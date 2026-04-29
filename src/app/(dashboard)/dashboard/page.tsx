@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
+import { getWorkspaceSettings } from "@/lib/workspace";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Home, Users, Bed, ClipboardCheck, DollarSign, CalendarClock } from "lucide-react";
 import { ResidentDashboardSection } from "./resident-dashboard-section";
@@ -48,6 +49,10 @@ export default async function DashboardPage() {
   }
 
   const houseFilter = getAccessibleHouseFilter(user);
+  const wsSettings = user.workspace_id
+    ? await getWorkspaceSettings(user.workspace_id)
+    : null;
+  const paymentsEnabled = wsSettings?.enable_payments !== false;
 
   return (
     <div className="space-y-6">
@@ -91,17 +96,19 @@ export default async function DashboardPage() {
         >
           <ChoreReviewsStatTile houseFilter={houseFilter} />
         </Suspense>
-        <Suspense
-          fallback={
-            <StatTileFallback
-              label="Pending Payments"
-              icon={DollarSign}
-              href="/payments"
-            />
-          }
-        >
-          <PendingPaymentsStatTile houseFilter={houseFilter} />
-        </Suspense>
+        {paymentsEnabled && (
+          <Suspense
+            fallback={
+              <StatTileFallback
+                label="Pending Payments"
+                icon={DollarSign}
+                href="/payments"
+              />
+            }
+          >
+            <PendingPaymentsStatTile houseFilter={houseFilter} />
+          </Suspense>
+        )}
         <Suspense
           fallback={
             <StatTileFallback

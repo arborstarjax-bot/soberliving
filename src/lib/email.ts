@@ -24,7 +24,7 @@ function getResend(): Resend | null {
 const fromEmail =
   process.env.FROM_EMAIL ||
   process.env.RESEND_FROM_EMAIL ||
-  "Sober Living <onboarding@resend.dev>";
+  "HouseFlow <onboarding@resend.dev>";
 
 function escapeHtml(str: string): string {
   return str
@@ -81,10 +81,10 @@ export async function sendInviteEmail({
   const { data, error } = await resend.emails.send({
     from: fromEmail,
     to,
-    subject: "You've been invited to Sober Living",
+    subject: "You've been invited",
     html: `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 16px;">
-        <h2 style="color: #111; margin-bottom: 8px;">Welcome to Sober Living</h2>
+        <h2 style="color: #111; margin-bottom: 8px;">You're Invited</h2>
         <p style="color: #555; font-size: 15px; line-height: 1.6;">
           Hi ${safeName},
         </p>
@@ -104,7 +104,7 @@ export async function sendInviteEmail({
         </p>
         <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
         <p style="color: #bbb; font-size: 12px;">
-          Sober Living &mdash; <a href="${safeAppUrl}" style="color: #bbb;">${safeAppUrl}</a>
+          HouseFlow &mdash; <a href="${safeAppUrl}" style="color: #bbb;">${safeAppUrl}</a>
         </p>
       </div>
     `,
