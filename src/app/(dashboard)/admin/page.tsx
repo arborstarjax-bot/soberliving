@@ -30,7 +30,7 @@ import {
 //   - Active Residents         (navigation)
 //   - Signed Out               (expandable list)
 //   - On Overnight             (expandable list)
-//   - New Intakes (last 30d)   (expandable list)
+//   - New Intakes (this week)  (expandable list)
 //   - Missed Chores (this wk)  (expandable list)
 
 // Returns the ISO date of Monday of the week containing `todayIso`.
@@ -44,17 +44,6 @@ function isoWeekStart(todayIso: string): string {
   // Shift so Monday=0, ..., Sunday=6.
   const dayIdx = (dt.getUTCDay() + 6) % 7;
   dt.setUTCDate(dt.getUTCDate() - dayIdx);
-  const yy = dt.getUTCFullYear();
-  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(dt.getUTCDate()).padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
-}
-
-// Returns the ISO date N days before `todayIso` (YYYY-MM-DD).
-function isoDaysAgo(todayIso: string, days: number): string {
-  const [y, m, d] = todayIso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  dt.setUTCDate(dt.getUTCDate() - days);
   const yy = dt.getUTCFullYear();
   const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(dt.getUTCDate()).padStart(2, "0");
@@ -84,7 +73,6 @@ export default async function AdminPage() {
 
   const todayIso = getHouseToday();
   const weekStartIso = isoWeekStart(todayIso);
-  const thirtyDaysAgoIso = isoDaysAgo(todayIso, 30);
 
   // Houses + Active Residents were count-only NavCards; now they're
   // expandable lists like the rest. Fetch the actual rows so the
@@ -131,7 +119,7 @@ export default async function AdminPage() {
   // New Intakes: combined view of three buckets so the dashboard
   // shows the full intake pipeline (not just residents who are
   // already activated):
-  //   - active:            resident row with move_in_date in last 30d.
+  //   - active:            resident row with move_in_date this week.
   //   - pending_signature: commitment created, waiting on resident sig.
   //   - pending_review:    user finished intake form, not yet reviewed.
   // We also fetch user_id so we can dedupe against the
@@ -143,7 +131,7 @@ export default async function AdminPage() {
     .from("residents")
     .select("id, user_id, full_name, move_in_date, house:houses(name)")
     .eq("status", "active")
-    .gte("move_in_date", thirtyDaysAgoIso)
+    .gte("move_in_date", weekStartIso)
     .order("move_in_date", { ascending: false });
   if (houseFilter)
     newIntakesActiveQuery = newIntakesActiveQuery.in("house_id", houseFilter);
@@ -170,6 +158,7 @@ export default async function AdminPage() {
     .from("house_commitments")
     .select("id, user_id, created_at, house:houses(name)")
     .eq("status", "pending_resident_signature")
+    .gte("created_at", weekStartIso)
     .order("created_at", { ascending: false });
   if (houseFilter)
     pendingSignatureQuery = pendingSignatureQuery.in("house_id", houseFilter);
@@ -423,7 +412,11 @@ export default async function AdminPage() {
       formDateByUser.set(fRow.user_id, fRow.updated_at);
     }
     const pendingReviewUsers = (intakeUsers ?? []).filter(
-      (u) => !reviewedUserIds.has((u as { id: string }).id)
+      (u) => {
+        const row = u as { id: string; created_at: string };
+        if (reviewedUserIds.has(row.id)) return false;
+        return row.created_at >= weekStartIso;
+      }
     );
     pendingIntakeCount = pendingReviewUsers.length;
     newIntakesPendingReview = pendingReviewUsers.map((u) => {
