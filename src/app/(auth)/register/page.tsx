@@ -116,17 +116,19 @@ function RegisterForm() {
             </form>
           )}
         </CardContent>
-        <CardFooter className="flex flex-col items-center gap-2 text-sm text-muted-foreground">
-          <div>
-            Already have an account?{" "}
-            <Link
-              href="/login"
-              className="ml-1 font-medium text-primary hover:underline"
-            >
-              Sign in
-            </Link>
-          </div>
-        </CardFooter>
+        {!isJoin && (
+          <CardFooter className="flex flex-col items-center gap-2 text-sm text-muted-foreground">
+            <div>
+              Already have an account?{" "}
+              <Link
+                href="/login"
+                className="ml-1 font-medium text-primary hover:underline"
+              >
+                Sign in
+              </Link>
+            </div>
+          </CardFooter>
+        )}
       </Card>
     </div>
   );

@@ -150,28 +150,6 @@ export async function getWorkspaceInviteLink() {
   return { inviteUrl: `${appUrl}/register?workspace=${ws.invite_code}` };
 }
 
-export async function regenerateInviteCode() {
-  const user = await requireRole("admin");
-  if (!user.workspace_id) return { error: "Not authorized" };
-
-  const admin = createAdminClient();
-  // Generate a new random invite code
-  const { data, error } = await admin.rpc("gen_random_bytes_hex", { len: 16 }).single();
-
-  // Fallback: generate code in JS if RPC not available
-  const newCode = data ?? Array.from(crypto.getRandomValues(new Uint8Array(16)))
-    .map(b => b.toString(16).padStart(2, "0"))
-    .join("");
-
-  const { error: updateError } = await admin
-    .from("workspaces")
-    .update({ invite_code: newCode })
-    .eq("id", user.workspace_id);
-
-  if (updateError) return { error: updateError.message };
-  revalidatePath("/admin/workspace");
-  return {};
-}
 
 // --- Approve / Deny Pending Members ---
 
