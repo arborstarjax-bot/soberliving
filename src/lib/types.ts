@@ -49,6 +49,7 @@ export interface WorkspaceSettings {
   workspace_id: string;
   require_application: boolean;
   require_commitment: boolean;
+  enable_payments: boolean;
   created_at: string;
   updated_at: string;
 }

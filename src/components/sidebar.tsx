@@ -148,6 +148,7 @@ interface SidebarProps {
   role: UserRole;
   userName: string;
   hasNoLeaveRestriction?: boolean;
+  enablePayments?: boolean;
   // Badges are passed as React nodes (not numbers) so the server
   // can stream them into the sidebar behind `<Suspense>` — the
   // sidebar paints immediately and the badges fill in on their own.
@@ -160,6 +161,7 @@ export function Sidebar({
   role,
   userName,
   hasNoLeaveRestriction,
+  enablePayments = true,
   notificationBadge = null,
   bulletinBadge = null,
 }: SidebarProps) {
@@ -169,6 +171,7 @@ export function Sidebar({
   const filteredItems = NAV_ITEMS.filter((item) => {
     if (!item.roles.includes(role)) return false;
     if (item.href === "/leave-requests" && hasNoLeaveRestriction) return false;
+    if (item.href === "/payments" && !enablePayments) return false;
     if (item.href === "/incidents") return false;
     return true;
   });
@@ -176,7 +179,7 @@ export function Sidebar({
   const routesToPrefetch = useMemo(
     () => filteredItems.map((item) => item.href),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [role, hasNoLeaveRestriction]
+    [role, hasNoLeaveRestriction, enablePayments]
   );
   usePrefetchRoutes(routesToPrefetch);
 
