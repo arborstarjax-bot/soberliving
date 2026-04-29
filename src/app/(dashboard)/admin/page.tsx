@@ -158,7 +158,6 @@ export default async function AdminPage() {
     .from("house_commitments")
     .select("id, user_id, created_at, house:houses(name)")
     .eq("status", "pending_resident_signature")
-    .gte("created_at", weekStartIso)
     .order("created_at", { ascending: false });
   if (houseFilter)
     pendingSignatureQuery = pendingSignatureQuery.in("house_id", houseFilter);
@@ -305,13 +304,26 @@ export default async function AdminPage() {
   // Dedupe by user_id: unique index enforces at most one pending row
   // per user at the DB level, but we defensively collapse here in
   // case two rows sneak through.
+  // Dedupe pending-signature rows by user_id. Build the full set of
+  // user IDs first (needed for dedupe against the active bucket below)
+  // then filter to this week for display.
   const seenPendingSigUserIds = new Set<string>();
-  const newIntakesPendingSig: NewIntakeItem[] = pendingSigRows
-    .filter((r) => {
-      if (seenPendingSigUserIds.has(r.user_id)) return false;
-      seenPendingSigUserIds.add(r.user_id);
-      return true;
-    })
+  const dedupedPendingSigRows = pendingSigRows.filter((r) => {
+    if (seenPendingSigUserIds.has(r.user_id)) return false;
+    seenPendingSigUserIds.add(r.user_id);
+    return true;
+  });
+
+  // Full set of pending-signature user IDs for dedupe — must include
+  // ALL pending commitments regardless of date so the active bucket
+  // correctly shows "Pending resident signature" instead of "Complete".
+  const pendingSigUserIds = new Set(
+    dedupedPendingSigRows.map((r) => r.user_id)
+  );
+
+  // Display rows: only this week's pending signatures.
+  const newIntakesPendingSig: NewIntakeItem[] = dedupedPendingSigRows
+    .filter((r) => r.created_at >= weekStartIso)
     .map((r) => {
       const house = Array.isArray(r.house) ? r.house[0] : r.house;
       return {
@@ -328,9 +340,6 @@ export default async function AdminPage() {
   // exclude residents whose commitment is still awaiting signature —
   // otherwise they'd render twice, once as "Pending resident
   // signature" and once (incorrectly) as "Complete".
-  const pendingSigUserIds = new Set(
-    newIntakesPendingSig.map((r) => r.id)
-  );
   const newIntakesActive: NewIntakeItem[] = (
     (newIntakesActiveRaw as unknown as NewIntakeActiveRow[] | null) ?? []
   )
@@ -411,15 +420,16 @@ export default async function AdminPage() {
       const fRow = f as { user_id: string; updated_at: string };
       formDateByUser.set(fRow.user_id, fRow.updated_at);
     }
-    const pendingReviewUsers = (intakeUsers ?? []).filter(
-      (u) => {
-        const row = u as { id: string; created_at: string };
-        if (reviewedUserIds.has(row.id)) return false;
-        return row.created_at >= weekStartIso;
-      }
+    const allPendingReviewUsers = (intakeUsers ?? []).filter(
+      (u) => !reviewedUserIds.has((u as { id: string }).id)
     );
-    pendingIntakeCount = pendingReviewUsers.length;
-    newIntakesPendingReview = pendingReviewUsers.map((u) => {
+    // Banner count: ALL unreviewed intakes regardless of date.
+    pendingIntakeCount = allPendingReviewUsers.length;
+    // Card rows: only this week's pending reviews.
+    const thisWeekPendingReview = allPendingReviewUsers.filter(
+      (u) => (u as { created_at: string }).created_at >= weekStartIso
+    );
+    newIntakesPendingReview = thisWeekPendingReview.map((u) => {
       const row = u as { id: string; full_name: string; created_at: string };
       const submitted = formDateByUser.get(row.id) ?? row.created_at;
       return {
