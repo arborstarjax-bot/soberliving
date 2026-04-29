@@ -28,7 +28,11 @@ export async function updateWorkspaceName(workspaceId: string, name: string) {
 
 export async function updateWorkspaceSettings(
   workspaceId: string,
-  settings: { require_application: boolean; require_commitment: boolean }
+  settings: {
+    require_application: boolean;
+    require_commitment: boolean;
+    enable_payments: boolean;
+  }
 ) {
   const user = await requireRole("admin");
   if (!user.workspace_id || user.workspace_id !== workspaceId) {
@@ -40,6 +44,7 @@ export async function updateWorkspaceSettings(
     .update({
       require_application: settings.require_application,
       require_commitment: settings.require_commitment,
+      enable_payments: settings.enable_payments,
       updated_at: new Date().toISOString(),
     })
     .eq("workspace_id", workspaceId);

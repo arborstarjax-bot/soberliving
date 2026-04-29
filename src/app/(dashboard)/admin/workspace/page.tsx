@@ -63,7 +63,9 @@ export default async function WorkspaceSettingsPage() {
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="onboarding">Onboarding</TabsTrigger>
-          <TabsTrigger value="payments">Payments</TabsTrigger>
+          {settings?.enable_payments !== false && (
+            <TabsTrigger value="payments">Payments</TabsTrigger>
+          )}
           <TabsTrigger value="curfews">Curfews</TabsTrigger>
           <TabsTrigger value="members">
             Members
@@ -86,12 +88,14 @@ export default async function WorkspaceSettingsPage() {
           />
         </TabsContent>
 
-        <TabsContent value="payments">
-          <PaymentConfigSection
-            workspaceId={workspace.id}
-            config={paymentConfig}
-          />
-        </TabsContent>
+        {settings?.enable_payments !== false && (
+          <TabsContent value="payments">
+            <PaymentConfigSection
+              workspaceId={workspace.id}
+              config={paymentConfig}
+            />
+          </TabsContent>
+        )}
 
         <TabsContent value="curfews">
           <CurfewSection

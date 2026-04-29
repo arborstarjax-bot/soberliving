@@ -44,13 +44,16 @@ export default async function DashboardLayout({
     redirect("/pending-approval");
   }
 
-  // Check whether the workspace requires commitment agreements.
-  // Used by both the initial commitment gate and the pending-amendment gate.
+  // Check workspace settings for commitment requirement and payment toggle.
   let commitmentRequired = true;
+  let paymentsEnabled = true;
   if (user.workspace_id) {
     const wsSettings = await getWorkspaceSettings(user.workspace_id);
     if (wsSettings && !wsSettings.require_commitment) {
       commitmentRequired = false;
+    }
+    if (wsSettings && !wsSettings.enable_payments) {
+      paymentsEnabled = false;
     }
   }
 
@@ -161,6 +164,7 @@ export default async function DashboardLayout({
           role={user.role}
           userName={user.full_name}
           hasNoLeaveRestriction={hasNoLeaveRestriction}
+          enablePayments={paymentsEnabled}
           notificationBadge={notificationBadge}
           bulletinBadge={bulletinBadge}
         />
@@ -183,6 +187,7 @@ export default async function DashboardLayout({
         role={user.role}
         userName={user.full_name}
         hasNoLeaveRestriction={hasNoLeaveRestriction}
+        enablePayments={paymentsEnabled}
         notificationBadge={notificationBadge}
         bulletinBadge={bulletinBadge}
       />

@@ -301,29 +301,17 @@ export default async function AdminPage() {
     (pendingSigUserRows ?? []).map((u) => [u.id as string, u.full_name as string])
   );
 
-  // Dedupe by user_id: unique index enforces at most one pending row
-  // per user at the DB level, but we defensively collapse here in
-  // case two rows sneak through.
-  // Dedupe pending-signature rows by user_id. Build the full set of
-  // user IDs first (needed for dedupe against the active bucket below)
-  // then filter to this week for display.
+  // Dedupe pending-signature rows by user_id. Unique index enforces
+  // at most one pending row per user at the DB level, but we
+  // defensively collapse here in case two rows sneak through.
+  // No date filter — all pending-signature commitments are actionable.
   const seenPendingSigUserIds = new Set<string>();
-  const dedupedPendingSigRows = pendingSigRows.filter((r) => {
-    if (seenPendingSigUserIds.has(r.user_id)) return false;
-    seenPendingSigUserIds.add(r.user_id);
-    return true;
-  });
-
-  // Full set of pending-signature user IDs for dedupe — must include
-  // ALL pending commitments regardless of date so the active bucket
-  // correctly shows "Pending resident signature" instead of "Complete".
-  const pendingSigUserIds = new Set(
-    dedupedPendingSigRows.map((r) => r.user_id)
-  );
-
-  // Display rows: only this week's pending signatures.
-  const newIntakesPendingSig: NewIntakeItem[] = dedupedPendingSigRows
-    .filter((r) => r.created_at >= weekStartIso)
+  const newIntakesPendingSig: NewIntakeItem[] = pendingSigRows
+    .filter((r) => {
+      if (seenPendingSigUserIds.has(r.user_id)) return false;
+      seenPendingSigUserIds.add(r.user_id);
+      return true;
+    })
     .map((r) => {
       const house = Array.isArray(r.house) ? r.house[0] : r.house;
       return {
@@ -340,6 +328,9 @@ export default async function AdminPage() {
   // exclude residents whose commitment is still awaiting signature —
   // otherwise they'd render twice, once as "Pending resident
   // signature" and once (incorrectly) as "Complete".
+  const pendingSigUserIds = new Set(
+    newIntakesPendingSig.map((r) => r.id)
+  );
   const newIntakesActive: NewIntakeItem[] = (
     (newIntakesActiveRaw as unknown as NewIntakeActiveRow[] | null) ?? []
   )

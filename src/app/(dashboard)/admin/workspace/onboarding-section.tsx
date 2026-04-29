@@ -49,6 +49,9 @@ export function OnboardingSection({
   const [requireCommitment, setRequireCommitment] = useState(
     settings?.require_commitment ?? true
   );
+  const [enablePayments, setEnablePayments] = useState(
+    settings?.enable_payments ?? true
+  );
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
 
@@ -57,6 +60,7 @@ export function OnboardingSection({
       const result = await updateWorkspaceSettings(workspaceId, {
         require_application: requireApp,
         require_commitment: requireCommitment,
+        enable_payments: enablePayments,
       });
       if (result.error) {
         setMessage(result.error);
@@ -107,6 +111,23 @@ export function OnboardingSection({
             id="require-commitment"
             checked={requireCommitment}
             onCheckedChange={setRequireCommitment}
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <Label htmlFor="enable-payments">
+              Enable Payments
+            </Label>
+            <p className="text-sm text-muted-foreground">
+              When enabled, the Payments section is visible to staff and
+              residents. When disabled, all payment-related features are hidden.
+            </p>
+          </div>
+          <Toggle
+            id="enable-payments"
+            checked={enablePayments}
+            onCheckedChange={setEnablePayments}
           />
         </div>
 
