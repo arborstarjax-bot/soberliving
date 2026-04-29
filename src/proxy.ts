@@ -162,7 +162,7 @@ export default async function proxy(req: NextRequest) {
     return supabaseResponse;
   }
 
-  if (!user && !hasSub) {
+  if (!user) {
     const loginUrl = new URL("/login", req.nextUrl);
     loginUrl.searchParams.set("redirect", pathname);
     return NextResponse.redirect(loginUrl);
