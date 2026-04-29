@@ -916,12 +916,10 @@ export async function submitStaffSignoff(
   signatures.application_staff = signature;
 
   const witnessKeys = [
-    "mat_policy_witness",
+    "house_rules_policy_witness",
     "good_neighbor_policy_witness",
     "confidentiality_policy_witness",
     "discharge_policy_witness",
-    "hazardous_items_policy_witness",
-    "medication_storage_policy_witness",
   ];
   for (const k of witnessKeys) {
     signatures[k] = signature;
