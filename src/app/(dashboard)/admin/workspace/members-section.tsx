@@ -13,13 +13,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   getWorkspaceInviteLink,
-  regenerateInviteCode,
   approvePendingMember,
   denyPendingMember,
   removeWorkspaceMember,
 } from "./actions";
 import type { WorkspaceMember } from "@/lib/types";
-import { Check, X, RefreshCw, Copy, Link } from "lucide-react";
+import { Check, X, Copy, Link } from "lucide-react";
 
 export function MembersSection({
   members,
@@ -45,19 +44,6 @@ export function MembersSection({
     setTimeout(() => setCopied(false), 2000);
   }
 
-  function handleRegenerate() {
-    if (!confirm("Regenerate invite link? The old link will stop working.")) return;
-    startTransition(async () => {
-      const result = await regenerateInviteCode();
-      if (result.error) {
-        setMessage(result.error);
-      } else {
-        const fresh = await getWorkspaceInviteLink();
-        if (fresh.inviteUrl) setInviteUrl(fresh.inviteUrl);
-        setMessage("Invite link regenerated.");
-      }
-    });
-  }
 
   function handleApprove(memberId: string) {
     startTransition(async () => {
@@ -113,20 +99,7 @@ export function MembersSection({
               </Button>
             </div>
           )}
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRegenerate}
-              disabled={pending}
-            >
-              <RefreshCw className="mr-1 h-3.5 w-3.5" />
-              Regenerate Link
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              This invalidates the previous link.
-            </p>
-          </div>
+
           {message && (
             <p
               className={`text-sm ${message.toLowerCase().includes("error") || message.toLowerCase().includes("not") ? "text-destructive" : "text-green-600"}`}
