@@ -22,7 +22,7 @@ interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
 }
 
-// Sidebar entry that lets the user install Sober Living as a PWA.
+// Sidebar entry that lets the user install the app as a PWA.
 //
 // Behavior:
 //   - Chromium/Edge/Android: listens for `beforeinstallprompt`,
@@ -94,7 +94,7 @@ export function InstallAppButton({
               variant="outline"
               size="sm"
               className={className}
-              aria-label="Install Sober Living on this device"
+              aria-label="Install app on this device"
             />
           }
         >
@@ -131,7 +131,7 @@ export function InstallAppButton({
             </li>
           </ol>
           <p className="text-xs text-muted-foreground">
-            Sober Living will appear as its own icon and open full-screen
+            The app will appear as its own icon and open full-screen
             without the Safari toolbar.
           </p>
         </DialogContent>

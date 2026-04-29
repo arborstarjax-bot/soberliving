@@ -2,10 +2,10 @@
 
 import { PDFDocument, PDFFont, PDFPage, rgb, StandardFonts } from "pdf-lib";
 import {
-  ALL_POLICIES,
-  APPLICATION_ATTEST_TEXT,
-  DOCUMENT_RECEIPT_TEXT,
-  ROI_INTRO_TEXT,
+  getAllPolicies,
+  getApplicationAttestText,
+  getDocumentReceiptText,
+  getRoiIntroText,
   type PolicyPageContent,
 } from "./policy-text";
 
@@ -31,7 +31,8 @@ export interface StaffSignOff {
 export async function generateIntakePdf(
   rawFormData: Record<string, string>,
   rawSignatures: Record<string, string>,
-  staffSignOff?: StaffSignOff | null
+  staffSignOff?: StaffSignOff | null,
+  facilityName: string = "Sober Living"
 ): Promise<string> {
   // When staff has signed off, one signature+name+date fills every
   // staff/witness slot across the packet (application staff sig,
@@ -44,7 +45,8 @@ export async function generateIntakePdf(
     formData.application_staff_name = staffSignOff.printedName;
     formData.application_staff_date = staffSignOff.date;
     signatures.application_staff = staffSignOff.signature;
-    for (const p of ALL_POLICIES) {
+    const allPolicies = getAllPolicies(facilityName);
+    for (const p of allPolicies) {
       if (p.witnessKey) {
         signatures[p.witnessKey] = staffSignOff.signature;
         formData[`${p.witnessKey}_date`] = staffSignOff.date;
@@ -91,7 +93,7 @@ export async function generateIntakePdf(
   }
 
   // Centered italic title wrapped in en-dashes, mirroring the paper scan:
-  //     - Jax Sober Living Resident Application -
+  //     - [Facility] Resident Application -
   function drawTitle(text: string) {
     ensureSpace(TITLE_SIZE + 28);
     const full = `- ${text} -`;
@@ -604,7 +606,7 @@ export async function generateIntakePdf(
   // RESIDENT APPLICATION
   // ═══════════════════════════════════════════════════════════════
 
-  drawTitle("Jax Sober Living Resident Application");
+  drawTitle(`${facilityName} Resident Application`);
   y -= 4;
 
   // — Personal Info —
@@ -651,75 +653,20 @@ export async function generateIntakePdf(
     ]);
   }
 
-  // — Referral & Recovery —
-  drawSectionHeading("Recovery & Medical");
-  drawInlineField(
-    "How did you hear about Jax Sober Living?",
-    formData.referral_source
-  );
+  // — Recovery Info —
+  drawSectionHeading("Recovery Information");
+  drawInlineField("How did you hear about us?", formData.referral_source);
+  drawInlineField("Sobriety Date", formData.sobriety_date);
   drawYesNoField(
-    "Do you identify as someone who struggles with drugs and/or alcohol?",
-    formData.struggles_with_substances
-  );
-  drawYesNoField(
-    "Plan on working a recovery program while at Jax Sober Living (12 Step based)?",
+    "Do you plan on working a recovery program?",
     formData.in_recovery_program
   );
-  drawYesNoField(
-    "Attending or will be attending an IOP Program?",
-    formData.attending_iop
-  );
-  if (formData.attending_iop === "Yes") {
-    drawInlineField("IOP Program Name", formData.iop_program_name);
-  }
-  drawInlineField("Medications", formData.medications);
-  drawInlineField("Medical History / Issues", formData.medical_history);
-  drawYesNoField(
-    "Ever been diagnosed with a mental illness?",
-    formData.has_mental_illness
-  );
-  if (formData.has_mental_illness === "Yes") {
-    drawInlineField(
-      "Mental Illness Diagnosis",
-      formData.mental_illness_diagnosis
-    );
-  }
-  drawYesNoField(
-    "Any present or past physical problems?",
-    formData.has_physical_problems
-  );
-  if (formData.has_physical_problems === "Yes") {
-    drawInlineField(
-      "Physical Problem Diagnosis",
-      formData.physical_problems_diagnosis
-    );
-  }
 
-  // — Allergies / Physician / Employment —
-  newPage();
-  drawSectionHeading("Allergies, Physician & Employment");
-  drawYesNoField("Any known allergies?", formData.has_allergies);
-  if (formData.has_allergies === "Yes") {
-    drawInlineField(
-      "If yes, describe (reaction / remedy)",
-      formData.allergies_details
-    );
-  }
-  drawYesNoField(
-    "Currently under the care of a physician?",
-    formData.under_physician_care
-  );
-  if (formData.under_physician_care === "Yes") {
-    drawInlineField("If so, reason", formData.physician_reason);
-    drawInlineRow([
-      { label: "Physician's Name", value: formData.physician_name },
-      { label: "Phone No.", value: formData.physician_phone },
-    ]);
-  }
+  // — Employment —
+  drawSectionHeading("Employment");
   drawYesNoField("Currently working?", formData.currently_working);
   if (formData.currently_working === "Yes") {
     drawInlineField("Employer", formData.employer_name);
-    drawInlineField("Employer Address", formData.employer_address);
     drawInlineField("Employer Phone", formData.employer_phone);
   }
 
@@ -735,49 +682,8 @@ export async function generateIntakePdf(
     { label: "Relationship", value: formData.emergency_contact_2_relationship },
     { label: "Phone No.", value: formData.emergency_contact_2_phone },
   ]);
-  drawSectionHeading("Financial Contact");
-  drawFieldRow([
-    { label: "Name", value: formData.financial_contact_name },
-    { label: "Relationship", value: formData.financial_contact_relationship },
-    { label: "Phone No.", value: formData.financial_contact_phone },
-  ]);
-
-  // — Substance Abuse Facility History —
-  drawSectionHeading("Substance Abuse Facility / Sober Housing History");
-  for (let i = 1; i <= 4; i++) {
-    const name = formData[`facility_${i}_name`];
-    const discharge = formData[`facility_${i}_discharge_date`];
-    const length = formData[`facility_${i}_length_of_stay`];
-    const completed = formData[`facility_${i}_completed`];
-    const reason = formData[`facility_${i}_reason_not_completed`];
-    if (!name && !discharge && !length && !completed) continue;
-    drawFieldRow([
-      { label: `Facility #${i}`, value: name },
-      { label: "Date Discharged", value: discharge },
-      { label: "Length of Stay", value: length },
-    ]);
-    drawYesNoField("Successfully completed?", completed);
-    if (completed === "No" && reason) {
-      drawInlineField("If no, why not?", reason);
-    }
-  }
-  drawInlineField("Sobriety Date", formData.sobriety_date);
-
-  // — Drug Use & Criminal History —
-  newPage();
-  drawSectionHeading("Drug Use");
-  drawInlineField("Drug of Choice", formData.drug_of_choice);
-  for (let i = 1; i <= 4; i++) {
-    const d = formData[`recent_drug_${i}_name`];
-    const dt = formData[`recent_drug_${i}_date`];
-    if (!d && !dt) continue;
-    drawFieldRow([
-      { label: `Drug ${i}`, value: d },
-      { label: "Date of Last Use", value: dt },
-    ]);
-  }
-
-  drawSectionHeading("Criminal History");
+  // — Background Check —
+  drawSectionHeading("Background Check");
   drawYesNoField(
     "Ever convicted of a felony or misdemeanor?",
     formData.convicted_felon
@@ -795,20 +701,13 @@ export async function generateIntakePdf(
       formData.sex_offender_explanation
     );
   }
-  drawYesNoField(
-    "Convicted of violent/sexual crimes against elderly, children, or disabled?",
-    formData.violent_crime_history
-  );
-  if (formData.violent_crime_history === "Yes") {
-    drawInlineField(
-      "If yes, please explain",
-      formData.violent_crime_explanation
-    );
+  if (formData.additional_notes) {
+    drawInlineField("Additional Notes", formData.additional_notes);
   }
 
   // — Attestation + Application signatures —
   drawSectionHeading("Attestation");
-  drawParagraph(APPLICATION_ATTEST_TEXT);
+  drawParagraph(getApplicationAttestText());
   y -= 8;
   await drawSignatureBlock({
     label: "Resident Signature",
@@ -833,7 +732,7 @@ export async function generateIntakePdf(
   // POLICY PAGES (each on a fresh page)
   // ═══════════════════════════════════════════════════════════════
 
-  for (const policy of ALL_POLICIES) {
+  for (const policy of getAllPolicies(facilityName)) {
     await renderPolicy(policy, formData);
   }
 
@@ -848,7 +747,7 @@ export async function generateIntakePdf(
     { label: "Date", value: formData.roi_form_date },
   ]);
   y -= 4;
-  for (const para of ROI_INTRO_TEXT.split("\n\n")) {
+  for (const para of getRoiIntroText(facilityName).split("\n\n")) {
     drawParagraph(para);
     y -= 4;
   }
@@ -887,10 +786,10 @@ export async function generateIntakePdf(
   newPage();
   drawTitle("Resident Document Receipt Acknowledgment");
   drawParagraph(
-    "Form letter to be signed by resident to indicate he or she has received the policy and procedures documents and understands its effect. To be returned to Jax Sober Living Halfway House."
+    `Form letter to be signed by resident to indicate they have received the policy and procedures documents and understand their effect. To be returned to ${facilityName}.`
   );
   y -= 4;
-  const filledReceipt = DOCUMENT_RECEIPT_TEXT.replace(
+  const filledReceipt = getDocumentReceiptText(facilityName).replace(
     "____________________",
     formData.document_receipt_print_name || "____________________"
   );

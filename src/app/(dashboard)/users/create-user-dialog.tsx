@@ -80,8 +80,8 @@ export function CreateUserDialog({ houses = [] }: { houses?: House[] }) {
     if (!link) return;
     try {
       await navigator.share({
-        title: "Sober Living invite",
-        text: "Set up your Sober Living account:",
+        title: "You're invited",
+        text: "Set up your account:",
         url: link,
       });
     } catch {

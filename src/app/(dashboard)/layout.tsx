@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
 import { ResidentBottomNav } from "@/components/resident-bottom-nav";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
-import { getWorkspaceSettings } from "@/lib/workspace";
+import { getWorkspace, getWorkspaceSettings } from "@/lib/workspace";
 import { NotificationBadge } from "./notification-badge";
 import { BulletinBadge } from "./bulletin-badge";
 
@@ -138,6 +138,9 @@ export default async function DashboardLayout({
     redirect(`/check-in/${pendingCheckInRes.data.id}`);
   }
 
+  const ws = user.workspace_id ? await getWorkspace(user.workspace_id) : null;
+  const workspaceName = ws?.name ?? "Sober Living";
+
   const isResident = user.role === "resident";
 
   const notificationBadge = (
@@ -163,6 +166,7 @@ export default async function DashboardLayout({
         <Sidebar
           role={user.role}
           userName={user.full_name}
+          workspaceName={workspaceName}
           hasNoLeaveRestriction={hasNoLeaveRestriction}
           enablePayments={paymentsEnabled}
           notificationBadge={notificationBadge}
@@ -186,6 +190,7 @@ export default async function DashboardLayout({
       <Sidebar
         role={user.role}
         userName={user.full_name}
+        workspaceName={workspaceName}
         hasNoLeaveRestriction={hasNoLeaveRestriction}
         enablePayments={paymentsEnabled}
         notificationBadge={notificationBadge}

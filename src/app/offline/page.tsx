@@ -9,11 +9,11 @@ export default function OfflinePage() {
     <main className="min-h-dvh flex items-center justify-center bg-background p-6">
       <div className="max-w-sm text-center space-y-4">
         <div className="mx-auto h-16 w-16 rounded-2xl bg-[#1e2a44] flex items-center justify-center text-white text-xl font-serif font-bold">
-          SL
+          HF
         </div>
         <h1 className="text-xl font-semibold">You&apos;re offline</h1>
         <p className="text-sm text-muted-foreground">
-          Sober Living needs a connection to sync residents, payments,
+          HouseFlow needs a connection to sync residents, payments,
           and notifications. Check your Wi-Fi or cell signal and try
           again.
         </p>

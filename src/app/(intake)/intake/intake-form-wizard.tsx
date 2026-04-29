@@ -12,24 +12,24 @@ import { Loader2 } from "lucide-react";
 import { saveIntakeProgress, submitIntakeForm } from "../actions";
 import { generateIntakePdf } from "./generate-pdf";
 import {
-  ALL_POLICIES,
-  APPLICATION_ATTEST_TEXT,
-  DOCUMENT_RECEIPT_TEXT,
+  getAllPolicies,
+  getApplicationAttestText,
+  getDocumentReceiptText,
+  getRoiIntroText,
   type PolicyPageContent,
-  ROI_INTRO_TEXT,
 } from "./policy-text";
 
-const TOTAL_PAGES = 13;
+const TOTAL_PAGES = 8;
 
 interface IntakeFormWizardProps {
   userName: string;
   userEmail: string;
+  facilityName: string;
   initialData: Record<string, string> | null;
   initialSignatures: Record<string, string> | null;
 }
 
 function todayIso() {
-  // Always capture the resident's local calendar date, not UTC.
   const now = new Date();
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, "0");
@@ -40,6 +40,7 @@ function todayIso() {
 export function IntakeFormWizard({
   userName,
   userEmail,
+  facilityName,
   initialData,
   initialSignatures,
 }: IntakeFormWizardProps) {
@@ -54,6 +55,8 @@ export function IntakeFormWizard({
   const [error, setError] = useState<string | null>(null);
   const [isSaving, startSaving] = useTransition();
   const [isSubmitting, startSubmitting] = useTransition();
+
+  const policies = getAllPolicies(facilityName);
 
   const updateField = useCallback((name: string, value: string) => {
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -90,12 +93,7 @@ export function IntakeFormWizard({
 
     const requiredSigs = [
       "resident_application",
-      "mat_policy",
-      "good_neighbor_policy",
-      "confidentiality_policy",
-      "discharge_policy",
-      "hazardous_items_policy",
-      "medication_storage_policy",
+      ...policies.map((p) => p.signatureKey),
       "release_of_information",
       "document_receipt",
     ];
@@ -109,7 +107,7 @@ export function IntakeFormWizard({
 
     startSubmitting(async () => {
       try {
-        const pdfBase64 = await generateIntakePdf(formData, signatures);
+        const pdfBase64 = await generateIntakePdf(formData, signatures, null, facilityName);
         const result = await submitIntakeForm(formData, signatures, pdfBase64);
         if (result?.error) {
           setError(result.error);
@@ -118,7 +116,7 @@ export function IntakeFormWizard({
         }
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Failed to submit intake form"
+          err instanceof Error ? err.message : "Failed to submit application"
         );
       }
     });
@@ -148,15 +146,14 @@ export function IntakeFormWizard({
             </div>
             <h2 className="text-xl font-semibold">Submitting Your Application</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              This may take a few minutes — we&apos;re generating your intake
-              packet and notifying staff. Please keep this screen open and
-              don&apos;t close the app.
+              This may take a few minutes — we&apos;re generating your
+              packet and notifying staff. Please keep this screen open.
             </p>
           </div>
         </div>
       )}
       <div>
-        <h1 className="text-2xl font-bold">Jax Sober Living Resident Application</h1>
+        <h1 className="text-2xl font-bold">{facilityName} Resident Application</h1>
         <p className="text-muted-foreground">
           Page {page} of {TOTAL_PAGES}
         </p>
@@ -168,113 +165,39 @@ export function IntakeFormWizard({
         </div>
       </div>
 
-      {page === 1 && <Page1PersonalInfo data={formData} onChange={updateField} />}
-      {page === 2 && <Page2RecoveryMedical data={formData} onChange={updateField} />}
-      {page === 3 && <Page3PhysicianEmployment data={formData} onChange={updateField} />}
-      {page === 4 && <Page4FacilityHistory data={formData} onChange={updateField} />}
-      {page === 5 && (
-        <Page5DrugsCriminalAndSign
-          data={formData}
-          onChange={updateField}
-          signatures={signatures}
-          onSignatureChange={updateSignature}
-        />
-      )}
-      {page === 6 && (
-        <PolicyPage
-          content={ALL_POLICIES[0]}
-          data={formData}
-          onChange={updateField}
-          signatures={signatures}
-          onSignatureChange={updateSignature}
-        />
-      )}
-      {page === 7 && (
-        <PolicyPage
-          content={ALL_POLICIES[1]}
-          data={formData}
-          onChange={updateField}
-          signatures={signatures}
-          onSignatureChange={updateSignature}
-        />
-      )}
-      {page === 8 && (
-        <PolicyPage
-          content={ALL_POLICIES[2]}
-          data={formData}
-          onChange={updateField}
-          signatures={signatures}
-          onSignatureChange={updateSignature}
-        />
-      )}
-      {page === 9 && (
-        <PolicyPage
-          content={ALL_POLICIES[3]}
-          data={formData}
-          onChange={updateField}
-          signatures={signatures}
-          onSignatureChange={updateSignature}
-        />
-      )}
-      {page === 10 && (
-        <PolicyPage
-          content={ALL_POLICIES[4]}
-          data={formData}
-          onChange={updateField}
-          signatures={signatures}
-          onSignatureChange={updateSignature}
-        />
-      )}
-      {page === 11 && (
-        <PolicyPage
-          content={ALL_POLICIES[5]}
-          data={formData}
-          onChange={updateField}
-          signatures={signatures}
-          onSignatureChange={updateSignature}
-        />
-      )}
-      {page === 12 && (
-        <PageROI
-          data={formData}
-          onChange={updateField}
-          signatures={signatures}
-          onSignatureChange={updateSignature}
-        />
-      )}
-      {page === 13 && (
-        <PageDocumentReceipt
-          data={formData}
-          onChange={updateField}
-          signatures={signatures}
-          onSignatureChange={updateSignature}
-        />
-      )}
+      {page === 1 && <Page1PersonalInfo facilityName={facilityName} data={formData} onChange={updateField} />}
+      {page === 2 && <Page2BackgroundAndSign data={formData} onChange={updateField} signatures={signatures} onSignatureChange={updateSignature} />}
+      {page === 3 && <PolicyPage content={policies[0]} data={formData} onChange={updateField} signatures={signatures} onSignatureChange={updateSignature} />}
+      {page === 4 && <PolicyPage content={policies[1]} data={formData} onChange={updateField} signatures={signatures} onSignatureChange={updateSignature} />}
+      {page === 5 && <PolicyPage content={policies[2]} data={formData} onChange={updateField} signatures={signatures} onSignatureChange={updateSignature} />}
+      {page === 6 && <PolicyPage content={policies[3]} data={formData} onChange={updateField} signatures={signatures} onSignatureChange={updateSignature} />}
+      {page === 7 && <PageROI facilityName={facilityName} data={formData} onChange={updateField} signatures={signatures} onSignatureChange={updateSignature} />}
+      {page === 8 && <PageDocumentReceipt facilityName={facilityName} data={formData} onChange={updateField} signatures={signatures} onSignatureChange={updateSignature} />}
 
       {error && (
-        <p className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+        <p className="text-sm text-destructive bg-destructive/10 rounded-md p-3">
           {error}
         </p>
       )}
 
-      <div className="flex items-center justify-between pt-4 border-t">
+      <div className="flex justify-between gap-4 pb-8">
         <Button
           variant="outline"
           onClick={handlePrev}
-          disabled={page === 1 || isSaving || isSubmitting}
+          disabled={page === 1 || isSaving}
         >
           Previous
         </Button>
-        <span className="text-sm text-muted-foreground">
-          {isSaving && "Saving..."}
-        </span>
         {isLastPage ? (
-          <Button onClick={handleSubmit} disabled={isSubmitting || isSaving}>
-            {isSubmitting ? "Submitting..." : "Submit & Sign"}
+          <Button
+            onClick={handleSubmit}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? "Submitting..." : "Submit Application"}
           </Button>
         ) : (
-          <Button onClick={handleNext} disabled={isSaving || isSubmitting}>
-            Next
+          <Button onClick={handleNext} disabled={isSaving}>
+            {isSaving ? "Saving..." : "Next"}
           </Button>
         )}
       </div>
@@ -282,9 +205,17 @@ export function IntakeFormWizard({
   );
 }
 
-// ─── Field Helpers ────────────────────────────────────────────────────────
+// ─── Reusable Form Helpers ──────────────────────────────────
 
-interface FieldProps {
+function Field({
+  label,
+  name,
+  data,
+  onChange,
+  type = "text",
+  required,
+  placeholder,
+}: {
   label: string;
   name: string;
   data: Record<string, string>;
@@ -292,12 +223,9 @@ interface FieldProps {
   type?: string;
   required?: boolean;
   placeholder?: string;
-  max?: string;
-}
-
-function Field({ label, name, data, onChange, type = "text", required, placeholder, max }: FieldProps) {
+}) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1">
       <Label htmlFor={name}>
         {label}
         {required && " *"}
@@ -308,9 +236,8 @@ function Field({ label, name, data, onChange, type = "text", required, placehold
         type={type}
         value={data[name] ?? ""}
         onChange={(e) => onChange(name, e.target.value)}
-        placeholder={placeholder}
         required={required}
-        max={max}
+        placeholder={placeholder}
       />
     </div>
   );
@@ -322,17 +249,15 @@ function TextAreaField({
   data,
   onChange,
   rows = 3,
-  placeholder,
 }: {
   label: string;
   name: string;
   data: Record<string, string>;
   onChange: (name: string, value: string) => void;
   rows?: number;
-  placeholder?: string;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1">
       <Label htmlFor={name}>{label}</Label>
       <Textarea
         id={name}
@@ -340,8 +265,40 @@ function TextAreaField({
         value={data[name] ?? ""}
         onChange={(e) => onChange(name, e.target.value)}
         rows={rows}
-        placeholder={placeholder}
       />
+    </div>
+  );
+}
+
+function YesNoField({
+  label,
+  name,
+  data,
+  onChange,
+}: {
+  label: string;
+  name: string;
+  data: Record<string, string>;
+  onChange: (name: string, value: string) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <Label>{label}</Label>
+      <div className="flex gap-4">
+        {["Yes", "No"].map((opt) => (
+          <label key={opt} className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="radio"
+              name={name}
+              value={opt}
+              checked={data[name] === opt}
+              onChange={() => onChange(name, opt)}
+              className="h-3.5 w-3.5 cursor-pointer"
+            />
+            {opt}
+          </label>
+        ))}
+      </div>
     </div>
   );
 }
@@ -360,14 +317,14 @@ function SelectField({
   options: { value: string; label: string }[];
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1">
       <Label htmlFor={name}>{label}</Label>
       <select
         id={name}
         name={name}
         value={data[name] ?? ""}
         onChange={(e) => onChange(name, e.target.value)}
-        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
       >
         <option value="">Select...</option>
         {options.map((opt) => (
@@ -377,31 +334,6 @@ function SelectField({
         ))}
       </select>
     </div>
-  );
-}
-
-function YesNoField({
-  label,
-  name,
-  data,
-  onChange,
-}: {
-  label: string;
-  name: string;
-  data: Record<string, string>;
-  onChange: (name: string, value: string) => void;
-}) {
-  return (
-    <SelectField
-      label={label}
-      name={name}
-      data={data}
-      onChange={onChange}
-      options={[
-        { value: "Yes", label: "Yes" },
-        { value: "No", label: "No" },
-      ]}
-    />
   );
 }
 
@@ -418,24 +350,21 @@ function DateFieldWithToday({
   onChange: (name: string, value: string) => void;
   required?: boolean;
 }) {
-  const toggleKey = `${name}__use_today`;
-  const useToday = data[toggleKey] === "true";
-  const todayChecked = useToday && data[name] === todayIso();
-
+  const toggleKey = `${name}_is_today`;
   return (
-    <div className="space-y-1.5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
         <Label htmlFor={name}>
           {label}
           {required && " *"}
         </Label>
-        <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+        <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer ml-auto">
           <input
             type="checkbox"
-            checked={todayChecked}
+            checked={data[toggleKey] === "yes"}
             onChange={(e) => {
               if (e.target.checked) {
-                onChange(toggleKey, "true");
+                onChange(toggleKey, "yes");
                 onChange(name, todayIso());
               } else {
                 onChange(toggleKey, "");
@@ -468,15 +397,15 @@ interface PageProps {
   onChange: (name: string, value: string) => void;
 }
 
-// ─── Page 1: Personal Info, Address, Vehicle ──────────────────
+// ─── Page 1: Personal Info, Vehicle, Employment, Contacts ─────
 
-function Page1PersonalInfo({ data, onChange }: PageProps) {
+function Page1PersonalInfo({ facilityName, data, onChange }: PageProps & { facilityName: string }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Jax Sober Living Resident Application</CardTitle>
+        <CardTitle>{facilityName} Resident Application</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Page 1 of the resident application packet.
+          Personal information, employment, and emergency contacts.
         </p>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -523,142 +452,20 @@ function Page1PersonalInfo({ data, onChange }: PageProps) {
                 <Field label="Model" name="vehicle_model" data={data} onChange={onChange} />
                 <Field label="Color" name="vehicle_color" data={data} onChange={onChange} />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <Field label="Plate State" name="license_plate_state" data={data} onChange={onChange} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="Plate Number" name="license_plate_number" data={data} onChange={onChange} />
-                <Field
-                  label="Plate Expiration (mo/yr)"
-                  name="license_plate_expiration"
-                  data={data}
-                  onChange={onChange}
-                  placeholder="MM/YYYY"
-                />
+                <Field label="Plate State" name="license_plate_state" data={data} onChange={onChange} />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <Field label="Insurance Company" name="insurance_company" data={data} onChange={onChange} />
-                <Field label="Policy #" name="insurance_policy_number" data={data} onChange={onChange} />
-                <DateFieldWithToday
-                  label="Insurance Expiration"
-                  name="insurance_expiration_date"
-                  data={data}
-                  onChange={onChange}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Please provide staff with DL, registration, and car insurance paperwork.
-                Copies will go in your file.
-              </p>
             </>
           )}
         </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ─── Page 2: Referral, Recovery, Medical ──────────────────────
-
-function Page2RecoveryMedical({ data, onChange }: PageProps) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Recovery &amp; Medical Information</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <Field label="How did you hear about Jax Sober Living?" name="referral_source" data={data} onChange={onChange} />
-        <YesNoField
-          label="Do you identify as someone who struggles with drugs and/or alcohol?"
-          name="struggles_with_substances"
-          data={data}
-          onChange={onChange}
-        />
-        <YesNoField
-          label="Do you plan on working a recovery program while at Jax Sober Living (12 Step based)?"
-          name="in_recovery_program"
-          data={data}
-          onChange={onChange}
-        />
-        <YesNoField
-          label="Are you attending or will you be attending an IOP Program?"
-          name="attending_iop"
-          data={data}
-          onChange={onChange}
-        />
-        {data.attending_iop === "Yes" && (
-          <Field
-            label="IOP Program Name (please add to ROI section as well)"
-            name="iop_program_name"
-            data={data}
-            onChange={onChange}
-          />
-        )}
-        <TextAreaField label="Medications" name="medications" data={data} onChange={onChange} rows={4} />
-        <TextAreaField label="Medical History / Issues" name="medical_history" data={data} onChange={onChange} rows={4} />
-        <YesNoField
-          label="Have you ever been diagnosed with a mental illness?"
-          name="has_mental_illness"
-          data={data}
-          onChange={onChange}
-        />
-        {data.has_mental_illness === "Yes" && (
-          <TextAreaField label="Diagnosis" name="mental_illness_diagnosis" data={data} onChange={onChange} />
-        )}
-        <YesNoField
-          label="Do you have any present or past physical problems?"
-          name="has_physical_problems"
-          data={data}
-          onChange={onChange}
-        />
-        {data.has_physical_problems === "Yes" && (
-          <TextAreaField label="Diagnosis" name="physical_problems_diagnosis" data={data} onChange={onChange} />
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ─── Page 3: Allergies, Physician, Employment, Contacts ───────
-
-function Page3PhysicianEmployment({ data, onChange }: PageProps) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Health, Employment &amp; Contacts</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        <YesNoField label="Do you have any known allergies?" name="has_allergies" data={data} onChange={onChange} />
-        {data.has_allergies === "Yes" && (
-          <TextAreaField
-            label="Describe the allergy, reaction, and remedy"
-            name="allergies_details"
-            data={data}
-            onChange={onChange}
-          />
-        )}
-
-        <YesNoField
-          label="Are you currently under the care of a physician?"
-          name="under_physician_care"
-          data={data}
-          onChange={onChange}
-        />
-        {data.under_physician_care === "Yes" && (
-          <>
-            <Field label="Reason" name="physician_reason" data={data} onChange={onChange} />
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Physician's Name" name="physician_name" data={data} onChange={onChange} />
-              <Field label="Physician's Phone" name="physician_phone" data={data} onChange={onChange} type="tel" />
-            </div>
-          </>
-        )}
 
         <div className="border-t pt-4 space-y-4">
           <h3 className="font-semibold text-sm">Employment</h3>
-          <YesNoField label="Currently working?" name="currently_working" data={data} onChange={onChange} />
+          <YesNoField label="Currently employed?" name="currently_working" data={data} onChange={onChange} />
           {data.currently_working === "Yes" && (
             <>
               <Field label="Employer" name="employer_name" data={data} onChange={onChange} />
-              <Field label="Employer Address" name="employer_address" data={data} onChange={onChange} />
               <Field label="Employer Phone" name="employer_phone" data={data} onChange={onChange} type="tel" />
             </>
           )}
@@ -683,91 +490,24 @@ function Page3PhysicianEmployment({ data, onChange }: PageProps) {
         </div>
 
         <div className="border-t pt-4 space-y-4">
-          <h3 className="font-semibold text-sm">Financial Contact</h3>
-          <p className="text-xs text-muted-foreground">
-            The person helping you out financially — if you are self-supporting, leave blank.
-          </p>
-          <Field label="Name" name="financial_contact_name" data={data} onChange={onChange} />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Relationship" name="financial_contact_relationship" data={data} onChange={onChange} />
-            <Field label="Phone" name="financial_contact_phone" data={data} onChange={onChange} type="tel" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ─── Page 4: Substance Abuse Facility / Sober Housing History ─
-
-function FacilityEntry({
-  idx,
-  data,
-  onChange,
-}: {
-  idx: number;
-  data: Record<string, string>;
-  onChange: (name: string, value: string) => void;
-}) {
-  const prefix = `facility_${idx}`;
-  return (
-    <div className="space-y-3 border-t pt-4 first:border-t-0 first:pt-0">
-      <h3 className="font-semibold text-sm">Entry {idx}</h3>
-      <Field label="Facility / Sober Housing Name" name={`${prefix}_name`} data={data} onChange={onChange} />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <DateFieldWithToday label="Date Discharged" name={`${prefix}_discharge_date`} data={data} onChange={onChange} />
-        <Field label="Length of Stay" name={`${prefix}_length_of_stay`} data={data} onChange={onChange} />
-      </div>
-      <YesNoField label="Successfully completed the program?" name={`${prefix}_completed`} data={data} onChange={onChange} />
-      {data[`${prefix}_completed`] === "No" && (
-        <TextAreaField label="If no, why not?" name={`${prefix}_reason_not_completed`} data={data} onChange={onChange} />
-      )}
-    </div>
-  );
-}
-
-function Page4FacilityHistory({ data, onChange }: PageProps) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Substance Abuse Facility / Sober Housing History</CardTitle>
-        <p className="text-sm text-muted-foreground">
-          List up to four prior facilities. Leave blank any you don&apos;t have.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <FacilityEntry idx={1} data={data} onChange={onChange} />
-        <FacilityEntry idx={2} data={data} onChange={onChange} />
-        <FacilityEntry idx={3} data={data} onChange={onChange} />
-        <FacilityEntry idx={4} data={data} onChange={onChange} />
-        <div className="border-t pt-4">
+          <h3 className="font-semibold text-sm">Recovery Information</h3>
+          <Field label="How did you hear about us?" name="referral_source" data={data} onChange={onChange} />
           <DateFieldWithToday label="Sobriety Date" name="sobriety_date" data={data} onChange={onChange} />
+          <YesNoField
+            label="Do you plan on working a recovery program?"
+            name="in_recovery_program"
+            data={data}
+            onChange={onChange}
+          />
         </div>
       </CardContent>
     </Card>
   );
 }
 
-// ─── Page 5: Drug Use, Criminal History, Application Signatures ─
+// ─── Page 2: Criminal Background & Application Signature ──────
 
-function RecentDrugRow({
-  idx,
-  data,
-  onChange,
-}: {
-  idx: number;
-  data: Record<string, string>;
-  onChange: (name: string, value: string) => void;
-}) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <Field label={`Drug ${idx}`} name={`recent_drug_${idx}_name`} data={data} onChange={onChange} />
-      <DateFieldWithToday label="Date of Last Use" name={`recent_drug_${idx}_date`} data={data} onChange={onChange} />
-    </div>
-  );
-}
-
-function Page5DrugsCriminalAndSign({
+function Page2BackgroundAndSign({
   data,
   onChange,
   signatures,
@@ -779,20 +519,11 @@ function Page5DrugsCriminalAndSign({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Drug Use, Criminal History &amp; Signatures</CardTitle>
+        <CardTitle>Background &amp; Signatures</CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
-        <Field label="Drug of Choice" name="drug_of_choice" data={data} onChange={onChange} />
-        <div className="space-y-3">
-          <h3 className="font-semibold text-sm">List Recent Drugs Used</h3>
-          <RecentDrugRow idx={1} data={data} onChange={onChange} />
-          <RecentDrugRow idx={2} data={data} onChange={onChange} />
-          <RecentDrugRow idx={3} data={data} onChange={onChange} />
-          <RecentDrugRow idx={4} data={data} onChange={onChange} />
-        </div>
-
-        <div className="border-t pt-4 space-y-4">
-          <h3 className="font-semibold text-sm">Criminal History</h3>
+        <div className="space-y-4">
+          <h3 className="font-semibold text-sm">Background Check</h3>
           <YesNoField
             label="Have you ever been convicted of a felony or misdemeanor?"
             name="convicted_felon"
@@ -811,24 +542,20 @@ function Page5DrugsCriminalAndSign({
           {data.sex_offender === "Yes" && (
             <TextAreaField label="Please explain" name="sex_offender_explanation" data={data} onChange={onChange} />
           )}
-          <YesNoField
-            label="Convicted of crimes of violence or sexual in nature against the elderly, children, or the disabled?"
-            name="violent_crime_history"
-            data={data}
-            onChange={onChange}
-          />
-          {data.violent_crime_history === "Yes" && (
-            <TextAreaField
-              label="Please explain"
-              name="violent_crime_explanation"
-              data={data}
-              onChange={onChange}
-            />
-          )}
         </div>
 
         <div className="border-t pt-4 space-y-4">
-          <p className="text-sm whitespace-pre-wrap">{APPLICATION_ATTEST_TEXT}</p>
+          <TextAreaField
+            label="Is there anything else you'd like us to know?"
+            name="additional_notes"
+            data={data}
+            onChange={onChange}
+            rows={4}
+          />
+        </div>
+
+        <div className="border-t pt-4 space-y-4">
+          <p className="text-sm whitespace-pre-wrap">{getApplicationAttestText()}</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Resident Print Name" name="application_resident_print_name" data={data} onChange={onChange} required />
             <DateFieldWithToday
@@ -853,7 +580,7 @@ function Page5DrugsCriminalAndSign({
   );
 }
 
-// ─── Policy Page (full-text) ──────────────────────────────────
+// ─── Policy Page (reusable for each policy) ───────────────────
 
 function PolicyPage({
   content,
@@ -911,7 +638,7 @@ function PolicyPage({
   );
 }
 
-// ─── ROI Page (multiple contact rows) ─────────────────────────
+// ─── ROI Page ─────────────────────────────────────────────────
 
 function RoiContactRow({
   idx,
@@ -933,11 +660,13 @@ function RoiContactRow({
 }
 
 function PageROI({
+  facilityName,
   data,
   onChange,
   signatures,
   onSignatureChange,
 }: PageProps & {
+  facilityName: string;
   signatures: Record<string, string>;
   onSignatureChange: (key: string, dataUrl: string | null) => void;
 }) {
@@ -952,7 +681,7 @@ function PageROI({
           <DateFieldWithToday label="Date" name="roi_form_date" data={data} onChange={onChange} />
         </div>
         <div className="space-y-2 text-sm leading-relaxed">
-          {ROI_INTRO_TEXT.split("\n\n").map((para, i) => (
+          {getRoiIntroText(facilityName).split("\n\n").map((para, i) => (
             <p key={i}>{para}</p>
           ))}
         </div>
@@ -963,8 +692,6 @@ function PageROI({
           <RoiContactRow idx={2} data={data} onChange={onChange} />
           <RoiContactRow idx={3} data={data} onChange={onChange} />
           <RoiContactRow idx={4} data={data} onChange={onChange} />
-          <RoiContactRow idx={5} data={data} onChange={onChange} />
-          <RoiContactRow idx={6} data={data} onChange={onChange} />
         </div>
 
         <div className="border-t pt-4 space-y-4">
@@ -990,11 +717,13 @@ function PageROI({
 // ─── Document Receipt Acknowledgment Page ─────────────────────
 
 function PageDocumentReceipt({
+  facilityName,
   data,
   onChange,
   signatures,
   onSignatureChange,
 }: PageProps & {
+  facilityName: string;
   signatures: Record<string, string>;
   onSignatureChange: (key: string, dataUrl: string | null) => void;
 }) {
@@ -1005,8 +734,8 @@ function PageDocumentReceipt({
       </CardHeader>
       <CardContent className="space-y-5">
         <p className="text-sm text-muted-foreground">
-          Form letter to be signed by resident to indicate he or she has received the
-          policy and procedures documents and understands its effect.
+          Sign below to indicate you have received the policy and procedures
+          documents and understand their effect.
         </p>
         <Field
           label="Print Name"
@@ -1016,7 +745,7 @@ function PageDocumentReceipt({
           required
         />
         <p className="text-sm leading-relaxed whitespace-pre-wrap">
-          {DOCUMENT_RECEIPT_TEXT.replace(
+          {getDocumentReceiptText(facilityName).replace(
             "____________________",
             data.document_receipt_print_name || "____________________"
           )}

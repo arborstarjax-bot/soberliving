@@ -1,5 +1,5 @@
 // ============================================================
-// Core application types for the Sober Living Management App
+// Core application types for the HouseFlow Management App
 // ============================================================
 
 // --- Enums ---

@@ -79,8 +79,8 @@ export function ResendInviteButton({ userId, userName, email }: Props) {
     if (!inviteLink) return;
     try {
       await navigator.share({
-        title: "Sober Living invite",
-        text: "Set up your Sober Living account:",
+        title: "You're invited",
+        text: "Set up your account:",
         url: inviteLink,
       });
     } catch {

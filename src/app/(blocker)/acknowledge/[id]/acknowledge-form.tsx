@@ -16,6 +16,7 @@ interface AcknowledgeFormProps {
   saveToDocs: boolean;
   requireSignature: boolean;
   residentName: string;
+  facilityName: string;
 }
 
 /**
@@ -34,6 +35,7 @@ export function AcknowledgeForm({
   saveToDocs,
   requireSignature,
   residentName,
+  facilityName,
 }: AcknowledgeFormProps) {
   const router = useRouter();
   const [signature, setSignature] = useState<string | null>(null);
@@ -60,7 +62,7 @@ export function AcknowledgeForm({
         });
       };
 
-      draw("JAX SOBER LIVING", 220, 16, true);
+      draw(facilityName.toUpperCase(), 220, 16, true);
       y -= 22;
       draw("ACKNOWLEDGMENT RECEIPT", 200, 14, true);
       y -= 30;

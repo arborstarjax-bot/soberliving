@@ -22,7 +22,7 @@ export default async function HousesPage({ searchParams }: HousesPageProps) {
         <div>
           <h1 className="text-2xl font-bold">Houses</h1>
           <p className="text-muted-foreground">
-            Manage your sober living houses
+            Manage your houses
           </p>
         </div>
         {user.role === "admin" && <CreateHouseDialog />}

@@ -2,6 +2,7 @@ import { requireAuth } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/server";
 import { redirect, notFound } from "next/navigation";
 import { findPendingBlockerForUser } from "@/lib/blockers";
+import { getWorkspace } from "@/lib/workspace";
 import { AcknowledgeForm } from "./acknowledge-form";
 import { Button } from "@/components/ui/button";
 import {
@@ -174,6 +175,9 @@ export default async function AcknowledgePage({ params }: PageProps) {
   }
   const paths = (blocker.attachment_paths as string[] | null) ?? [];
 
+  const ws = user.workspace_id ? await getWorkspace(user.workspace_id) : null;
+  const facilityName = ws?.name ?? "Sober Living";
+
   return (
     <div className="space-y-6">
       <div className="text-center">
@@ -214,6 +218,7 @@ export default async function AcknowledgePage({ params }: PageProps) {
         saveToDocs={Boolean(blocker.save_to_docs)}
         requireSignature={blocker.require_signature !== false}
         residentName={user.full_name}
+        facilityName={facilityName}
       />
     </div>
   );

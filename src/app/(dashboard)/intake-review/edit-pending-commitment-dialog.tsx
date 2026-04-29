@@ -196,7 +196,7 @@ export function EditPendingCommitmentDialog({
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="rent_amount">Sober Living Fee</Label>
+                <Label htmlFor="rent_amount">Housing Fee</Label>
                 <Input
                   id="rent_amount"
                   type="number"

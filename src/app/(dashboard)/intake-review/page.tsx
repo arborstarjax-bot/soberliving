@@ -10,7 +10,7 @@ import { ApplicationReview } from "./application-review";
 import { EditPendingCommitmentDialog } from "./edit-pending-commitment-dialog";
 import { ResendCommitmentButton } from "./resend-commitment-button";
 import { formatDateOnly, getHouseToday } from "@/lib/timezone";
-import { getWorkspaceSettings } from "@/lib/workspace";
+import { getWorkspace, getWorkspaceSettings } from "@/lib/workspace";
 
 type Tab = "pending" | "approved" | "denied";
 
@@ -76,6 +76,10 @@ export default async function IntakeReviewPage({
     ? await getWorkspaceSettings(currentUser.workspace_id)
     : null;
   const requireCommitment = wsSettings?.require_commitment !== false;
+  const ws = currentUser.workspace_id
+    ? await getWorkspace(currentUser.workspace_id)
+    : null;
+  const facilityName = ws?.name ?? "Sober Living";
 
   const intakeUsers = intakeUsersRaw ?? [];
   const commitments = commitmentsRaw ?? [];
@@ -199,6 +203,7 @@ export default async function IntakeReviewPage({
                   signatures={sigs}
                   staffSignedOffAt={staffSignedOffAt}
                   requireCommitment={requireCommitment}
+                  facilityName={facilityName}
                 />
               </CardContent>
             </Card>

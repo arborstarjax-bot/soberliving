@@ -27,6 +27,7 @@ interface Props {
   /** ISO timestamp stored on form_data.staff_signed_off_at when staff has signed. */
   staffSignedOffAt: string | null;
   requireCommitment: boolean;
+  facilityName: string;
 }
 
 /**
@@ -57,6 +58,7 @@ export function ApplicationReview({
   signatures,
   staffSignedOffAt,
   requireCommitment,
+  facilityName,
 }: Props) {
   const [step, setStep] = useState<"review" | "signoff" | "assign">("review");
   const [signedOffLocal, setSignedOffLocal] = useState<boolean>(
@@ -174,6 +176,7 @@ export function ApplicationReview({
           <StaffSignoffForm
             userId={userId}
             userName={userName}
+            facilityName={facilityName}
             formData={fd}
             signatures={signatures}
             onSigned={() => {

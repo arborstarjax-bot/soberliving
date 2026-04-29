@@ -392,7 +392,7 @@ export function IntakeReviewForm({ userId, userName, houses, requireCommitment }
         </div>
 
         <div className="space-y-2">
-          <Label>Sober Living Fee *</Label>
+          <Label>Housing Fee *</Label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
             <Input
@@ -645,7 +645,7 @@ export function IntakeReviewForm({ userId, userName, houses, requireCommitment }
         {!isExistingTenant && (
         <div className="rounded-md bg-muted/40 p-3 text-sm">
           <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Sober Living Fee</span>
+            <span className="text-muted-foreground">Housing Fee</span>
             <span className="font-medium">
               ${Number.isFinite(parsedRent) ? parsedRent.toFixed(2) : "0.00"}
             </span>

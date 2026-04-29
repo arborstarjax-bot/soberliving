@@ -51,7 +51,6 @@ export function GeneralSection({ workspace }: { workspace: Workspace }) {
           )}
         </div>
         <div className="text-sm text-muted-foreground">
-          <p>Workspace ID: {workspace.id}</p>
           <p>Slug: {workspace.slug}</p>
           <p>Created: {new Date(workspace.created_at).toLocaleDateString()}</p>
         </div>
