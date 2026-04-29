@@ -121,7 +121,7 @@ export function AcknowledgeForm({
       }
       return btoa(bin);
     },
-    [title, body, residentName, facilityName]
+    [title, body, residentName]
   );
 
   async function handleSubmit() {

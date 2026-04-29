@@ -7,10 +7,10 @@ const nextConfig: NextConfig = {
     },
     // Cache client-side RSC payloads for dynamic pages so that
     // navigating back-and-forth (e.g. residents → dashboard →
-    // residents) reuses the cached response for 30s instead of
+    // residents) reuses the cached response for 60s instead of
     // hitting the server again. Static pages already cache for 5min.
     staleTimes: {
-      dynamic: 30,
+      dynamic: 60,
       static: 300,
     },
   },
