@@ -255,7 +255,7 @@ export function DashboardGrid({
         icon={<UserPlus className="h-5 w-5" />}
         href="/intake-review"
         hrefLabel="View intake review"
-        emptyText="No intakes in progress or the last 30 days."
+        emptyText="No new intakes this week."
       >
         <ul className="divide-y">
           {newIntakes.map((r) => {
