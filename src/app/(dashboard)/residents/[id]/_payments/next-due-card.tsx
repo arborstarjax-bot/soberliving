@@ -4,6 +4,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DollarSign, AlertCircle, Calendar } from "lucide-react";
 import { RecordChargePaymentDialog } from "@/app/(dashboard)/payments/record-charge-payment-dialog";
+import { AdjustChargeDialog } from "@/app/(dashboard)/payments/adjust-charge-dialog";
+import { WriteOffChargeDialog } from "@/app/(dashboard)/payments/write-off-charge-dialog";
 import type { OpenCharge } from "./types";
 import {
   chargeTypeLabel,
@@ -15,12 +17,14 @@ import {
 export function NextDueCard({
   charge,
   canRecordPayment,
+  isAdmin,
   residentId,
   residentName,
   houseId,
 }: {
   charge: OpenCharge;
   canRecordPayment: boolean;
+  isAdmin: boolean;
   residentId: string;
   residentName: string;
   houseId: string;
@@ -81,8 +85,8 @@ export function NextDueCard({
             </span>
           )}
         </div>
-        {canRecordPayment && (
-          <div className="pt-1">
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          {canRecordPayment && (
             <RecordChargePaymentDialog
               residentId={residentId}
               residentName={residentName}
@@ -92,8 +96,26 @@ export function NextDueCard({
               size="default"
               label={`Record Payment · ${formatMoney(remaining)}`}
             />
-          </div>
-        )}
+          )}
+          {isAdmin && (
+            <AdjustChargeDialog
+              chargeId={charge.id}
+              chargeType={charge.charge_type}
+              currentAmount={charge.amount}
+              paidAmount={charge.paid_amount}
+              residentName={residentName}
+            />
+          )}
+          {isAdmin && (
+            <WriteOffChargeDialog
+              chargeId={charge.id}
+              chargeType={charge.charge_type}
+              amount={charge.amount}
+              paidAmount={charge.paid_amount}
+              residentName={residentName}
+            />
+          )}
+        </div>
       </CardContent>
     </Card>
   );

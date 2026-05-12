@@ -10,6 +10,9 @@ import {
   voidPaymentSchema,
   deletePaymentSchema,
   upsertRentConfigSchema,
+  adjustChargeAmountSchema,
+  addOneTimeChargeSchema,
+  writeOffChargeSchema,
 } from "@/lib/validations";
 import { generateReceiptPdf } from "@/lib/payments/receipt-pdf";
 import { materializeNextRentCharge } from "@/lib/payments/charges";
@@ -808,5 +811,216 @@ export async function cancelPendingAmendment(
   revalidatePath(`/residents/${row.resident_id}`);
   revalidatePath("/sign-commitment");
   revalidatePath("/dashboard");
+  return {};
+}
+
+// ──────────────────────────────────────────────────────────
+// Inline balance editing — adjust, add, write-off charges
+// without requiring a new commitment agreement.
+// ──────────────────────────────────────────────────────────
+
+export async function adjustChargeAmount(
+  _prev: { error?: string } | null | undefined,
+  formData: FormData
+): Promise<{ error?: string }> {
+  const user = await requireAuth();
+  if (user.role !== "admin") return { error: "Only admins can adjust charges" };
+
+  const parsed = adjustChargeAmountSchema.safeParse({
+    charge_id: formData.get("charge_id"),
+    new_amount: formData.get("new_amount"),
+    reason: formData.get("reason"),
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const admin = createAdminClient();
+
+  const { data: charge } = await admin
+    .from("payment_charges")
+    .select("id, resident_id, house_id, charge_type, amount, paid_amount, status")
+    .eq("id", parsed.data.charge_id)
+    .single();
+
+  if (!charge) return { error: "Charge not found" };
+  if (charge.status !== "open" && charge.status !== "partial") {
+    return { error: "Only open or partial charges can be adjusted" };
+  }
+
+  if (parsed.data.new_amount < Number(charge.paid_amount)) {
+    return {
+      error: `New amount cannot be less than already-paid amount ($${Number(charge.paid_amount).toFixed(2)})`,
+    };
+  }
+
+  const oldAmount = Number(charge.amount);
+  const newStatus =
+    parsed.data.new_amount === 0
+      ? "written_off"
+      : parsed.data.new_amount <= Number(charge.paid_amount)
+        ? "paid"
+        : Number(charge.paid_amount) > 0
+          ? "partial"
+          : "open";
+
+  const { error } = await admin
+    .from("payment_charges")
+    .update({
+      amount: parsed.data.new_amount,
+      status: newStatus,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", parsed.data.charge_id);
+
+  if (error) return { error: error.message };
+
+  await logActivity({
+    houseId: charge.house_id as string,
+    residentId: charge.resident_id as string,
+    actorId: user.id,
+    eventType: "charge_adjusted",
+    entityType: "payment_charge",
+    entityId: charge.id as string,
+    description: `${user.full_name} adjusted ${charge.charge_type} charge from $${oldAmount.toFixed(2)} to $${parsed.data.new_amount.toFixed(2)} — ${parsed.data.reason}`,
+    metadata: {
+      old_amount: oldAmount,
+      new_amount: parsed.data.new_amount,
+      reason: parsed.data.reason,
+    },
+  });
+
+  revalidatePath("/payments");
+  revalidatePath("/dashboard");
+  revalidatePath(`/residents/${charge.resident_id}`);
+  return {};
+}
+
+export async function addOneTimeCharge(
+  _prev: { error?: string } | null | undefined,
+  formData: FormData
+): Promise<{ error?: string }> {
+  const user = await requireAuth();
+  if (user.role !== "admin") return { error: "Only admins can add charges" };
+
+  const parsed = addOneTimeChargeSchema.safeParse({
+    resident_id: formData.get("resident_id"),
+    house_id: formData.get("house_id"),
+    charge_type: formData.get("charge_type"),
+    amount: formData.get("amount"),
+    description: formData.get("description"),
+    due_date: formData.get("due_date"),
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  if (
+    user.role === "admin"
+      ? false
+      : !canAccessHouse(user, parsed.data.house_id)
+  ) {
+    return { error: "Not authorized" };
+  }
+
+  const admin = createAdminClient();
+
+  const { data: inserted, error } = await admin
+    .from("payment_charges")
+    .insert({
+      resident_id: parsed.data.resident_id,
+      house_id: parsed.data.house_id,
+      charge_type: parsed.data.charge_type,
+      amount: parsed.data.amount,
+      paid_amount: 0,
+      due_date: parsed.data.due_date,
+      status: "open",
+      description: parsed.data.description,
+    })
+    .select("id")
+    .single();
+
+  if (error) return { error: error.message };
+
+  const { data: resident } = await admin
+    .from("residents")
+    .select("full_name")
+    .eq("id", parsed.data.resident_id)
+    .single();
+
+  await logActivity({
+    houseId: parsed.data.house_id,
+    residentId: parsed.data.resident_id,
+    actorId: user.id,
+    eventType: "charge_added",
+    entityType: "payment_charge",
+    entityId: inserted.id as string,
+    description: `${user.full_name} added $${parsed.data.amount.toFixed(2)} ${parsed.data.charge_type} charge for ${resident?.full_name ?? "resident"} — ${parsed.data.description}`,
+    metadata: {
+      amount: parsed.data.amount,
+      charge_type: parsed.data.charge_type,
+      description: parsed.data.description,
+      due_date: parsed.data.due_date,
+    },
+  });
+
+  revalidatePath("/payments");
+  revalidatePath("/dashboard");
+  revalidatePath(`/residents/${parsed.data.resident_id}`);
+  return {};
+}
+
+export async function writeOffCharge(
+  _prev: { error?: string } | null | undefined,
+  formData: FormData
+): Promise<{ error?: string }> {
+  const user = await requireAuth();
+  if (user.role !== "admin") return { error: "Only admins can write off charges" };
+
+  const parsed = writeOffChargeSchema.safeParse({
+    charge_id: formData.get("charge_id"),
+    reason: formData.get("reason"),
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+
+  const admin = createAdminClient();
+
+  const { data: charge } = await admin
+    .from("payment_charges")
+    .select("id, resident_id, house_id, charge_type, amount, paid_amount, status")
+    .eq("id", parsed.data.charge_id)
+    .single();
+
+  if (!charge) return { error: "Charge not found" };
+  if (charge.status !== "open" && charge.status !== "partial") {
+    return { error: "Only open or partial charges can be written off" };
+  }
+
+  const remaining = Number(charge.amount) - Number(charge.paid_amount);
+
+  const { error } = await admin
+    .from("payment_charges")
+    .update({
+      status: "written_off",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", parsed.data.charge_id);
+
+  if (error) return { error: error.message };
+
+  await logActivity({
+    houseId: charge.house_id as string,
+    residentId: charge.resident_id as string,
+    actorId: user.id,
+    eventType: "charge_written_off",
+    entityType: "payment_charge",
+    entityId: charge.id as string,
+    description: `${user.full_name} wrote off $${remaining.toFixed(2)} ${charge.charge_type} charge — ${parsed.data.reason}`,
+    metadata: {
+      amount: Number(charge.amount),
+      written_off_amount: remaining,
+      reason: parsed.data.reason,
+    },
+  });
+
+  revalidatePath("/payments");
+  revalidatePath("/dashboard");
+  revalidatePath(`/residents/${charge.resident_id}`);
   return {};
 }
