@@ -8,6 +8,8 @@
 import { Badge } from "@/components/ui/badge";
 import { Calendar } from "lucide-react";
 import { RecordChargePaymentDialog } from "@/app/(dashboard)/payments/record-charge-payment-dialog";
+import { AdjustChargeDialog } from "@/app/(dashboard)/payments/adjust-charge-dialog";
+import { WriteOffChargeDialog } from "@/app/(dashboard)/payments/write-off-charge-dialog";
 import type { OpenCharge } from "./types";
 import {
   chargeTypeLabel,
@@ -19,12 +21,14 @@ import {
 export function OpenChargeRow({
   charge,
   canRecordPayment,
+  isAdmin,
   residentId,
   residentName,
   houseId,
 }: {
   charge: OpenCharge;
   canRecordPayment: boolean;
+  isAdmin: boolean;
   residentId: string;
   residentName: string;
   houseId: string;
@@ -80,17 +84,37 @@ export function OpenChargeRow({
           )}
         </div>
       </div>
-      {canRecordPayment && (
-        <RecordChargePaymentDialog
-          residentId={residentId}
-          residentName={residentName}
-          houseId={houseId}
-          charge={charge}
-          variant="outline"
-          size="sm"
-          label="Record Payment"
-        />
-      )}
+      <div className="flex items-center gap-1 shrink-0">
+        {isAdmin && (
+          <AdjustChargeDialog
+            chargeId={charge.id}
+            chargeType={charge.charge_type}
+            currentAmount={charge.amount}
+            paidAmount={charge.paid_amount}
+            residentName={residentName}
+          />
+        )}
+        {isAdmin && (
+          <WriteOffChargeDialog
+            chargeId={charge.id}
+            chargeType={charge.charge_type}
+            amount={charge.amount}
+            paidAmount={charge.paid_amount}
+            residentName={residentName}
+          />
+        )}
+        {canRecordPayment && (
+          <RecordChargePaymentDialog
+            residentId={residentId}
+            residentName={residentName}
+            houseId={houseId}
+            charge={charge}
+            variant="outline"
+            size="sm"
+            label="Record Payment"
+          />
+        )}
+      </div>
     </div>
   );
 }

@@ -306,3 +306,27 @@ export const resolveDemeritSchema = z.object({
   demerit_id: z.string().uuid(),
   resolution_note: z.string().optional(),
 });
+
+// --- Charge adjustments (inline balance editing) ---
+
+export const adjustChargeAmountSchema = z.object({
+  charge_id: z.string().uuid(),
+  new_amount: z.coerce
+    .number()
+    .nonnegative("Amount must be zero or positive"),
+  reason: z.string().trim().min(1, "Reason is required for balance adjustments"),
+});
+
+export const addOneTimeChargeSchema = z.object({
+  resident_id: z.string().uuid("Resident is required"),
+  house_id: z.string().uuid("House is required"),
+  charge_type: z.enum(["misc", "admin_fee", "deposit"]),
+  amount: z.coerce.number().positive("Amount must be greater than 0"),
+  description: z.string().trim().min(1, "Description is required"),
+  due_date: z.string().min(1, "Due date is required"),
+});
+
+export const writeOffChargeSchema = z.object({
+  charge_id: z.string().uuid(),
+  reason: z.string().trim().min(1, "Reason is required when writing off a charge"),
+});

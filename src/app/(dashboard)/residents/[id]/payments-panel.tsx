@@ -28,6 +28,7 @@ import { ReceiptRow } from "./_payments/receipt-row";
 import { PaymentTermsCard } from "./_payments/payment-terms-card";
 import { PendingCommitmentCard } from "./_payments/pending-commitment-card";
 import { SummaryTile } from "./_payments/summary-tile";
+import { AddOneTimeChargeDialog } from "@/app/(dashboard)/payments/add-one-time-charge-dialog";
 
 interface Props {
   openCharges: OpenCharge[];
@@ -140,6 +141,7 @@ export function ResidentPaymentsPanel({
         <NextDueCard
           charge={nextCharge}
           canRecordPayment={canRecordPayment && !!houseId}
+          isAdmin={isAdmin}
           residentId={residentId}
           residentName={residentName}
           houseId={houseId ?? ""}
@@ -210,6 +212,7 @@ export function ResidentPaymentsPanel({
                 key={c.id}
                 charge={c}
                 canRecordPayment={canRecordPayment && !!houseId}
+                isAdmin={isAdmin}
                 residentId={residentId}
                 residentName={residentName}
                 houseId={houseId ?? ""}
@@ -217,6 +220,17 @@ export function ResidentPaymentsPanel({
             ))}
           </div>
         </section>
+      )}
+
+      {/* Admin quick actions */}
+      {isAdmin && houseId && (
+        <div className="flex flex-wrap gap-2">
+          <AddOneTimeChargeDialog
+            residentId={residentId}
+            residentName={residentName}
+            houseId={houseId}
+          />
+        </div>
       )}
 
       {/* Recent receipts */}
