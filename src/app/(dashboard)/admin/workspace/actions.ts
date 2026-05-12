@@ -60,6 +60,7 @@ export async function updatePaymentConfig(
   workspaceId: string,
   config: {
     default_rent_amount: number;
+    default_weekly_rent_amount: number;
     payment_frequency: PaymentFrequencyOption;
     payment_due_day: string | null;
     accepted_methods: PaymentMethod[];
