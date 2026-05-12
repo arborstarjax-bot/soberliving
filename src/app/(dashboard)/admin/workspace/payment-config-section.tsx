@@ -53,6 +53,9 @@ export function PaymentConfigSection({
   const [rentAmount, setRentAmount] = useState(
     config?.default_rent_amount?.toString() ?? "0"
   );
+  const [weeklyRentAmount, setWeeklyRentAmount] = useState(
+    config?.default_weekly_rent_amount?.toString() ?? "0"
+  );
   const [frequency, setFrequency] = useState<PaymentFrequencyOption>(
     config?.payment_frequency ?? "weekly"
   );
@@ -81,6 +84,7 @@ export function PaymentConfigSection({
     startTransition(async () => {
       const result = await updatePaymentConfig(workspaceId, {
         default_rent_amount: parseFloat(rentAmount) || 0,
+        default_weekly_rent_amount: parseFloat(weeklyRentAmount) || 0,
         payment_frequency: frequency,
         payment_due_day: dueDay,
         accepted_methods: methods.length > 0 ? methods : ["cash"],
@@ -107,7 +111,7 @@ export function PaymentConfigSection({
       <CardContent className="space-y-6">
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="rent-amount">Default Rent Amount ($)</Label>
+            <Label htmlFor="rent-amount">Default Monthly Rent ($)</Label>
             <Input
               id="rent-amount"
               type="number"
@@ -118,6 +122,20 @@ export function PaymentConfigSection({
             />
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="weekly-rent-amount">Default Weekly Rent ($)</Label>
+            <Input
+              id="weekly-rent-amount"
+              type="number"
+              min="0"
+              step="0.01"
+              value={weeklyRentAmount}
+              onChange={(e) => setWeeklyRentAmount(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="frequency">Payment Frequency</Label>
             <select
