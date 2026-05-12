@@ -28,6 +28,7 @@ interface Resident {
   house_id: string;
   house_name: string;
   days_sober: number | null;
+  bed_label: string | null;
 }
 
 interface StaffUser {
@@ -131,6 +132,7 @@ interface UnifiedPerson {
   house_id: string | null;
   move_in_date: string | null;
   days_sober: number | null;
+  bed_label: string | null;
   status: string; // "active" | "discharged" | etc.
   email: string | null;
   assigned_house_names: string[];
@@ -198,6 +200,7 @@ export function ResidentsTabs({
       house_id: matchingResident?.house_id ?? (s.assigned_house_ids[0] || null),
       move_in_date: matchingResident?.move_in_date ?? null,
       days_sober: matchingResident?.days_sober ?? null,
+      bed_label: matchingResident?.bed_label ?? null,
       status: matchingResident?.status ?? "active",
       email: s.email,
       assigned_house_names: s.assigned_house_names,
@@ -221,6 +224,7 @@ export function ResidentsTabs({
       house_id: r.house_id,
       move_in_date: r.move_in_date,
       days_sober: r.days_sober,
+      bed_label: r.bed_label,
       status: r.status,
       email: null,
       assigned_house_names: [],
@@ -296,6 +300,7 @@ export function ResidentsTabs({
               )}
               <p className="text-xs text-muted-foreground">
                 {p.house_name}
+                {p.bed_label && ` · ${p.bed_label}`}
                 {p.move_in_date && ` · Moved in ${formatDateOnly(p.move_in_date)}`}
                 {p.staffRole === "manager" && p.assigned_house_names.length > 0 && (
                   ` · Houses: ${p.assigned_house_names.join(", ")}`
