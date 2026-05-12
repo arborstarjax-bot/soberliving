@@ -87,19 +87,40 @@ export async function ResidentsTabsSection({
 
   const nullRes = Promise.resolve({ data: null });
 
+  const bedAssignmentsQuery = supabase
+    .from("bed_assignments")
+    .select("resident_id, bed:beds(label, room:rooms(name))")
+    .is("end_date", null);
+
   const [
     { data: residents },
     { data: houses },
     staffRes,
     intakeUsersRes,
     checkInBatchesResult,
+    { data: bedAssignments },
   ] = await Promise.all([
     residentsQuery,
     housesQuery,
     staffQuery ?? nullRes,
     intakeUsersQuery ?? nullRes,
     checkInBatchesPromise ?? Promise.resolve(null),
+    bedAssignmentsQuery,
   ]);
+
+  type BedAssignmentRow = {
+    resident_id: string;
+    bed: { label: string; room: { name: string } | null } | null;
+  };
+  const bedMap = new Map<string, string>();
+  for (const ba of (bedAssignments ?? []) as unknown as BedAssignmentRow[]) {
+    if (!ba.bed) continue;
+    const roomName = ba.bed.room?.name ?? "";
+    const label = roomName
+      ? `${roomName} — ${ba.bed.label}`
+      : ba.bed.label;
+    bedMap.set(ba.resident_id, label);
+  }
 
   const rawStaffUsers = (staffRes.data as RawStaffUser[] | null) ?? [];
 
@@ -115,6 +136,7 @@ export async function ResidentsTabsSection({
     house_name:
       (r.houses as unknown as { name: string } | null)?.name ?? "Unknown",
     days_sober: r.sobriety_date ? getDaysSober(r.sobriety_date) : null,
+    bed_label: bedMap.get(r.id) ?? null,
   }));
 
   const normalizedStaff = rawStaffUsers
