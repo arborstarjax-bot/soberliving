@@ -7,6 +7,7 @@ import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 import { z } from "zod";
+import { getHouseCurfews } from "@/lib/workspace";
 
 const signOutSchema = z.object({
   resident_id: z.string().uuid(),
@@ -201,14 +202,18 @@ export async function signInResident(
     return { error: "Reason is required when attaching discipline" };
   }
 
+  // Determine if the sign-in is past curfew or next-day (missed).
+  const now = new Date();
+  const pastCurfew = await isPastCurfew(row.house_id, row.time_out, now);
+
   // Conditional update: only close the row if it is still open. This
   // makes the sign-in step idempotent under a double-submit and
   // prevents a concurrent second submission from silently attaching a
   // second Warning/Demerit after the first one already landed.
-  const now = new Date().toISOString();
+  const nowIso = now.toISOString();
   const { data: closedRows, error: updateErr } = await supabase
     .from("sign_out_sheet")
-    .update({ time_in: now, signed_in_by: user.id })
+    .update({ time_in: nowIso, signed_in_by: user.id, past_curfew: pastCurfew })
     .eq("id", row.id)
     .is("time_in", null)
     .select("id");
@@ -225,10 +230,27 @@ export async function signInResident(
     entityType: "sign_out_sheet",
     entityId: row.id,
     description: isSelf
-      ? `${resident?.full_name ?? "Resident"} signed back in from ${row.destination}`
-      : `${user.full_name} signed in ${resident?.full_name ?? "resident"} from ${row.destination}`,
-    metadata: { destination: row.destination },
+      ? `${resident?.full_name ?? "Resident"} signed back in from ${row.destination}${pastCurfew ? " (PAST CURFEW)" : ""}`
+      : `${user.full_name} signed in ${resident?.full_name ?? "resident"} from ${row.destination}${pastCurfew ? " (PAST CURFEW)" : ""}`,
+    metadata: { destination: row.destination, past_curfew: pastCurfew },
   });
+
+  // Notify house staff when sign-in is past curfew so it's not missed.
+  if (pastCurfew) {
+    await notifyHouseStaff(
+      row.house_id,
+      {
+        type: "resident_signed_in",
+        title: "⚠️ Late Sign-In (Past Curfew)",
+        message: `${resident?.full_name ?? "Resident"} signed in past curfew from ${row.destination}`,
+        actionUrl: "/sign-out-sheet",
+        entityType: "sign_out_sheet",
+        entityId: row.id,
+        metadata: { past_curfew: true },
+      },
+      { excludeUserId: user.id }
+    );
+  }
 
   // Optional discipline in the same commit. Only staff reach this.
   // Reason was already validated above; `reason` is guaranteed non-empty.
@@ -314,4 +336,54 @@ export async function signInResident(
   revalidatePath("/dashboard");
   revalidatePath("/discipline");
   return {};
+}
+
+// --- Curfew helpers ---
+
+const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
+
+/**
+ * Determine if a sign-in is past curfew. Rules:
+ * 1. Look at the day-of-week of the sign-out time (in Eastern TZ).
+ * 2. Get that day's curfew_time from house_curfews.
+ * 3. If no curfew is set for that day, it's not past curfew.
+ * 4. If the sign-in is on a different calendar day than the sign-out
+ *    (next day or later — "missed sign-in"), it's past curfew.
+ * 5. If it's the same calendar day, compare the sign-in time to the
+ *    curfew time. Past curfew if sign-in is after it.
+ */
+async function isPastCurfew(
+  houseId: string,
+  timeOutIso: string,
+  signInDate: Date
+): Promise<boolean> {
+  const curfews = await getHouseCurfews(houseId);
+  if (curfews.length === 0) return false;
+
+  const tz = "America/New_York";
+
+  // Get the day-of-week of the sign-out in house TZ
+  const outDate = new Date(timeOutIso);
+  const outInTz = new Date(outDate.toLocaleString("en-US", { timeZone: tz }));
+  const outDayName = DAY_NAMES[outInTz.getDay()];
+
+  const curfew = curfews.find((c) => c.day_of_week === outDayName);
+  if (!curfew) return false;
+
+  // Get sign-in time in house TZ
+  const inInTz = new Date(signInDate.toLocaleString("en-US", { timeZone: tz }));
+
+  // If the sign-in is on a different calendar day, it's past curfew (missed)
+  const outDateStr = `${outInTz.getFullYear()}-${String(outInTz.getMonth() + 1).padStart(2, "0")}-${String(outInTz.getDate()).padStart(2, "0")}`;
+  const inDateStr = `${inInTz.getFullYear()}-${String(inInTz.getMonth() + 1).padStart(2, "0")}-${String(inInTz.getDate()).padStart(2, "0")}`;
+
+  if (inDateStr !== outDateStr) return true;
+
+  // Same calendar day — compare time to curfew
+  // curfew_time is stored as "HH:MM" (24h)
+  const [curfewH, curfewM] = curfew.curfew_time.split(":").map(Number);
+  const inH = inInTz.getHours();
+  const inM = inInTz.getMinutes();
+
+  return inH > curfewH || (inH === curfewH && inM > curfewM);
 }
