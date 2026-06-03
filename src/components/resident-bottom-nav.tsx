@@ -28,13 +28,13 @@ const PRIMARY_ITEMS: BottomNavItem[] = [
   { label: "Home", href: "/dashboard", icon: Home },
   { label: "Chores", href: "/chores", icon: ClipboardCheck },
   { label: "Discipline", href: "/discipline", icon: ShieldAlert },
-  { label: "Leave", href: "/leave-requests", icon: CalendarClock },
+  { label: "Attendance", href: "/attendance", icon: CalendarClock },
   { label: "Bulletin", href: "/bulletin", icon: MessageSquare },
 ];
 
 const MORE_ITEMS: BottomNavItem[] = [
   { label: "My Documents", href: "/my-documents", icon: Folder },
-  { label: "Report", href: "/report", icon: Flag },
+  { label: "Report", href: "/bulletin?report=1", icon: Flag },
 ];
 
 interface ResidentBottomNavProps {
@@ -50,13 +50,17 @@ export function ResidentBottomNav({
   const [moreOpen, setMoreOpen] = useState(false);
 
   const primaryItems = hasNoLeaveRestriction
-    ? PRIMARY_ITEMS.filter((item) => item.href !== "/leave-requests")
+    ? PRIMARY_ITEMS.filter((item) => item.href !== "/attendance")
     : PRIMARY_ITEMS;
 
   const isActive = useCallback(
-    (href: string) =>
-      pathname === href ||
-      (href !== "/dashboard" && pathname.startsWith(href)),
+    (href: string) => {
+      if (href === "/bulletin?report=1") {
+        return pathname === "/bulletin" && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("report") === "1";
+      }
+      return pathname === href ||
+        (href !== "/dashboard" && pathname.startsWith(href));
+    },
     [pathname]
   );
 

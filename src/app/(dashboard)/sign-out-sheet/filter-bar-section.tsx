@@ -25,8 +25,10 @@ function firstOrNull<T>(value: T | T[] | null | undefined): T | null {
  */
 export async function SignOutHistoryFilterBarSection({
   user,
+  basePath = "/attendance",
 }: {
   user: SessionUser;
+  basePath?: string;
 }) {
   const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
@@ -48,5 +50,5 @@ export async function SignOutHistoryFilterBarSection({
     house_name: firstOrNull(r.house)?.name ?? null,
   }));
 
-  return <SignOutHistoryFilterBar residents={residents} />;
+  return <SignOutHistoryFilterBar residents={residents} basePath={basePath} />;
 }
