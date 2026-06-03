@@ -1435,7 +1435,10 @@ export async function resendApplicationToResident(residentId: string) {
 // Clears the application_resent flag. No commitment changes needed
 // because this is just a redo of the intake form, not a full re-intake.
 
-export async function signOffResendApplication(userId: string) {
+export async function signOffResendApplication(
+  userId: string,
+  signoffData: { signature: string; printedName: string; date: string }
+) {
   const currentUser = await requireAuth();
   if (currentUser.role !== "admin") {
     return { error: "Only admins can sign off on resent applications" };
@@ -1452,6 +1455,36 @@ export async function signOffResendApplication(userId: string) {
   if (!userRow) return { error: "User not found" };
   if (!userRow.application_resent) {
     return { error: "No pending resent application for this user" };
+  }
+
+  // Store the staff signature on the intake form
+  const { data: intakeForm } = await adminClient
+    .from("intake_forms")
+    .select("id, form_data, signatures")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (intakeForm) {
+    const existingSignatures =
+      (intakeForm.signatures as Record<string, string>) ?? {};
+    const existingFormData =
+      (intakeForm.form_data as Record<string, unknown>) ?? {};
+
+    await adminClient
+      .from("intake_forms")
+      .update({
+        signatures: {
+          ...existingSignatures,
+          staff_signature: signoffData.signature,
+        },
+        form_data: {
+          ...existingFormData,
+          staff_printed_name: signoffData.printedName,
+          staff_signoff_date: signoffData.date,
+          staff_signed_off_at: new Date().toISOString(),
+        },
+      })
+      .eq("id", intakeForm.id);
   }
 
   await adminClient
