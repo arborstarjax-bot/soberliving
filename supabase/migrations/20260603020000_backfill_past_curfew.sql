@@ -1,7 +1,9 @@
 -- Backfill past_curfew flag on historical sign-out rows.
+-- Uses curfew_start_time (when curfew begins, e.g. 23:59) with
+-- fallback to curfew_time for houses that haven't set a start yet.
 -- Marks a row as past_curfew = true when:
 --   1. Sign-in happened on a different calendar day than sign-out, OR
---   2. Sign-in time-of-day is after the curfew_time for the sign-out day.
+--   2. Sign-in time-of-day is at or after the curfew start for that day.
 -- All comparisons done in America/New_York timezone.
 update public.sign_out_sheet s
 set past_curfew = true
@@ -15,6 +17,7 @@ where s.time_in is not null
     (s.time_in at time zone 'America/New_York')::date
       <> (s.time_out at time zone 'America/New_York')::date
     or
-    -- Same day but sign-in time is after curfew
-    (s.time_in at time zone 'America/New_York')::time > c.curfew_time::time
+    -- Same day but sign-in time is at or after curfew start
+    (s.time_in at time zone 'America/New_York')::time
+      > coalesce(c.curfew_start_time, c.curfew_time)::time
   );
