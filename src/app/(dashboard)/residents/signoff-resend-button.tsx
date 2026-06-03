@@ -14,14 +14,24 @@ import {
 import { CheckCircle, Loader2 } from "lucide-react";
 import { SignaturePad } from "@/components/signature-pad";
 import { signOffResendApplication } from "./actions";
+import { generateIntakePdf } from "@/app/(intake)/intake/generate-pdf";
 import { getHouseToday } from "@/lib/timezone";
 
 interface Props {
   userId: string;
   residentName: string;
+  formData: Record<string, unknown>;
+  signatures: Record<string, string>;
+  facilityName: string;
 }
 
-export function SignOffResendButton({ userId, residentName }: Props) {
+export function SignOffResendButton({
+  userId,
+  residentName,
+  formData,
+  signatures,
+  facilityName,
+}: Props) {
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -37,18 +47,39 @@ export function SignOffResendButton({ userId, residentName }: Props) {
     if (!date) return setError("Pick a date");
 
     startTransition(async () => {
-      const result = await signOffResendApplication(userId, {
-        signature,
-        printedName: printedName.trim(),
-        date,
-      });
-      if (result?.error) {
-        setError(result.error);
-      } else {
-        setOpen(false);
-        setSignature(null);
-        setPrintedName("");
-        setDate(getHouseToday());
+      try {
+        // Convert form data to string record for PDF generation
+        const stringFormData: Record<string, string> = {};
+        for (const [k, v] of Object.entries(formData)) {
+          if (v == null) continue;
+          stringFormData[k] = typeof v === "string" ? v : String(v);
+        }
+
+        // Generate the PDF with staff signature populated
+        const pdfBase64 = await generateIntakePdf(
+          stringFormData,
+          signatures,
+          { signature, printedName: printedName.trim(), date },
+          facilityName
+        );
+
+        const result = await signOffResendApplication(userId, {
+          signature,
+          printedName: printedName.trim(),
+          date,
+          pdfBase64,
+        });
+
+        if (result?.error) {
+          setError(result.error);
+        } else {
+          setOpen(false);
+          setSignature(null);
+          setPrintedName("");
+          setDate(getHouseToday());
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Sign-off failed");
       }
     });
   }
@@ -134,7 +165,7 @@ export function SignOffResendButton({ userId, residentName }: Props) {
             {pending ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Signing off…
+                Signing &amp; generating packet…
               </>
             ) : (
               <>

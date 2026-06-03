@@ -887,6 +887,9 @@ export function ResidentsTabs({
                           <SignOffResendButton
                             userId={a.userId}
                             residentName={a.full_name}
+                            formData={a.intakeFormData ?? {}}
+                            signatures={a.intakeSignatures ?? {}}
+                            facilityName={facilityName}
                           />
                         </div>
                       </div>
