@@ -1,46 +1,41 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/lib/types";
 
-/**
- * Lightweight top-nav for the Community Services section. Not a
- * base-ui Tabs component because the tabs are real routes (different
- * data fetches, different layouts) — this is just styled links.
- * Notices / Reports are staff-only management views; Bulletin Board
- * and Ride Share are visible to residents too. (The Notices URL is
- * still /bulletin/blockers — only the label changed.)
- */
 export function BulletinTabs({ userRole }: { userRole: UserRole }) {
   const pathname = usePathname();
-  const isPosts = pathname === "/bulletin";
+  const searchParams = useSearchParams();
+  const isPosts = pathname === "/bulletin" && searchParams.get("report") !== "1";
+  const isReport = pathname === "/bulletin" && searchParams.get("report") === "1";
   const isRideShare = pathname.startsWith("/bulletin/ride-share");
   const isBlockers = pathname.startsWith("/bulletin/blockers");
   const isGrievances = pathname.startsWith("/bulletin/grievances");
   const isStaff = userRole === "admin" || userRole === "manager";
 
   return (
-    <div className="border-b">
-      <nav className="-mb-px flex gap-6 overflow-x-auto">
-        <TabLink href="/bulletin" active={isPosts}>
-          Bulletin Board
+    <div className="flex gap-1 overflow-x-auto no-scrollbar rounded-xl border bg-muted/30 p-1 w-fit">
+      <TabLink href="/bulletin" active={isPosts}>
+        Bulletin Board
+      </TabLink>
+      <TabLink href="/bulletin/ride-share" active={isRideShare}>
+        Ride Share
+      </TabLink>
+      <TabLink href="/bulletin?report=1" active={isReport}>
+        Report
+      </TabLink>
+      {isStaff && (
+        <TabLink href="/bulletin/blockers" active={isBlockers}>
+          Notices
         </TabLink>
-        <TabLink href="/bulletin/ride-share" active={isRideShare}>
-          Ride Share
+      )}
+      {isStaff && (
+        <TabLink href="/bulletin/grievances" active={isGrievances}>
+          Reports
         </TabLink>
-        {isStaff && (
-          <TabLink href="/bulletin/blockers" active={isBlockers}>
-            Notices
-          </TabLink>
-        )}
-        {isStaff && (
-          <TabLink href="/bulletin/grievances" active={isGrievances}>
-            Reports
-          </TabLink>
-        )}
-      </nav>
+      )}
     </div>
   );
 }
@@ -58,10 +53,10 @@ function TabLink({
     <Link
       href={href}
       className={cn(
-        "border-b-2 pb-3 text-sm font-medium transition-colors",
+        "px-4 py-1.5 text-sm font-medium rounded-lg whitespace-nowrap transition-colors",
         active
-          ? "border-foreground text-foreground"
-          : "border-transparent text-muted-foreground hover:text-foreground"
+          ? "bg-background shadow-sm text-foreground"
+          : "text-muted-foreground hover:text-foreground"
       )}
     >
       {children}

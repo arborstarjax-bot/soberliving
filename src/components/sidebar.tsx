@@ -9,11 +9,9 @@ import {
   Home,
   Users,
   ClipboardCheck,
-  AlertTriangle,
   CalendarClock,
   Settings,
   LogOut,
-  LogOut as SignOutIcon,
   Menu,
   X,
   ShieldAlert,
@@ -21,7 +19,6 @@ import {
   Bell,
   Folder,
   DollarSign,
-  Flag,
   Building2,
 } from "lucide-react";
 import { useState, useMemo } from "react";
@@ -37,7 +34,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   {
-    label: "Dashboard",
+    label: "Home",
     href: "/dashboard",
     icon: LayoutDashboard,
     roles: ["admin", "manager", "resident"],
@@ -60,13 +57,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: ClipboardCheck,
     roles: ["admin", "manager", "resident"],
   },
-  {
-    label: "Incidents",
-    href: "/incidents",
-    icon: AlertTriangle,
-    roles: ["admin", "manager"],
-  },
-  // NOTE: Incidents is hidden from nav via filter — it now lives as a Discipline tab
+  // Incidents page removed — lives as a Discipline tab
   {
     label: "Discipline",
     href: "/discipline",
@@ -74,19 +65,13 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["admin", "manager", "resident"],
   },
   {
-    label: "Overnight Request",
-    href: "/leave-requests",
+    // Unified Attendance hub — sign-out sheet + overnight requests.
+    // Residents see it for their own overnight requests; staff see
+    // the full attendance picture.
+    label: "Attendance",
+    href: "/attendance",
     icon: CalendarClock,
     roles: ["admin", "manager", "resident"],
-  },
-  {
-    // Staff-only nav link. Residents don't see this — they sign in /
-    // out via the toggle at the top of their dashboard and don't need
-    // a roster of who else is out.
-    label: "Sign Out Sheet",
-    href: "/sign-out-sheet",
-    icon: SignOutIcon,
-    roles: ["admin", "manager"],
   },
   {
     // Staff-only Payments hub — By Resident / Outstanding / Paid tabs.
@@ -113,15 +98,8 @@ const NAV_ITEMS: NavItem[] = [
     icon: MessageSquare,
     roles: ["admin", "manager", "resident"],
   },
-  {
-    // Resident-only entry point to file a grievance or report a
-    // problem. Staff manage the inventory under Bulletin → Reports,
-    // so they don't need the submit form in the nav.
-    label: "Report",
-    href: "/report",
-    icon: Flag,
-    roles: ["resident"],
-  },
+  // Report folded into Community Services — residents reach it via
+  // the "Report" tab inside /bulletin
   {
     label: "Notifications",
     href: "/notifications",
@@ -172,9 +150,8 @@ export function Sidebar({
 
   const filteredItems = NAV_ITEMS.filter((item) => {
     if (!item.roles.includes(role)) return false;
-    if (item.href === "/leave-requests" && hasNoLeaveRestriction) return false;
+    if (item.href === "/attendance" && hasNoLeaveRestriction && role === "resident") return false;
     if (item.href === "/payments" && !enablePayments) return false;
-    if (item.href === "/incidents") return false;
     return true;
   });
 
@@ -244,16 +221,14 @@ export function Sidebar({
             <p className="text-sm font-medium truncate text-sidebar-foreground">{userName}</p>
             <p className="text-xs text-sidebar-foreground/60 capitalize">{role}</p>
           </div>
-          {role === "admin" && (
-            <Link
-              href="/settings"
-              onClick={() => setMobileOpen(false)}
-              aria-label="Settings"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors"
-            >
-              <Settings className="h-4 w-4" />
-            </Link>
-          )}
+          <Link
+            href="/settings"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Settings"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors"
+          >
+            <Settings className="h-4 w-4" />
+          </Link>
         </div>
         {/* PWA install affordance. The button self-hides when the app
             is already running in standalone mode, or on browsers that
@@ -297,7 +272,14 @@ export function Sidebar({
           )}
         </button>
         <span className="ml-2 font-semibold flex-1">{workspaceName}</span>
-        {role === "resident" && (
+        <div className="flex items-center gap-1">
+          <Link
+            href="/settings"
+            className="relative inline-flex items-center justify-center h-11 w-11 rounded-md text-sidebar-foreground hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60 active:scale-95 transition"
+            aria-label="Settings"
+          >
+            <Settings className="h-5 w-5" />
+          </Link>
           <Link
             href="/notifications"
             className="relative inline-flex items-center justify-center h-11 w-11 -mr-2 rounded-md text-sidebar-foreground hover:bg-sidebar-accent/50 active:bg-sidebar-accent/60 active:scale-95 transition"
@@ -306,7 +288,7 @@ export function Sidebar({
             <Bell className="h-5 w-5" />
             {notificationBadge}
           </Link>
-        )}
+        </div>
       </div>
 
       {/* Mobile overlay */}

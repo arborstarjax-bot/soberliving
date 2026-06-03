@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { AvatarInitials } from "@/components/ui/avatar-initials";
 import { Users, Phone } from "lucide-react";
 import Link from "next/link";
 import { DeleteResidentButton } from "./delete-resident-button";
@@ -194,6 +195,7 @@ export function ResidentsTabs({
   const [intakeSubTab, setIntakeSubTab] = useState<"pending" | "denied">(
     "pending"
   );
+  const [archiveFilter, setArchiveFilter] = useState<"all" | "on_leave" | "discharged">("all");
   // Build a unified list of all people
   // Start with staff users (they sort first)
   const staffResidentIds = new Set(
@@ -293,40 +295,43 @@ export function ResidentsTabs({
       <Link key={p.key} href={href}>
         <Card className={`hover:bg-muted/50 transition-colors ${p.status !== "active" ? "opacity-60" : ""}`}>
           <CardContent className="flex items-center justify-between py-3">
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-medium">{p.full_name}</span>
-                {p.staffRole === "admin" && (
-                  <Badge variant="default">Admin</Badge>
+            <div className="flex items-center gap-3 min-w-0">
+              <AvatarInitials name={p.full_name} size="md" />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium">{p.full_name}</span>
+                  {p.staffRole === "admin" && (
+                    <Badge variant="default">Admin</Badge>
+                  )}
+                  {p.staffRole === "manager" && (
+                    <Badge variant="secondary">Manager</Badge>
+                  )}
+                  {p.isResident && (
+                    <Badge variant="outline">Resident</Badge>
+                  )}
+                  {!p.is_active && <Badge variant="destructive">Inactive</Badge>}
+                </div>
+                {p.phone && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); window.location.href = `tel:${p.phone}`; }}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  >
+                    <Phone className="h-3 w-3" />
+                    {p.phone}
+                  </button>
                 )}
-                {p.staffRole === "manager" && (
-                  <Badge variant="secondary">Manager</Badge>
-                )}
-                {p.isResident && (
-                  <Badge variant="outline">Resident</Badge>
-                )}
-                {!p.is_active && <Badge variant="destructive">Inactive</Badge>}
+                <p className="text-xs text-muted-foreground truncate">
+                  {p.house_name}
+                  {p.bed_label && ` · ${p.bed_label}`}
+                  {p.move_in_date && ` · Moved in ${formatDateOnly(p.move_in_date)}`}
+                  {p.staffRole === "manager" && p.assigned_house_names.length > 0 && (
+                    ` · Houses: ${p.assigned_house_names.join(", ")}`
+                  )}
+                </p>
               </div>
-              {p.phone && (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); e.preventDefault(); window.location.href = `tel:${p.phone}`; }}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                >
-                  <Phone className="h-3 w-3" />
-                  {p.phone}
-                </button>
-              )}
-              <p className="text-xs text-muted-foreground">
-                {p.house_name}
-                {p.bed_label && ` · ${p.bed_label}`}
-                {p.move_in_date && ` · Moved in ${formatDateOnly(p.move_in_date)}`}
-                {p.staffRole === "manager" && p.assigned_house_names.length > 0 && (
-                  ` · Houses: ${p.assigned_house_names.join(", ")}`
-                )}
-              </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               {p.days_sober !== null && (
                 <span className="text-xs text-muted-foreground">
                   {p.days_sober} days sober
@@ -369,15 +374,15 @@ export function ResidentsTabs({
 
   return (
     <div className="space-y-4">
-      {/* Top-level section tabs: Residents | Intake */}
+      {/* Top-level section tabs: Residents | Intake | Applications | Archive */}
       {isStaff && (
-        <div className="flex gap-2 border-b pb-2">
+        <div className="flex gap-1 overflow-x-auto no-scrollbar rounded-xl border bg-muted/30 p-1 w-fit">
           <button
             onClick={() => setTopTab("residents")}
-            className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${
+            className={`px-4 py-1.5 text-sm font-medium rounded-lg whitespace-nowrap transition-colors ${
               topTab === "residents"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted"
+                ? "bg-background shadow-sm text-foreground"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             Residents
@@ -385,10 +390,10 @@ export function ResidentsTabs({
           {isAdmin && (
             <button
               onClick={() => setTopTab("intake")}
-              className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors flex items-center gap-1.5 ${
+              className={`px-4 py-1.5 text-sm font-medium rounded-lg whitespace-nowrap transition-colors flex items-center gap-1.5 ${
                 topTab === "intake"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted"
+                  ? "bg-background shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               Intake
@@ -401,54 +406,44 @@ export function ResidentsTabs({
           )}
           <button
             onClick={() => setTopTab("checkins")}
-            className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors flex items-center gap-1.5 ${
+            className={`px-4 py-1.5 text-sm font-medium rounded-lg whitespace-nowrap transition-colors flex items-center gap-1.5 ${
               topTab === "checkins"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted"
+                ? "bg-background shadow-sm text-foreground"
+                : "text-muted-foreground hover:text-foreground"
             }`}
           >
             Check Ins
           </button>
-          <button
-            onClick={() => setTopTab("on_leave")}
-            className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors flex items-center gap-1.5 ${
-              topTab === "on_leave"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted"
-            }`}
-          >
-            On Leave
-            {onLeavePeople.length > 0 && (
-              <Badge
-                variant={topTab === "on_leave" ? "secondary" : "outline"}
-                className="text-[10px] px-1.5 py-0"
-              >
-                {onLeavePeople.length}
-              </Badge>
-            )}
-          </button>
-          <button
-            onClick={() => setTopTab("discharged")}
-            className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors flex items-center gap-1.5 ${
-              topTab === "discharged"
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:bg-muted"
-            }`}
-          >
-            Discharged
-          </button>
           {isAdmin && (
             <button
               onClick={() => setTopTab("applications")}
-              className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors flex items-center gap-1.5 ${
+              className={`px-4 py-1.5 text-sm font-medium rounded-lg whitespace-nowrap transition-colors flex items-center gap-1.5 ${
                 topTab === "applications"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted"
+                  ? "bg-background shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               Applications
             </button>
           )}
+          <button
+            onClick={() => setTopTab("archive")}
+            className={`px-4 py-1.5 text-sm font-medium rounded-lg whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+              topTab === "archive"
+                ? "bg-background shadow-sm text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Archive
+            {(onLeavePeople.length + dischargedPeople.length) > 0 && (
+              <Badge
+                variant={topTab === "archive" ? "secondary" : "outline"}
+                className="text-[10px] px-1.5 py-0"
+              >
+                {onLeavePeople.length + dischargedPeople.length}
+              </Badge>
+            )}
+          </button>
         </div>
       )}
 
@@ -508,26 +503,48 @@ export function ResidentsTabs({
         </Tabs>
       )}
 
-      {/* On Leave view */}
-      {topTab === "on_leave" && (
-        <StatusPeopleTabs
-          tabs={tabs}
-          people={onLeavePeople}
-          filterByHouse={filterByHouse}
-          renderPersonCard={renderPersonCard}
-          emptyLabel="No residents currently on leave."
-        />
-      )}
-
-      {/* Discharged view */}
-      {topTab === "discharged" && (
-        <StatusPeopleTabs
-          tabs={tabs}
-          people={dischargedPeople}
-          filterByHouse={filterByHouse}
-          renderPersonCard={renderPersonCard}
-          emptyLabel="No discharged residents."
-        />
+      {/* Archive view — On Leave + Discharged with filter */}
+      {topTab === "archive" && (
+        <div className="space-y-4">
+          <div className="flex gap-1 rounded-xl border bg-muted/30 p-1 w-fit">
+            {([
+              { key: "all" as const, label: "All" },
+              { key: "on_leave" as const, label: "On Leave" },
+              { key: "discharged" as const, label: "Discharged" },
+            ]).map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setArchiveFilter(f.key)}
+                className={`px-3 py-1 text-xs font-medium rounded-lg whitespace-nowrap transition-colors ${
+                  archiveFilter === f.key
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <StatusPeopleTabs
+            tabs={tabs}
+            people={
+              archiveFilter === "on_leave"
+                ? onLeavePeople
+                : archiveFilter === "discharged"
+                  ? dischargedPeople
+                  : [...onLeavePeople, ...dischargedPeople]
+            }
+            filterByHouse={filterByHouse}
+            renderPersonCard={renderPersonCard}
+            emptyLabel={
+              archiveFilter === "on_leave"
+                ? "No residents currently on leave."
+                : archiveFilter === "discharged"
+                  ? "No discharged residents."
+                  : "No archived residents."
+            }
+          />
+        </div>
       )}
 
       {/* Intake view */}
@@ -839,7 +856,7 @@ export function ResidentsTabs({
             <h2 className="text-lg font-semibold">Monthly Check-Ins</h2>
             <SendCheckInDialog houses={houses} />
           </div>
-          <CheckInList batches={checkInBatches} />
+          <CheckInList batches={checkInBatches} facilityName={facilityName} />
         </div>
       )}
 
