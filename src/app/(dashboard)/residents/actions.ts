@@ -1391,6 +1391,14 @@ export async function resendApplicationToResident(residentId: string) {
     .eq("user_id", residentUserId)
     .in("status", ["pending_resident_signature", "pending_staff_signature"]);
 
+  // Cancel active commitments so the resident re-enters the intake
+  // funnel and appears in the Pending tab for admin signoff.
+  await adminClient
+    .from("house_commitments")
+    .update({ status: "cancelled" })
+    .eq("user_id", residentUserId)
+    .eq("status", "active");
+
   // Send the application email
   const { data: userRecord } = await adminClient
     .from("users")
