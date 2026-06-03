@@ -1368,12 +1368,14 @@ export async function resendApplicationToResident(residentId: string) {
     return { error: "Resident has no linked user account" };
   }
 
-  // Reset intake so the resident is routed to the intake wizard
+  // Reset intake so the resident is routed to the intake wizard.
+  // Keep commitment_signed untouched — this is a redo of the application
+  // only, not a full re-intake (no bed reassignment needed).
   await adminClient
     .from("users")
     .update({
       intake_completed: false,
-      commitment_signed: false,
+      application_resent: true,
       updated_at: new Date().toISOString(),
     })
     .eq("id", residentUserId);
@@ -1383,21 +1385,6 @@ export async function resendApplicationToResident(residentId: string) {
     .from("intake_forms")
     .delete()
     .eq("user_id", residentUserId);
-
-  // Cancel any pending commitment rows so a new one can be issued
-  await adminClient
-    .from("house_commitments")
-    .delete()
-    .eq("user_id", residentUserId)
-    .in("status", ["pending_resident_signature", "pending_staff_signature"]);
-
-  // Cancel active commitments so the resident re-enters the intake
-  // funnel and appears in the Pending tab for admin signoff.
-  await adminClient
-    .from("house_commitments")
-    .update({ status: "cancelled" })
-    .eq("user_id", residentUserId)
-    .eq("status", "active");
 
   // Send the application email
   const { data: userRecord } = await adminClient
@@ -1440,6 +1427,46 @@ export async function resendApplicationToResident(residentId: string) {
   });
 
   revalidatePath(`/residents/${residentId}`);
+  revalidatePath("/residents");
+  return {};
+}
+
+// ── Admin sign-off on a resent application ──
+// Clears the application_resent flag. No commitment changes needed
+// because this is just a redo of the intake form, not a full re-intake.
+
+export async function signOffResendApplication(userId: string) {
+  const currentUser = await requireAuth();
+  if (currentUser.role !== "admin") {
+    return { error: "Only admins can sign off on resent applications" };
+  }
+
+  const adminClient = createAdminClient();
+
+  const { data: userRow } = await adminClient
+    .from("users")
+    .select("id, full_name, application_resent")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (!userRow) return { error: "User not found" };
+  if (!userRow.application_resent) {
+    return { error: "No pending resent application for this user" };
+  }
+
+  await adminClient
+    .from("users")
+    .update({ application_resent: false, updated_at: new Date().toISOString() })
+    .eq("id", userId);
+
+  await logActivity({
+    actorId: currentUser.id,
+    eventType: "resent_application_signed_off",
+    entityType: "user",
+    entityId: userId,
+    description: `${currentUser.full_name} signed off on resent application for ${userRow.full_name}`,
+  });
+
   revalidatePath("/residents");
   return {};
 }
