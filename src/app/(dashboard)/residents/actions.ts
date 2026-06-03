@@ -1437,7 +1437,12 @@ export async function resendApplicationToResident(residentId: string) {
 
 export async function signOffResendApplication(
   userId: string,
-  signoffData: { signature: string; printedName: string; date: string }
+  signoffData: {
+    signature: string;
+    printedName: string;
+    date: string;
+    pdfBase64: string;
+  }
 ) {
   const currentUser = await requireAuth();
   if (currentUser.role !== "admin") {
@@ -1470,21 +1475,78 @@ export async function signOffResendApplication(
     const existingFormData =
       (intakeForm.form_data as Record<string, unknown>) ?? {};
 
+    // Fill staff/witness slots (mirrors submitStaffSignoff logic)
+    existingFormData.staff_signed_off_at = new Date().toISOString();
+    existingFormData.application_staff_name = signoffData.printedName;
+    existingFormData.application_staff_date = signoffData.date;
+    existingSignatures.application_staff = signoffData.signature;
+
+    const witnessKeys = [
+      "house_rules_policy_witness",
+      "good_neighbor_policy_witness",
+      "confidentiality_policy_witness",
+      "discharge_policy_witness",
+    ];
+    for (const k of witnessKeys) {
+      existingSignatures[k] = signoffData.signature;
+      existingFormData[`${k}_date`] = signoffData.date;
+    }
+    existingSignatures.release_of_information_witness = signoffData.signature;
+    existingFormData.roi_witness_printed_name = signoffData.printedName;
+    existingFormData.roi_witness_date = signoffData.date;
+
     await adminClient
       .from("intake_forms")
       .update({
-        signatures: {
-          ...existingSignatures,
-          staff_signature: signoffData.signature,
-        },
-        form_data: {
-          ...existingFormData,
-          staff_printed_name: signoffData.printedName,
-          staff_signoff_date: signoffData.date,
-          staff_signed_off_at: new Date().toISOString(),
-        },
+        signatures: existingSignatures,
+        form_data: existingFormData,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", intakeForm.id);
+  }
+
+  // Replace the intake packet PDF in storage with the signed version
+  const { data: existingDoc } = await adminClient
+    .from("documents")
+    .select("id, storage_path")
+    .eq("user_id", userId)
+    .eq("document_type", "intake_packet")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const pdfBuffer = Buffer.from(signoffData.pdfBase64, "base64");
+  const fileName =
+    existingDoc?.storage_path ??
+    `${userId}/intake-packet-${Date.now()}.pdf`;
+
+  const { error: uploadErr } = await adminClient.storage
+    .from("documents")
+    .upload(fileName, pdfBuffer, {
+      contentType: "application/pdf",
+      upsert: true,
+    });
+
+  if (uploadErr) {
+    return { error: `Could not upload signed packet: ${uploadErr.message}` };
+  }
+
+  if (existingDoc) {
+    await adminClient
+      .from("documents")
+      .update({
+        file_size: pdfBuffer.length,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", existingDoc.id);
+  } else {
+    await adminClient.from("documents").insert({
+      user_id: userId,
+      name: "Intake Packet",
+      document_type: "intake_packet",
+      storage_path: fileName,
+      file_size: pdfBuffer.length,
+    });
   }
 
   await adminClient
