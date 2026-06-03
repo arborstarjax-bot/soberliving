@@ -19,5 +19,5 @@ where s.time_in is not null
     or
     -- Same day but sign-in time is at or after curfew start
     (s.time_in at time zone 'America/New_York')::time
-      > coalesce(c.curfew_start_time, c.curfew_time)::time
+      > coalesce(c.curfew_start_time::time, c.curfew_time)
   );
