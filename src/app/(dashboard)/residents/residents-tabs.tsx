@@ -14,6 +14,7 @@ import { EditPendingCommitmentDialog } from "../intake-review/edit-pending-commi
 import { ResendCommitmentButton } from "../intake-review/resend-commitment-button";
 import { ResendInviteButton } from "../users/resend-invite-button";
 import { DeleteIntakeButton } from "./delete-intake-button";
+import { ResendApplicationButton } from "./resend-application-button";
 import { SendCheckInDialog } from "./check-ins/send-checkin-dialog";
 import { CheckInList } from "./check-ins/checkin-list";
 import { formatDateOnly } from "@/lib/timezone";
@@ -153,6 +154,7 @@ interface ResidentsTabsProps {
   intakeDenied?: IntakeDeniedUser[];
   checkInBatches?: CheckInBatch[];
   requireCommitment?: boolean;
+  requireApplication?: boolean;
   facilityName?: string;
 }
 
@@ -169,6 +171,7 @@ export function ResidentsTabs({
   intakeDenied = [],
   checkInBatches = [],
   requireCommitment = true,
+  requireApplication = true,
   facilityName = "Sober Living",
 }: ResidentsTabsProps) {
   const [topTab, setTopTab] = useState<string>("residents");
@@ -418,6 +421,18 @@ export function ResidentsTabs({
           >
             Discharged
           </button>
+          {isAdmin && (
+            <button
+              onClick={() => setTopTab("applications")}
+              className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors flex items-center gap-1.5 ${
+                topTab === "applications"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              Applications
+            </button>
+          )}
         </div>
       )}
 
@@ -809,6 +824,68 @@ export function ResidentsTabs({
             <SendCheckInDialog houses={houses} />
           </div>
           <CheckInList batches={checkInBatches} />
+        </div>
+      )}
+
+      {/* Applications view — admin can resend the full application to any active resident */}
+      {topTab === "applications" && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                Resend Application to Residents
+              </CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Send or resend the full intake application to an active
+                resident. They will need to complete it before they can
+                continue using the app.
+                {!requireApplication && (
+                  <span className="block mt-1 text-amber-600">
+                    Note: The &quot;Require Application&quot; setting is
+                    currently disabled in workspace settings. Residents sent
+                    an application here will still be required to complete it.
+                  </span>
+                )}
+              </p>
+            </CardHeader>
+            <CardContent>
+              {activePeople.filter((p) => p.isResident && p.residentId).length === 0 ? (
+                <div className="py-8 text-center">
+                  <Users className="mx-auto h-12 w-12 text-muted-foreground/50" />
+                  <p className="mt-4 text-muted-foreground">
+                    No active residents to send applications to.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {activePeople
+                    .filter((p) => p.isResident && p.residentId)
+                    .map((p) => (
+                      <div
+                        key={p.key}
+                        className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-medium">{p.full_name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {p.house_name}
+                            {p.bed_label && ` · ${p.bed_label}`}
+                            {p.move_in_date &&
+                              ` · Moved in ${formatDateOnly(p.move_in_date)}`}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <ResendApplicationButton
+                            residentId={p.residentId!}
+                            residentName={p.full_name}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>

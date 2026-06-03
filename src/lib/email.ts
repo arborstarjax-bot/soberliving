@@ -116,3 +116,123 @@ export async function sendInviteEmail({
 
   return { error: null, id: data?.id };
 }
+
+export async function sendReinstateEmail({
+  to,
+  fullName,
+  appUrl,
+}: {
+  to: string;
+  fullName: string;
+  appUrl?: string;
+}) {
+  const resend = getResend();
+  if (!resend) {
+    console.warn(
+      "[email] RESEND_API_KEY not set — skipping sendReinstateEmail to",
+      to
+    );
+    return { error: null, id: null, skipped: true as const };
+  }
+
+  const resolvedAppUrl =
+    appUrl ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "http://localhost:3000";
+  const safeName = escapeHtml(fullName);
+  const safeAppUrl = escapeHtml(resolvedAppUrl);
+  const safeLoginLink = escapeHtml(`${resolvedAppUrl}/login`);
+
+  const { data, error } = await resend.emails.send({
+    from: fromEmail,
+    to,
+    subject: "Welcome Back — Your Account Has Been Reinstated",
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 16px;">
+        <h2 style="color: #111; margin-bottom: 8px;">Welcome Back!</h2>
+        <p style="color: #555; font-size: 15px; line-height: 1.6;">
+          Hi ${safeName},
+        </p>
+        <p style="color: #555; font-size: 15px; line-height: 1.6;">
+          Your account has been reinstated. Please log in and complete the required onboarding steps before you can access the full app.
+        </p>
+        <div style="margin: 28px 0;">
+          <a href="${safeLoginLink}" style="display: inline-block; background: #111; color: #fff; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500;">
+            Log In
+          </a>
+        </div>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
+        <p style="color: #bbb; font-size: 12px;">
+          HouseFlow &mdash; <a href="${safeAppUrl}" style="color: #bbb;">${safeAppUrl}</a>
+        </p>
+      </div>
+    `,
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { error: null, id: data?.id };
+}
+
+export async function sendApplicationEmail({
+  to,
+  fullName,
+  appUrl,
+}: {
+  to: string;
+  fullName: string;
+  appUrl?: string;
+}) {
+  const resend = getResend();
+  if (!resend) {
+    console.warn(
+      "[email] RESEND_API_KEY not set — skipping sendApplicationEmail to",
+      to
+    );
+    return { error: null, id: null, skipped: true as const };
+  }
+
+  const resolvedAppUrl =
+    appUrl ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "http://localhost:3000";
+  const safeName = escapeHtml(fullName);
+  const safeAppUrl = escapeHtml(resolvedAppUrl);
+  const safeLoginLink = escapeHtml(`${resolvedAppUrl}/login`);
+
+  const { data, error } = await resend.emails.send({
+    from: fromEmail,
+    to,
+    subject: "Please Complete Your Application",
+    html: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 32px 16px;">
+        <h2 style="color: #111; margin-bottom: 8px;">Application Required</h2>
+        <p style="color: #555; font-size: 15px; line-height: 1.6;">
+          Hi ${safeName},
+        </p>
+        <p style="color: #555; font-size: 15px; line-height: 1.6;">
+          You need to complete the full intake application before you can continue using the app. Please log in and follow the prompts.
+        </p>
+        <div style="margin: 28px 0;">
+          <a href="${safeLoginLink}" style="display: inline-block; background: #111; color: #fff; padding: 12px 28px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 500;">
+            Complete Application
+          </a>
+        </div>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 24px 0;" />
+        <p style="color: #bbb; font-size: 12px;">
+          HouseFlow &mdash; <a href="${safeAppUrl}" style="color: #bbb;">${safeAppUrl}</a>
+        </p>
+      </div>
+    `,
+  });
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  return { error: null, id: data?.id };
+}
