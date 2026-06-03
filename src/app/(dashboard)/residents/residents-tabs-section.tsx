@@ -299,7 +299,7 @@ export async function ResidentsTabsSection({
         });
         continue;
       }
-      if (commitment) {
+      if (commitment && commitment.status !== "cancelled") {
         continue;
       }
       if (u.intake_completed && form?.status === "completed") {
