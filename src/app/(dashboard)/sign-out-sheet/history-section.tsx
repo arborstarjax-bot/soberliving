@@ -71,9 +71,11 @@ function pickParam(
 export async function SignOutHistorySection({
   user,
   searchParams,
+  pastCurfewOnly = false,
 }: {
   user: SessionUser;
   searchParams: Record<string, string | string[] | undefined>;
+  pastCurfewOnly?: boolean;
 }) {
   const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
@@ -98,6 +100,7 @@ export async function SignOutHistorySection({
     .limit(DEFAULT_PAGE_SIZE + 1);
 
   if (houseFilter) query = query.in("house_id", houseFilter);
+  if (pastCurfewOnly) query = query.eq("past_curfew", true);
   if (residentId) query = query.eq("resident_id", residentId);
   if (from) query = query.gte("time_out", `${from}T00:00:00.000Z`);
   if (to) query = query.lte("time_out", `${to}T23:59:59.999Z`);
@@ -178,7 +181,9 @@ export async function SignOutHistorySection({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">History</CardTitle>
+        <CardTitle className="text-base">
+          {pastCurfewOnly ? "Past Curfew" : "History"}
+        </CardTitle>
       </CardHeader>
       <CardContent>
         {rows.length === 0 ? (

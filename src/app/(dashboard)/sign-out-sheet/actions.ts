@@ -385,12 +385,22 @@ async function isPastCurfew(
 
   if (inDateStr !== outDateStr) return true;
 
-  // Same calendar day — compare to curfew start time (or curfew_time
-  // as fallback when no start is configured).
+  // Same calendar day — check if sign-in falls within the curfew window.
   const startTime = curfew.curfew_start_time ?? curfew.curfew_time;
-  const [curfewH, curfewM] = startTime.split(":").map(Number);
+  const endTime = curfew.curfew_time;
+  const [startH, startM] = startTime.split(":").map(Number);
+  const [endH, endM] = endTime.split(":").map(Number);
   const inH = inInTz.getHours();
   const inM = inInTz.getMinutes();
 
-  return inH > curfewH || (inH === curfewH && inM > curfewM);
+  const inMinutes = inH * 60 + inM;
+  const startMinutes = startH * 60 + startM;
+  const endMinutes = endH * 60 + endM;
+
+  if (startMinutes > endMinutes) {
+    // Overnight window (e.g. 23:59 → 06:00): past curfew if time >= start OR time < end
+    return inMinutes >= startMinutes || inMinutes < endMinutes;
+  }
+  // Same-day window (e.g. 22:00 → 23:59): past curfew if time >= start
+  return inMinutes >= startMinutes;
 }

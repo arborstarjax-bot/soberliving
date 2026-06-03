@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { CurrentlyOutSection } from "./currently-out-section";
 import { SignOutHistorySection } from "./history-section";
 import { SignOutHistoryFilterBarSection } from "./filter-bar-section";
+import { SignOutTabs } from "./sign-out-tabs";
 
 interface PageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -25,6 +26,7 @@ export default async function SignOutSheetPage({ searchParams }: PageProps) {
   }
 
   const sp = await searchParams;
+  const activeTab = (Array.isArray(sp.tab) ? sp.tab[0] : sp.tab) || "all";
 
   return (
     <div className="space-y-6">
@@ -35,6 +37,8 @@ export default async function SignOutSheetPage({ searchParams }: PageProps) {
         </p>
       </div>
 
+      <SignOutTabs activeTab={activeTab} />
+
       <Suspense
         fallback={
           <div className="h-16 rounded-lg border bg-muted/30 animate-pulse" />
@@ -43,12 +47,14 @@ export default async function SignOutSheetPage({ searchParams }: PageProps) {
         <SignOutHistoryFilterBarSection user={user} />
       </Suspense>
 
-      <Suspense fallback={<ListSkeleton rows={3} />}>
-        <CurrentlyOutSection user={user} />
-      </Suspense>
+      {activeTab === "all" && (
+        <Suspense fallback={<ListSkeleton rows={3} />}>
+          <CurrentlyOutSection user={user} />
+        </Suspense>
+      )}
 
       <Suspense fallback={<ListSkeleton rows={5} />}>
-        <SignOutHistorySection user={user} searchParams={sp} />
+        <SignOutHistorySection user={user} searchParams={sp} pastCurfewOnly={activeTab === "past_curfew"} />
       </Suspense>
     </div>
   );
