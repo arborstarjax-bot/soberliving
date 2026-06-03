@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   Home,
@@ -47,6 +47,7 @@ export function ResidentBottomNav({
   bulletinBadge = null,
 }: ResidentBottomNavProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [moreOpen, setMoreOpen] = useState(false);
 
   const primaryItems = hasNoLeaveRestriction
@@ -56,12 +57,12 @@ export function ResidentBottomNav({
   const isActive = useCallback(
     (href: string) => {
       if (href === "/bulletin?report=1") {
-        return pathname === "/bulletin" && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("report") === "1";
+        return pathname === "/bulletin" && searchParams.get("report") === "1";
       }
       return pathname === href ||
         (href !== "/dashboard" && pathname.startsWith(href));
     },
-    [pathname]
+    [pathname, searchParams]
   );
 
   const moreIsActive = MORE_ITEMS.some((item) => isActive(item.href));
