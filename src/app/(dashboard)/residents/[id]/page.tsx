@@ -19,6 +19,7 @@ import { ResidentNotes } from "./notes";
 import { ForcePhotoToggle } from "./force-photo-toggle";
 import { EditResidentForm } from "./edit-resident-form";
 import { DischargeDialog } from "./discharge-dialog";
+import { ReinstateDialog } from "./reinstate-dialog";
 import { ChangeBedDialog, type BedOption } from "./change-bed-dialog";
 import { TransferHouseDialog } from "./transfer-house-dialog";
 import { DocumentsList } from "@/components/documents-list";
@@ -443,6 +444,14 @@ export default async function ResidentDetailPage(
             <DischargeDialog
               residentId={id}
               status={resident.status}
+            />
+          )}
+          {user.role === "admin" && (
+            <ReinstateDialog
+              residentId={id}
+              status={resident.status}
+              houses={(allHouses ?? []).map((h) => ({ id: h.id, name: h.name }))}
+              currentHouseId={resident.house_id}
             />
           )}
         </div>

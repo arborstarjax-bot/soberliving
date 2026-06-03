@@ -14,6 +14,8 @@ import {
 } from "@/lib/validations";
 import { sendNotification } from "@/lib/notifications";
 import { getHouseToday } from "@/lib/timezone";
+import { sendReinstateEmail, sendApplicationEmail } from "@/lib/email";
+import { getAppOrigin } from "@/lib/app-url";
 
 // Shapes returned by PostgREST joins. TS can't parse the select string,
 // so we narrow the joined rows centrally instead of casting at each access.
@@ -1212,5 +1214,224 @@ export async function createNote(
   });
 
   revalidatePath(`/residents/${parsed.data.resident_id}`);
+  return {};
+}
+
+// ── Reinstate a discharged resident ─────────────────────────────
+// Treats reinstatement as a fresh sign-in: resets intake/commitment
+// flags so the resident must redo onboarding per workspace settings.
+
+export async function reinstateResident(
+  residentId: string,
+  houseId: string
+) {
+  const user = await requireAuth();
+  if (user.role !== "admin") {
+    return { error: "Only admins can reinstate residents" };
+  }
+
+  const supabase = await createClient();
+  const adminClient = createAdminClient();
+
+  const { data: resident } = await supabase
+    .from("residents")
+    .select("id, full_name, house_id, status, user_id")
+    .eq("id", residentId)
+    .maybeSingle();
+
+  if (!resident) return { error: "Resident not found" };
+  if (resident.status !== "discharged") {
+    return { error: "Only discharged residents can be reinstated" };
+  }
+
+  const residentUserId = resident.user_id as string | null;
+
+  // Flip the resident back to active in the new house
+  const nowIso = new Date().toISOString();
+  const today = getHouseToday();
+  const { error: updateError } = await supabase
+    .from("residents")
+    .update({
+      status: "active",
+      house_id: houseId,
+      move_in_date: today,
+      move_out_date: null,
+      discharge_reason: null,
+      discharge_is_voluntary: false,
+      updated_at: nowIso,
+    })
+    .eq("id", residentId);
+
+  if (updateError) return { error: updateError.message };
+
+  // Reset intake/commitment on the user record so they go through
+  // the full onboarding flow again (the intake page checks these).
+  if (residentUserId) {
+    await adminClient
+      .from("users")
+      .update({
+        intake_completed: false,
+        commitment_signed: false,
+        updated_at: nowIso,
+      })
+      .eq("id", residentUserId);
+
+    // Delete old intake form so the wizard starts fresh
+    await adminClient
+      .from("intake_forms")
+      .delete()
+      .eq("user_id", residentUserId);
+
+    // Cancel any leftover commitment rows (cancelled ones from
+    // discharge stay for history; pending ones should be removed)
+    await adminClient
+      .from("house_commitments")
+      .delete()
+      .eq("user_id", residentUserId)
+      .in("status", ["pending_resident_signature", "pending_staff_signature"]);
+
+    // Send reinstatement email
+    const { data: userRecord } = await adminClient
+      .from("users")
+      .select("email, full_name")
+      .eq("id", residentUserId)
+      .maybeSingle();
+
+    if (userRecord?.email) {
+      try {
+        const appUrl = await getAppOrigin();
+        await sendReinstateEmail({
+          to: userRecord.email,
+          fullName: userRecord.full_name || userRecord.email,
+          appUrl,
+        });
+      } catch {
+        // Email failure shouldn't block the reinstatement
+      }
+    }
+
+    // Notify the resident
+    await sendNotification({
+      userId: residentUserId,
+      type: "reinstatement",
+      title: "Account Reinstated",
+      message:
+        "Your account has been reinstated. Please log in to complete onboarding.",
+      entityType: "resident",
+      entityId: residentId,
+    });
+  }
+
+  await logActivity({
+    houseId,
+    residentId,
+    actorId: user.id,
+    eventType: "reinstatement",
+    entityType: "resident",
+    entityId: residentId,
+    description: `${resident.full_name} reinstated by ${user.full_name}`,
+  });
+
+  revalidatePath(`/residents/${residentId}`);
+  revalidatePath(`/houses/${houseId}`);
+  revalidatePath("/residents");
+  return {};
+}
+
+// ── Resend application / intake packet to an existing resident ──
+// Resets the user's intake_completed flag and sends an email prompting
+// them to fill out the intake form. They'll be routed to the intake
+// wizard on next login until they complete it.
+
+export async function resendApplicationToResident(residentId: string) {
+  const currentUser = await requireAuth();
+  if (currentUser.role !== "admin") {
+    return { error: "Only admins can resend applications" };
+  }
+
+  const supabase = await createClient();
+  const adminClient = createAdminClient();
+
+  const { data: resident } = await supabase
+    .from("residents")
+    .select("id, full_name, user_id, house_id, status")
+    .eq("id", residentId)
+    .maybeSingle();
+
+  if (!resident) return { error: "Resident not found" };
+  if (resident.status !== "active") {
+    return { error: "Can only resend applications to active residents" };
+  }
+
+  const residentUserId = resident.user_id as string | null;
+  if (!residentUserId) {
+    return { error: "Resident has no linked user account" };
+  }
+
+  // Reset intake so the resident is routed to the intake wizard
+  await adminClient
+    .from("users")
+    .update({
+      intake_completed: false,
+      commitment_signed: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", residentUserId);
+
+  // Delete old intake form draft/completed so the wizard starts fresh
+  await adminClient
+    .from("intake_forms")
+    .delete()
+    .eq("user_id", residentUserId);
+
+  // Cancel any pending commitment rows so a new one can be issued
+  await adminClient
+    .from("house_commitments")
+    .delete()
+    .eq("user_id", residentUserId)
+    .in("status", ["pending_resident_signature", "pending_staff_signature"]);
+
+  // Send the application email
+  const { data: userRecord } = await adminClient
+    .from("users")
+    .select("email, full_name")
+    .eq("id", residentUserId)
+    .maybeSingle();
+
+  if (userRecord?.email) {
+    try {
+      const appUrl = await getAppOrigin();
+      await sendApplicationEmail({
+        to: userRecord.email,
+        fullName: userRecord.full_name || userRecord.email,
+        appUrl,
+      });
+    } catch {
+      // Email failure shouldn't block the action
+    }
+  }
+
+  await sendNotification({
+    userId: residentUserId,
+    type: "application_required",
+    title: "Application Required",
+    message:
+      "You need to complete the intake application. Please log in and follow the prompts.",
+    entityType: "resident",
+    entityId: residentId,
+  });
+
+  await logActivity({
+    houseId: resident.house_id,
+    residentId,
+    actorId: currentUser.id,
+    eventType: "application_resent",
+    entityType: "resident",
+    entityId: residentId,
+    description: `Intake application resent to ${resident.full_name} by ${currentUser.full_name}`,
+  });
+
+  revalidatePath(`/residents/${residentId}`);
+  revalidatePath("/residents");
   return {};
 }

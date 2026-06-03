@@ -375,6 +375,7 @@ export async function ResidentsTabsSection({
     ? await getWorkspaceSettings(user.workspace_id)
     : null;
   const requireCommitment = wsSettings?.require_commitment !== false;
+  const requireApplication = wsSettings?.require_application !== false;
   const ws = user.workspace_id ? await getWorkspace(user.workspace_id) : null;
   const facilityName = ws?.name ?? "Sober Living";
 
@@ -392,6 +393,7 @@ export async function ResidentsTabsSection({
       intakeDenied={intakeDenied}
       checkInBatches={checkInBatches}
       requireCommitment={requireCommitment}
+      requireApplication={requireApplication}
       facilityName={facilityName}
     />
   );
