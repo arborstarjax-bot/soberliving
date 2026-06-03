@@ -168,6 +168,10 @@ export const setChoreRoomExclusionsSchema = z.object({
 export const createRotationSchema = z.object({
   house_id: z.string().uuid(),
   cycle_start_date: z.string().min(1, "Start date is required"),
+  rotate_from_previous: z.preprocess(
+    (v) => v === "true" || v === true,
+    z.boolean()
+  ).optional(),
 });
 
 export const assignRotationChoreSchema = z.object({

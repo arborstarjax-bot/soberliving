@@ -101,7 +101,7 @@ async function fetchRooms(houseIds: string[]) {
   return data ?? [];
 }
 
-function StaffActions({
+async function StaffActions({
   user: _user,
   houses,
   rooms,
@@ -112,6 +112,22 @@ function StaffActions({
   rooms: { id: string; house_id: string; name: string }[];
   defaultHouseId: string | null;
 }) {
+  const supabase = await createClient();
+
+  // Check if any current rotation exists for any accessible house
+  // (so we can show the "rotate from previous" option).
+  const houseIds = houses.map((h) => h.id);
+  let hasPreviousRotation = false;
+  if (houseIds.length > 0) {
+    const { data: currentRots } = await supabase
+      .from("chore_rotations")
+      .select("id")
+      .in("house_id", houseIds)
+      .eq("is_current", true)
+      .limit(1);
+    hasPreviousRotation = (currentRots ?? []).length > 0;
+  }
+
   return (
     <div className="flex gap-2">
       <CreateChoreDialog
@@ -119,7 +135,11 @@ function StaffActions({
         rooms={rooms}
         defaultHouseId={defaultHouseId}
       />
-      <StartRotationDialog houses={houses} defaultHouseId={defaultHouseId} />
+      <StartRotationDialog
+        houses={houses}
+        defaultHouseId={defaultHouseId}
+        hasPreviousRotation={hasPreviousRotation}
+      />
     </div>
   );
 }

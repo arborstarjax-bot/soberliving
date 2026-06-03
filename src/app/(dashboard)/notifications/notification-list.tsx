@@ -40,6 +40,7 @@ interface Notification {
   created_at: string;
   entity_type: string | null;
   entity_id: string | null;
+  metadata: Record<string, unknown> | null;
 }
 
 function getCategory(type: string): string {
@@ -171,18 +172,23 @@ export function NotificationList({
       ) : (
         <>
           <div className="space-y-2">
-            {notifications.map((n) => (
+            {notifications.map((n) => {
+              const isPastCurfew = !!n.metadata?.past_curfew;
+              return (
               <Card
                 key={n.id}
-                className={n.is_read ? "opacity-60" : "border-primary/20"}
+                className={cn(
+                  n.is_read ? "opacity-60" : "border-primary/20",
+                  isPastCurfew && "border-red-300 bg-red-50/50"
+                )}
               >
                 <CardContent className="flex items-start gap-3 py-3">
-                  <div className="mt-0.5 text-muted-foreground">
+                  <div className={cn("mt-0.5", isPastCurfew ? "text-red-500" : "text-muted-foreground")}>
                     {getNotificationIcon(n.type)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="font-medium text-sm">{n.title}</p>
+                      <p className={cn("font-medium text-sm", isPastCurfew && "text-red-700")}>{n.title}</p>
                       <Badge
                         variant="outline"
                         className="h-4 px-1 text-[10px] capitalize"
@@ -299,7 +305,8 @@ export function NotificationList({
                   </div>
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </div>
           <Pagination
             meta={meta}

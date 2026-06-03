@@ -19,6 +19,7 @@ interface SignOutRow {
   destination: string;
   time_out: string;
   time_in: string | null;
+  past_curfew: boolean;
   resident: { full_name: string } | { full_name: string }[] | null;
   house: { name: string } | { name: string }[] | null;
   signed_in_by_user:
@@ -83,7 +84,7 @@ export async function SignOutHistorySection({
   const to = pickParam(searchParams.to);
 
   const selectCols =
-    "id, resident_id, house_id, destination, time_out, time_in, " +
+    "id, resident_id, house_id, destination, time_out, time_in, past_curfew, " +
     "resident:residents(full_name), " +
     "house:houses(name), " +
     "signed_in_by_user:users!signed_in_by(full_name)";
@@ -193,13 +194,18 @@ export async function SignOutHistorySection({
               const house = firstOrNull(r.house);
               const signedIn = firstOrNull(r.signed_in_by_user);
               return (
-                <li key={r.id} className="py-3 text-sm">
+                <li key={r.id} className={`py-3 text-sm ${r.past_curfew ? "border-l-2 border-red-500 pl-3" : ""}`}>
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <p className="font-medium">
                       {resident?.full_name ?? "Unknown"}
                       {house?.name && (
                         <span className="ml-2 text-xs font-normal text-muted-foreground">
                           · {house.name}
+                        </span>
+                      )}
+                      {r.past_curfew && (
+                        <span className="ml-2 inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">
+                          PAST CURFEW
                         </span>
                       )}
                     </p>
@@ -212,7 +218,7 @@ export async function SignOutHistorySection({
                   <p className="mt-0.5 text-muted-foreground">
                     {r.destination}
                   </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
+                  <p className={`mt-0.5 text-xs ${r.past_curfew ? "text-red-600 font-medium" : "text-muted-foreground"}`}>
                     Out{" "}
                     {new Date(r.time_out).toLocaleString(undefined, {
                       timeZone: "America/New_York",

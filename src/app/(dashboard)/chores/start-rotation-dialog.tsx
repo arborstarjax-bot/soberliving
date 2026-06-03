@@ -18,9 +18,10 @@ import { getHouseToday } from "@/lib/timezone";
 interface Props {
   houses: { id: string; name: string }[];
   defaultHouseId?: string | null;
+  hasPreviousRotation?: boolean;
 }
 
-export function StartRotationDialog({ houses, defaultHouseId }: Props) {
+export function StartRotationDialog({ houses, defaultHouseId, hasPreviousRotation }: Props) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState(createRotation, undefined);
 
@@ -75,11 +76,28 @@ export function StartRotationDialog({ houses, defaultHouseId }: Props) {
               defaultValue={getNextMonday()}
             />
           </div>
+          {hasPreviousRotation && (
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="rotate_from_previous"
+                value="true"
+                defaultChecked
+                className="mt-0.5 h-4 w-4 rounded border-input"
+              />
+              <span>
+                <span className="font-medium">Rotate residents from previous cycle</span>
+                <span className="block text-xs text-muted-foreground">
+                  Carry forward assignments and shift everyone down one chore (respecting room restrictions).
+                </span>
+              </span>
+            </label>
+          )}
           <p className="text-xs text-muted-foreground">
             This will start a new rotation cycle based on each chore&apos;s
             configured cycle length. Any existing current rotation for this
-            house will be archived. After creating, assign residents to chores
-            from the rotation board.
+            house will be archived.
+            {!hasPreviousRotation && " After creating, assign residents to chores from the rotation board."}
           </p>
           {state?.error && (
             <p className="text-sm text-destructive">{state.error}</p>
