@@ -343,14 +343,20 @@ export async function signInResident(
 const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
 
 /**
- * Determine if a sign-in is past curfew. Rules:
+ * Determine if a sign-in is past curfew.
+ *
+ * Curfew is defined by a window: curfew_start_time → curfew_time.
+ * If curfew_start_time is not set, it defaults to curfew_time
+ * (anything after that time is past curfew).
+ *
+ * Rules:
  * 1. Look at the day-of-week of the sign-out time (in Eastern TZ).
- * 2. Get that day's curfew_time from house_curfews.
+ * 2. Get that day's curfew from house_curfews.
  * 3. If no curfew is set for that day, it's not past curfew.
  * 4. If the sign-in is on a different calendar day than the sign-out
  *    (next day or later — "missed sign-in"), it's past curfew.
  * 5. If it's the same calendar day, compare the sign-in time to the
- *    curfew time. Past curfew if sign-in is after it.
+ *    curfew start time. Past curfew if sign-in is at or after it.
  */
 async function isPastCurfew(
   houseId: string,
@@ -379,9 +385,10 @@ async function isPastCurfew(
 
   if (inDateStr !== outDateStr) return true;
 
-  // Same calendar day — compare time to curfew
-  // curfew_time is stored as "HH:MM" (24h)
-  const [curfewH, curfewM] = curfew.curfew_time.split(":").map(Number);
+  // Same calendar day — compare to curfew start time (or curfew_time
+  // as fallback when no start is configured).
+  const startTime = curfew.curfew_start_time ?? curfew.curfew_time;
+  const [curfewH, curfewM] = startTime.split(":").map(Number);
   const inH = inInTz.getHours();
   const inM = inInTz.getMinutes();
 

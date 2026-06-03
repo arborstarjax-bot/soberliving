@@ -73,6 +73,7 @@ export interface HouseCurfew {
   house_id: string;
   day_of_week: string;
   curfew_time: string;
+  curfew_start_time: string | null;
 }
 
 export type ResidentStatus = "active" | "discharged" | "on_leave";

@@ -53,14 +53,24 @@ export function CurfewSection({
   // Build curfew map for the selected house
   const houseCurfews = curfews.filter((c) => c.house_id === selectedHouse);
   const curfewMap: Record<string, string> = {};
+  const curfewStartMap: Record<string, string> = {};
   for (const c of houseCurfews) {
     curfewMap[c.day_of_week] = c.curfew_time;
+    if (c.curfew_start_time) curfewStartMap[c.day_of_week] = c.curfew_start_time;
   }
 
   const [times, setTimes] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
     for (const day of DAYS) {
       initial[day] = curfewMap[day] ?? "22:00";
+    }
+    return initial;
+  });
+
+  const [startTimes, setStartTimes] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    for (const day of DAYS) {
+      initial[day] = curfewStartMap[day] ?? "22:00";
     }
     return initial;
   });
@@ -77,15 +87,22 @@ export function CurfewSection({
     setSelectedHouse(houseId);
     const hc = curfews.filter((c) => c.house_id === houseId);
     const map: Record<string, string> = {};
-    for (const c of hc) map[c.day_of_week] = c.curfew_time;
+    const startMap: Record<string, string> = {};
+    for (const c of hc) {
+      map[c.day_of_week] = c.curfew_time;
+      if (c.curfew_start_time) startMap[c.day_of_week] = c.curfew_start_time;
+    }
 
     const newTimes: Record<string, string> = {};
+    const newStartTimes: Record<string, string> = {};
     const newEnabled: Record<string, boolean> = {};
     for (const day of DAYS) {
       newTimes[day] = map[day] ?? "22:00";
+      newStartTimes[day] = startMap[day] ?? "22:00";
       newEnabled[day] = day in map;
     }
     setTimes(newTimes);
+    setStartTimes(newStartTimes);
     setEnabled(newEnabled);
     setMessage("");
   }
@@ -94,6 +111,7 @@ export function CurfewSection({
     const curfewRows = DAYS.filter((d) => enabled[d]).map((d) => ({
       day_of_week: d,
       curfew_time: times[d],
+      curfew_start_time: startTimes[d] || null,
     }));
 
     startTransition(async () => {
@@ -127,7 +145,7 @@ export function CurfewSection({
       <CardHeader>
         <CardTitle>House Curfews</CardTitle>
         <CardDescription>
-          Set curfew times for each day of the week per house
+          Set curfew window (start → end) for each day per house
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -172,15 +190,29 @@ export function CurfewSection({
               <span className="w-10 text-sm font-medium">
                 {DAY_LABELS[day]}
               </span>
-              <Input
-                type="time"
-                value={times[day]}
-                onChange={(e) =>
-                  setTimes((prev) => ({ ...prev, [day]: e.target.value }))
-                }
-                disabled={!enabled[day]}
-                className="w-32"
-              />
+              <div className="flex items-center gap-1">
+                <Input
+                  type="time"
+                  value={startTimes[day]}
+                  onChange={(e) =>
+                    setStartTimes((prev) => ({ ...prev, [day]: e.target.value }))
+                  }
+                  disabled={!enabled[day]}
+                  className="w-28"
+                  title="Curfew starts"
+                />
+                <span className="text-xs text-muted-foreground">to</span>
+                <Input
+                  type="time"
+                  value={times[day]}
+                  onChange={(e) =>
+                    setTimes((prev) => ({ ...prev, [day]: e.target.value }))
+                  }
+                  disabled={!enabled[day]}
+                  className="w-28"
+                  title="Curfew ends"
+                />
+              </div>
             </div>
           ))}
         </div>

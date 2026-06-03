@@ -90,7 +90,7 @@ export async function updatePaymentConfig(
 
 export async function updateHouseCurfews(
   houseId: string,
-  curfews: { day_of_week: string; curfew_time: string }[]
+  curfews: { day_of_week: string; curfew_time: string; curfew_start_time?: string | null }[]
 ) {
   const user = await requireRole("admin");
   if (!user.workspace_id) return { error: "Not authorized" };
@@ -115,6 +115,7 @@ export async function updateHouseCurfews(
       house_id: houseId,
       day_of_week: c.day_of_week,
       curfew_time: c.curfew_time,
+      curfew_start_time: c.curfew_start_time ?? null,
     }));
     const { error } = await admin
       .from("house_curfews")
