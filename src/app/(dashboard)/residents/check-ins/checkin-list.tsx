@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, ChevronUp, CheckCircle, Clock } from "lucide-react";
+import { ChevronDown, ChevronUp, CheckCircle, Clock, Printer } from "lucide-react";
+import { generateCheckInBatchPdf } from "./generate-checkin-pdf";
 
 interface CheckInResponseSummary {
   id: string;
@@ -28,10 +29,28 @@ interface CheckInBatch {
 
 interface CheckInListProps {
   batches: CheckInBatch[];
+  facilityName?: string;
 }
 
-export function CheckInList({ batches }: CheckInListProps) {
+export function CheckInList({ batches, facilityName = "Sober Living" }: CheckInListProps) {
   const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null);
+  const [generatingPdf, setGeneratingPdf] = useState<string | null>(null);
+
+  async function handlePrintBatch(batch: CheckInBatch) {
+    setGeneratingPdf(batch.id);
+    try {
+      const pdfBytes = await generateCheckInBatchPdf(batch, facilityName);
+      const blob = new Blob([new Uint8Array(pdfBytes)], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `check-in-${batch.houseNames.replace(/\s+/g, "-")}-${new Date(batch.createdAt).toISOString().slice(0, 10)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setGeneratingPdf(null);
+    }
+  }
 
   if (batches.length === 0) {
     return (
@@ -81,11 +100,26 @@ export function CheckInList({ batches }: CheckInListProps) {
                     })}
                   </p>
                 </div>
-                {isExpanded ? (
-                  <ChevronUp className="h-5 w-5 text-muted-foreground" />
-                ) : (
-                  <ChevronDown className="h-5 w-5 text-muted-foreground" />
-                )}
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={generatingPdf === batch.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handlePrintBatch(batch);
+                    }}
+                    className="gap-1.5"
+                  >
+                    <Printer className="h-3.5 w-3.5" />
+                    {generatingPdf === batch.id ? "Generating…" : "Print All"}
+                  </Button>
+                  {isExpanded ? (
+                    <ChevronUp className="h-5 w-5 text-muted-foreground" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </div>
               </div>
             </CardHeader>
 

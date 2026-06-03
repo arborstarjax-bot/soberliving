@@ -7,6 +7,7 @@ import { NewPostSection } from "./new-post-section";
 import { BulletinSideEffects } from "./bulletin-side-effects";
 import { ListSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { RefreshOnMount } from "@/components/refresh-on-mount";
+import { NewGrievanceForm } from "../report/new-grievance-form";
 
 interface BulletinPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -48,6 +49,8 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
     (Array.isArray(params.cp) ? params.cp[0] : params.cp) ?? ""
   }`;
 
+  const showReport = (Array.isArray(params.report) ? params.report[0] : params.report) === "1";
+
   return (
     <div className="space-y-6">
       <RefreshOnMount />
@@ -59,28 +62,43 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
         <BulletinSideEffects userId={user.id} />
       </Suspense>
 
-      {/* NewPostForm needs a role-dependent houses lookup — defer it
-          so it doesn't block the feed from streaming. */}
-      <Suspense fallback={<Skeleton className="h-20 w-full" />}>
-        <NewPostSection
-          userId={user.id}
-          userRole={user.role}
-          assignedHouseIds={user.assigned_house_ids ?? []}
-          workspaceId={user.workspace_id}
-        />
-      </Suspense>
+      {!showReport && (
+        <>
+          {/* NewPostForm needs a role-dependent houses lookup — defer it
+              so it doesn't block the feed from streaming. */}
+          <Suspense fallback={<Skeleton className="h-20 w-full" />}>
+            <NewPostSection
+              userId={user.id}
+              userRole={user.role}
+              assignedHouseIds={user.assigned_house_ids ?? []}
+              workspaceId={user.workspace_id}
+            />
+          </Suspense>
 
-      <Suspense
-        key={suspenseKey}
-        fallback={<ListSkeleton rows={6} rowClassName="h-32 w-full" />}
-      >
-        <BulletinFeedSection
-          currentUserId={user.id}
-          currentUserRole={user.role}
-          visibleHouseIds={visibleHouseIds}
-          searchParams={params}
-        />
-      </Suspense>
+          <Suspense
+            key={suspenseKey}
+            fallback={<ListSkeleton rows={6} rowClassName="h-32 w-full" />}
+          >
+            <BulletinFeedSection
+              currentUserId={user.id}
+              currentUserRole={user.role}
+              visibleHouseIds={visibleHouseIds}
+              searchParams={params}
+            />
+          </Suspense>
+        </>
+      )}
+
+      {showReport && (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            File a grievance or report a problem. Check
+            &quot;Submit anonymously&quot; to send the report without your
+            name or house attached.
+          </p>
+          <NewGrievanceForm />
+        </div>
+      )}
     </div>
   );
 }

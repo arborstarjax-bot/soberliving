@@ -72,7 +72,7 @@
   --chart-3: oklch(0.55 0.15 30);
   --chart-4: oklch(0.65 0.12 150);
   --chart-5: oklch(0.45 0.08 300);
-  --radius: 0.625rem;
+  --radius: 0.875rem;
   --sidebar: oklch(0.285 0.045 255);
   --sidebar-foreground: oklch(0.95 0.005 260);
   --sidebar-primary: oklch(0.55 0.15 260);
@@ -155,6 +155,12 @@
 
 .animate-page-enter {
   animation: page-enter 150ms ease-out;
+}
+
+/* Modern card shadow — replaces thin border appearance with depth */
+:root {
+  --shadow-card: 0 1px 3px 0 oklch(0.205 0.015 260 / 0.06), 0 1px 2px -1px oklch(0.205 0.015 260 / 0.06);
+  --shadow-card-hover: 0 4px 12px -2px oklch(0.205 0.015 260 / 0.10), 0 2px 4px -2px oklch(0.205 0.015 260 / 0.06);
 }
 
 @layer utilities {

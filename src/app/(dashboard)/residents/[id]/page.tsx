@@ -616,22 +616,22 @@ export default async function ResidentDetailPage(
             Discipline (
             {(demerits?.length ?? 0) + (warnings?.length ?? 0)})
           </TabsTrigger>
-          <TabsTrigger value="leave">
-            Leave ({leaveRequests?.length ?? 0})
-          </TabsTrigger>
           {paymentsEnabled && (
             <TabsTrigger value="payments">
               Payments ({(residentOpenCharges ?? []).length})
             </TabsTrigger>
           )}
+          <TabsTrigger value="leave">
+            Leave ({leaveRequests?.length ?? 0})
+          </TabsTrigger>
+          <TabsTrigger value="documents">
+            Documents ({documents?.length ?? 0})
+          </TabsTrigger>
           {isStaff && (
             <TabsTrigger value="notes">
               Notes ({notes?.length ?? 0})
             </TabsTrigger>
           )}
-          <TabsTrigger value="documents">
-            Documents ({documents?.length ?? 0})
-          </TabsTrigger>
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
