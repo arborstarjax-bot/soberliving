@@ -9,12 +9,14 @@ import Link from "next/link";
 import { DeleteResidentButton } from "./delete-resident-button";
 import { MarkCompleteButton } from "../intake-review/mark-complete-button";
 import { ApplicationReview } from "../intake-review/application-review";
+import { ViewResentApplicationDialog } from "./view-resent-application-dialog";
 import { ReopenButton } from "../intake-review/reopen-button";
 import { EditPendingCommitmentDialog } from "../intake-review/edit-pending-commitment-dialog";
 import { ResendCommitmentButton } from "../intake-review/resend-commitment-button";
 import { ResendInviteButton } from "../users/resend-invite-button";
 import { DeleteIntakeButton } from "./delete-intake-button";
 import { ResendApplicationButton } from "./resend-application-button";
+import { SignOffResendButton } from "./signoff-resend-button";
 import { SendCheckInDialog } from "./check-ins/send-checkin-dialog";
 import { CheckInList } from "./check-ins/checkin-list";
 import { formatDateOnly } from "@/lib/timezone";
@@ -141,6 +143,18 @@ interface UnifiedPerson {
   sortOrder: number; // 0 = admin, 1 = manager, 2 = resident
 }
 
+interface ResentApplication {
+  userId: string;
+  full_name: string;
+  email: string;
+  status: "awaiting_completion" | "pending_review";
+  intakeFormData: Record<string, unknown> | null;
+  intakeSignatures: Record<string, string> | null;
+  completedAt: string | null;
+  residentId: string | null;
+  houseName: string | null;
+}
+
 interface ResidentsTabsProps {
   houses: House[];
   residents: Resident[];
@@ -156,6 +170,7 @@ interface ResidentsTabsProps {
   requireCommitment?: boolean;
   requireApplication?: boolean;
   facilityName?: string;
+  resentApplications?: ResentApplication[];
 }
 
 export function ResidentsTabs({
@@ -173,6 +188,7 @@ export function ResidentsTabs({
   requireCommitment = true,
   requireApplication = true,
   facilityName = "Sober Living",
+  resentApplications = [],
 }: ResidentsTabsProps) {
   const [topTab, setTopTab] = useState<string>("residents");
   const [intakeSubTab, setIntakeSubTab] = useState<"pending" | "denied">(
@@ -830,6 +846,94 @@ export function ResidentsTabs({
       {/* Applications view — admin can resend the full application to any active resident */}
       {topTab === "applications" && (
         <div className="space-y-4">
+          {/* Resent applications pending admin review */}
+          {resentApplications.filter((a) => a.status === "pending_review")
+            .length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  Pending Review
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Resent applications that have been completed by the resident
+                  and are waiting for your sign-off.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {resentApplications
+                    .filter((a) => a.status === "pending_review")
+                    .map((a) => (
+                      <div
+                        key={a.userId}
+                        className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50/50 p-3 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-medium">{a.full_name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {a.houseName ?? "No house"}
+                            {a.completedAt &&
+                              ` · Completed ${new Date(a.completedAt).toLocaleDateString()}`}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {a.intakeFormData && (
+                            <ViewResentApplicationDialog
+                              residentName={a.full_name}
+                              formData={a.intakeFormData}
+                              signatures={a.intakeSignatures ?? {}}
+                            />
+                          )}
+                          <SignOffResendButton
+                            userId={a.userId}
+                            residentName={a.full_name}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Resent applications awaiting completion by resident */}
+          {resentApplications.filter((a) => a.status === "awaiting_completion")
+            .length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  Awaiting Completion
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Applications that have been resent but not yet completed by
+                  the resident.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {resentApplications
+                    .filter((a) => a.status === "awaiting_completion")
+                    .map((a) => (
+                      <div
+                        key={a.userId}
+                        className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          <p className="font-medium">{a.full_name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {a.houseName ?? "No house"} · Waiting for resident
+                            to complete
+                          </p>
+                        </div>
+                        <Badge variant="outline">Sent</Badge>
+                      </div>
+                    ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Send/resend to any active resident */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">

@@ -371,6 +371,93 @@ export async function ResidentsTabsSection({
     (checkInBatchesResult as { batches?: CheckInBatch[] } | null)?.batches ??
     [];
 
+  // Query for resent applications pending admin review
+  type ResentApp = {
+    id: string;
+    full_name: string;
+    email: string;
+    intake_completed: boolean;
+    application_resent: boolean;
+  };
+  let resentApplications: Array<{
+    userId: string;
+    full_name: string;
+    email: string;
+    status: "awaiting_completion" | "pending_review";
+    intakeFormData: Record<string, unknown> | null;
+    intakeSignatures: Record<string, string> | null;
+    completedAt: string | null;
+    residentId: string | null;
+    houseName: string | null;
+  }> = [];
+
+  if (isStaff && adminClient) {
+    const { data: resentUsers } = await adminClient
+      .from("users")
+      .select("id, full_name, email, intake_completed, application_resent")
+      .eq("application_resent", true)
+      .eq("is_active", true);
+
+    const typedResentUsers = (resentUsers ?? []) as ResentApp[];
+
+    if (typedResentUsers.length > 0) {
+      const resentIds = typedResentUsers.map((u) => u.id);
+      const [{ data: resentForms }, { data: resentResidents }] =
+        await Promise.all([
+          adminClient
+            .from("intake_forms")
+            .select("user_id, form_data, signatures, completed_at, status")
+            .in("user_id", resentIds),
+          adminClient
+            .from("residents")
+            .select("id, user_id, house_id, houses(name)")
+            .in("user_id", resentIds)
+            .eq("status", "active"),
+        ]);
+
+      const resentFormMap = new Map(
+        (resentForms ?? []).map((f) => [f.user_id, f])
+      );
+      const resentResidentMap = new Map(
+        (resentResidents ?? []).map((r) => [
+          r.user_id,
+          {
+            residentId: r.id,
+            houseName:
+              (r.houses as unknown as { name: string } | null)?.name ?? null,
+          },
+        ])
+      );
+
+      resentApplications = typedResentUsers.map((u) => {
+        const form = resentFormMap.get(u.id);
+        const res = resentResidentMap.get(u.id);
+        const isCompleted =
+          u.intake_completed && form?.status === "completed";
+        return {
+          userId: u.id,
+          full_name: u.full_name,
+          email: u.email,
+          status: isCompleted
+            ? ("pending_review" as const)
+            : ("awaiting_completion" as const),
+          intakeFormData: isCompleted
+            ? ((form?.form_data ?? {}) as Record<string, unknown>)
+            : null,
+          intakeSignatures: isCompleted
+            ? ((
+                (form as { signatures?: Record<string, string> | null })
+                  ?.signatures ?? {}
+              ) as Record<string, string>)
+            : null,
+          completedAt: form?.completed_at ?? null,
+          residentId: res?.residentId ?? null,
+          houseName: res?.houseName ?? null,
+        };
+      });
+    }
+  }
+
   const wsSettings = user.workspace_id
     ? await getWorkspaceSettings(user.workspace_id)
     : null;
@@ -395,6 +482,7 @@ export async function ResidentsTabsSection({
       requireCommitment={requireCommitment}
       requireApplication={requireApplication}
       facilityName={facilityName}
+      resentApplications={resentApplications}
     />
   );
 }
