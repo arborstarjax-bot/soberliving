@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback, useTransition } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Bell, ClipboardCheck, MessageSquare, ShieldAlert, SendHorizontal } from "lucide-react";
-import { subscribePush, unsubscribePush, updatePushPreference, sendTestPush } from "./push-actions";
+import { Bell, ClipboardCheck, MessageSquare, ShieldAlert } from "lucide-react";
+import { subscribePush, unsubscribePush, updatePushPreference } from "./push-actions";
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
@@ -79,8 +79,6 @@ export function PushNotificationCard({ initialPrefs }: PushNotificationCardProps
   const [pushState, setPushState] = useState<PushState>(getInitialPushState);
   const [prefs, setPrefs] = useState(initialPrefs);
   const [pending, startTransition] = useTransition();
-  const [testResult, setTestResult] = useState<string | null>(null);
-  const [testPending, setTestPending] = useState(false);
 
   // Check actual push subscription state (async).
   useEffect(() => {
@@ -194,70 +192,6 @@ export function PushNotificationCard({ initialPrefs }: PushNotificationCardProps
                 onToggle={handleMasterToggle}
               />
             </div>
-
-            {showToggles && (
-              <div className="mb-3">
-                <button
-                  type="button"
-                  disabled={testPending}
-                  onClick={async () => {
-                    setTestPending(true);
-                    setTestResult(null);
-                    try {
-                      const result = await sendTestPush();
-                      const cfg = (result as Record<string, unknown>).config as
-                        | { publicKey: string; privateKey: string; subject: string }
-                        | undefined;
-                      const configLines = cfg
-                        ? [
-                            "",
-                            "--- Server Config ---",
-                            `Public: ${cfg.publicKey}`,
-                            `Private: ${cfg.privateKey}`,
-                            `Subject: ${cfg.subject}`,
-                          ]
-                        : [];
-                      if ("error" in result && result.error) {
-                        setTestResult(`Error: ${result.error}${configLines.join("\n")}`);
-                      } else if ("summary" in result) {
-                        const lines = [result.summary as string];
-                        const devices = (result as Record<string, unknown>).devices as
-                          | { status: string; detail: string }[]
-                          | undefined;
-                        if (devices) {
-                          for (const d of devices) {
-                            lines.push(`${d.status === "delivered" ? "✓" : "✗"} ${d.detail}`);
-                          }
-                        }
-                        const stale = (result as Record<string, unknown>).staleRemoved as number | undefined;
-                        if (stale && stale > 0) {
-                          lines.push(`(${stale} stale endpoint(s) cleaned up)`);
-                        }
-                        lines.push(...configLines);
-                        setTestResult(lines.join("\n"));
-                      }
-                    } catch (err) {
-                      setTestResult(`Failed: ${String(err)}`);
-                    } finally {
-                      setTestPending(false);
-                    }
-                  }}
-                  className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                >
-                  <SendHorizontal className="h-4 w-4" />
-                  {testPending ? "Sending…" : "Send Test Notification"}
-                </button>
-                {testResult && (
-                  <pre className={`mt-2 text-xs whitespace-pre-wrap ${
-                    testResult.startsWith("Error") || testResult.startsWith("Failed") || testResult.includes("0 delivered")
-                      ? "text-destructive"
-                      : "text-green-600"
-                  }`}>
-                    {testResult}
-                  </pre>
-                )}
-              </div>
-            )}
 
             {showToggles && (
               <div className="space-y-0">
