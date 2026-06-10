@@ -46,11 +46,12 @@ const ALLOWED_PUSH_KEYS = new Set([
   "push_chores",
   "push_bulletin",
   "push_discipline",
+  "push_intakes",
 ] as const);
 
-/** Toggle a push notification preference (chores, bulletin, discipline). */
+/** Toggle a boolean push notification preference. */
 export async function updatePushPreference(
-  key: "push_chores" | "push_bulletin" | "push_discipline",
+  key: "push_chores" | "push_bulletin" | "push_discipline" | "push_intakes",
   enabled: boolean
 ) {
   if (!ALLOWED_PUSH_KEYS.has(key) || typeof enabled !== "boolean") {
@@ -63,6 +64,33 @@ export async function updatePushPreference(
   const { error } = await admin
     .from("users")
     .update({ [key]: enabled, updated_at: new Date().toISOString() })
+    .eq("id", user.id);
+
+  if (error) return { error: error.message };
+  revalidatePath("/settings");
+  return { ok: true as const };
+}
+
+const ALLOWED_SIGN_IN_OUT_VALUES = new Set(["off", "all", "curfew_only"]);
+
+/** Update the three-state sign-in/out push preference. */
+export async function updateSignInOutPreference(
+  value: "off" | "all" | "curfew_only"
+) {
+  if (!ALLOWED_SIGN_IN_OUT_VALUES.has(value)) {
+    return { error: "Invalid preference" };
+  }
+
+  const user = await requireAuth();
+  if (user.role !== "admin" && user.role !== "manager") {
+    return { error: "Not authorized" };
+  }
+
+  const admin = createAdminClient();
+
+  const { error } = await admin
+    .from("users")
+    .update({ push_sign_in_out: value, updated_at: new Date().toISOString() })
     .eq("id", user.id);
 
   if (error) return { error: error.message };

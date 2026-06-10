@@ -45,13 +45,14 @@ export async function sendNotification({
   // Schedule web push delivery after the response is sent so the
   // in-app notification is never blocked and the serverless runtime
   // stays alive until delivery completes.
+  const pastCurfew = metadata?.past_curfew === true;
   after(async () => {
     try {
       await sendWebPush(userId, type, {
         title,
         body: message,
         url: actionUrl,
-      });
+      }, { pastCurfew });
     } catch (err) {
       console.error("[push] web push failed:", err);
     }
