@@ -207,10 +207,17 @@ export function PushNotificationCard({ initialPrefs }: PushNotificationCardProps
                       const result = await sendTestPush();
                       if ("error" in result && result.error) {
                         setTestResult(`Error: ${result.error}`);
-                      } else {
-                        setTestResult(
-                          `Sent! (${(result as { debug: { subscriptionCount: number } }).debug.subscriptionCount} device(s)). Check your notifications.`
-                        );
+                      } else if ("summary" in result) {
+                        const lines = [result.summary];
+                        if (result.devices) {
+                          for (const d of result.devices) {
+                            lines.push(`${d.status === "delivered" ? "✓" : "✗"} ${d.detail}`);
+                          }
+                        }
+                        if (result.staleRemoved && result.staleRemoved > 0) {
+                          lines.push(`(${result.staleRemoved} stale endpoint(s) cleaned up)`);
+                        }
+                        setTestResult(lines.join("\n"));
                       }
                     } catch (err) {
                       setTestResult(`Failed: ${String(err)}`);
@@ -224,13 +231,13 @@ export function PushNotificationCard({ initialPrefs }: PushNotificationCardProps
                   {testPending ? "Sending…" : "Send Test Notification"}
                 </button>
                 {testResult && (
-                  <p className={`mt-2 text-xs ${
-                    testResult.startsWith("Error") || testResult.startsWith("Failed")
+                  <pre className={`mt-2 text-xs whitespace-pre-wrap ${
+                    testResult.startsWith("Error") || testResult.startsWith("Failed") || testResult.includes("0 delivered")
                       ? "text-destructive"
                       : "text-green-600"
                   }`}>
                     {testResult}
-                  </p>
+                  </pre>
                 )}
               </div>
             )}
