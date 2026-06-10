@@ -71,26 +71,36 @@ export async function updatePushPreference(
   return { ok: true as const };
 }
 
-/** Send a test push to the current user's devices. Returns per-device results. */
+/** Send a test push to the current user's devices. Returns per-device results + config diagnostics. */
 export async function sendTestPush() {
   const user = await requireAuth();
   const admin = createAdminClient();
 
-  const vapidPublic = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
-  const vapidPrivate = process.env.VAPID_PRIVATE_KEY ?? "";
-  const vapidSubject = process.env.VAPID_SUBJECT ?? "mailto:admin@houseflow.app";
+  const vapidPublic = (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "").trim();
+  const vapidPrivate = (process.env.VAPID_PRIVATE_KEY ?? "").trim();
+  const vapidSubject = (process.env.VAPID_SUBJECT ?? "").trim();
+
+  // Diagnostics: show config (partial keys for security)
+  const config = {
+    publicKey: vapidPublic ? `${vapidPublic.slice(0, 8)}…${vapidPublic.slice(-4)} (${vapidPublic.length} chars)` : "MISSING",
+    privateKey: vapidPrivate ? `${vapidPrivate.slice(0, 4)}…${vapidPrivate.slice(-4)} (${vapidPrivate.length} chars)` : "MISSING",
+    subject: vapidSubject || "NOT SET (will use fallback)",
+  };
 
   if (!vapidPublic || !vapidPrivate) {
-    return {
-      error: `VAPID keys missing: public=${!!vapidPublic}, private=${!!vapidPrivate}`,
-    };
+    return { error: `VAPID keys missing`, config };
   }
+
+  // Use a proper mailto: subject — sanitize any bad formatting
+  const safeSubject = vapidSubject.startsWith("mailto:") || vapidSubject.startsWith("https://")
+    ? vapidSubject
+    : "mailto:admin@houseflow.app";
 
   // Configure VAPID for this request
   try {
-    webpush.setVapidDetails(vapidSubject, vapidPublic, vapidPrivate);
+    webpush.setVapidDetails(safeSubject, vapidPublic, vapidPrivate);
   } catch (err) {
-    return { error: `VAPID config failed: ${String(err)}` };
+    return { error: `VAPID config failed: ${String(err)}`, config };
   }
 
   // Check subscriptions
@@ -100,12 +110,13 @@ export async function sendTestPush() {
     .eq("user_id", user.id);
 
   if (subsError) {
-    return { error: `Subscriptions query failed: ${subsError.message}` };
+    return { error: `Subscriptions query failed: ${subsError.message}`, config };
   }
 
   if (!subs || subs.length === 0) {
     return {
       error: "No push subscriptions found. Toggle push off and back on.",
+      config,
     };
   }
 
@@ -165,5 +176,6 @@ export async function sendTestPush() {
     summary: `${delivered} delivered, ${failed} failed of ${subs.length} device(s)`,
     devices: deviceResults,
     staleRemoved: staleIds.length,
+    config,
   };
 }

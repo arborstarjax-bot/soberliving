@@ -205,18 +205,35 @@ export function PushNotificationCard({ initialPrefs }: PushNotificationCardProps
                     setTestResult(null);
                     try {
                       const result = await sendTestPush();
+                      const cfg = (result as Record<string, unknown>).config as
+                        | { publicKey: string; privateKey: string; subject: string }
+                        | undefined;
+                      const configLines = cfg
+                        ? [
+                            "",
+                            "--- Server Config ---",
+                            `Public: ${cfg.publicKey}`,
+                            `Private: ${cfg.privateKey}`,
+                            `Subject: ${cfg.subject}`,
+                          ]
+                        : [];
                       if ("error" in result && result.error) {
-                        setTestResult(`Error: ${result.error}`);
+                        setTestResult(`Error: ${result.error}${configLines.join("\n")}`);
                       } else if ("summary" in result) {
-                        const lines = [result.summary];
-                        if (result.devices) {
-                          for (const d of result.devices) {
+                        const lines = [result.summary as string];
+                        const devices = (result as Record<string, unknown>).devices as
+                          | { status: string; detail: string }[]
+                          | undefined;
+                        if (devices) {
+                          for (const d of devices) {
                             lines.push(`${d.status === "delivered" ? "✓" : "✗"} ${d.detail}`);
                           }
                         }
-                        if (result.staleRemoved && result.staleRemoved > 0) {
-                          lines.push(`(${result.staleRemoved} stale endpoint(s) cleaned up)`);
+                        const stale = (result as Record<string, unknown>).staleRemoved as number | undefined;
+                        if (stale && stale > 0) {
+                          lines.push(`(${stale} stale endpoint(s) cleaned up)`);
                         }
+                        lines.push(...configLines);
                         setTestResult(lines.join("\n"));
                       }
                     } catch (err) {
