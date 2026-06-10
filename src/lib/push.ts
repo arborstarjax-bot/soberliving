@@ -56,31 +56,57 @@ export async function sendWebPush(
   type: string,
   payload: PushPayload
 ) {
-  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) return;
+  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+    console.warn("[push] VAPID keys not configured, skipping");
+    return;
+  }
 
   const prefColumn = preferenceColumnForType(type);
-  if (!prefColumn) return; // not a push-eligible type
+  if (!prefColumn) {
+    console.warn(`[push] type "${type}" is not push-eligible, skipping`);
+    return;
+  }
 
   const admin = createAdminClient();
 
   // Check the user's preference for this category.
-  const { data: user } = await admin
+  const { data: user, error: userError } = await admin
     .from("users")
     .select("push_chores, push_bulletin, push_discipline")
     .eq("id", userId)
     .single();
 
-  if (!user) return;
+  if (userError) {
+    console.error(`[push] failed to query user prefs for ${userId}:`, userError.message);
+    return;
+  }
+  if (!user) {
+    console.warn(`[push] no user found for ${userId}`);
+    return;
+  }
   const prefs = user as Record<string, boolean>;
-  if (prefs[prefColumn] === false) return;
+  if (prefs[prefColumn] === false) {
+    console.log(`[push] user ${userId} has ${prefColumn} disabled, skipping`);
+    return;
+  }
 
   // Fetch all registered push subscriptions for this user.
-  const { data: subs } = await admin
+  const { data: subs, error: subsError } = await admin
     .from("push_subscriptions")
     .select("id, endpoint, p256dh, auth")
     .eq("user_id", userId);
 
-  if (!subs || subs.length === 0) return;
+  if (subsError) {
+    console.error(`[push] failed to query subscriptions for ${userId}:`, subsError.message);
+    return;
+  }
+
+  if (!subs || subs.length === 0) {
+    console.warn(`[push] no subscriptions found for user ${userId}`);
+    return;
+  }
+
+  console.log(`[push] sending "${type}" to ${subs.length} device(s) for user ${userId}`);
 
   const jsonPayload = JSON.stringify(payload);
 
@@ -95,6 +121,16 @@ export async function sendWebPush(
       )
     )
   );
+
+  // Log delivery results.
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r.status === "fulfilled") {
+      console.log(`[push] delivered to endpoint ${subs[i].endpoint.slice(0, 60)}…`);
+    } else {
+      console.error(`[push] failed for endpoint ${subs[i].endpoint.slice(0, 60)}…:`, r.reason);
+    }
+  }
 
   // Clean up expired/unsubscribed endpoints (410 Gone or 404).
   const staleIds: string[] = [];
