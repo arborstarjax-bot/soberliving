@@ -6,9 +6,13 @@ import { createAdminClient } from "@/lib/supabase/server";
 // VAPID keys are loaded from environment variables.
 // NEXT_PUBLIC_VAPID_PUBLIC_KEY is also available to the client for
 // subscription registration. VAPID_PRIVATE_KEY is server-only.
-const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
-const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY ?? "";
-const VAPID_SUBJECT = process.env.VAPID_SUBJECT ?? "mailto:admin@houseflow.app";
+const VAPID_PUBLIC_KEY = (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "").trim();
+const VAPID_PRIVATE_KEY = (process.env.VAPID_PRIVATE_KEY ?? "").trim();
+const rawSubject = (process.env.VAPID_SUBJECT ?? "").trim();
+const VAPID_SUBJECT =
+  rawSubject.startsWith("mailto:") || rawSubject.startsWith("https://")
+    ? rawSubject
+    : "mailto:admin@houseflow.app";
 
 if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
