@@ -42,11 +42,21 @@ export async function unsubscribePush(endpoint: string) {
   return { ok: true as const };
 }
 
+const ALLOWED_PUSH_KEYS = new Set([
+  "push_chores",
+  "push_bulletin",
+  "push_discipline",
+] as const);
+
 /** Toggle a push notification preference (chores, bulletin, discipline). */
 export async function updatePushPreference(
   key: "push_chores" | "push_bulletin" | "push_discipline",
   enabled: boolean
 ) {
+  if (!ALLOWED_PUSH_KEYS.has(key) || typeof enabled !== "boolean") {
+    return { error: "Invalid preference" };
+  }
+
   const user = await requireAuth();
   const admin = createAdminClient();
 

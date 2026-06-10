@@ -1,5 +1,6 @@
 "use server";
 
+import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/server";
 import { requireAuth, requireRole } from "@/lib/auth";
@@ -106,33 +107,38 @@ export async function createBulletinPost(
     });
   }
 
-  // Send push notifications to residents in each targeted house.
-  // Fire-and-forget so the action returns immediately.
+  // Schedule push notifications after the response so they don't
+  // block the action and the serverless runtime stays alive.
   const pushTargets = targets.filter((h): h is string => h !== null);
   if (pushTargets.length > 0) {
-    (async () => {
-      for (const houseId of pushTargets) {
-        const { data: residents } = await adminClient
-          .from("residents")
-          .select("user_id")
-          .eq("house_id", houseId)
-          .eq("status", "active")
-          .not("user_id", "is", null);
+    const postTitle = parsed.data.title;
+    const authorId = user.id;
+    after(async () => {
+      try {
+        const pushAdmin = createAdminClient();
+        for (const houseId of pushTargets) {
+          const { data: residents } = await pushAdmin
+            .from("residents")
+            .select("user_id")
+            .eq("house_id", houseId)
+            .eq("status", "active")
+            .not("user_id", "is", null);
 
-        const userIds = (residents ?? [])
-          .map((r) => r.user_id as string)
-          .filter((uid) => uid !== user.id);
+          const userIds = (residents ?? [])
+            .map((r) => r.user_id as string)
+            .filter((uid) => uid !== authorId);
 
-        if (userIds.length > 0) {
-          await sendWebPushToMany(userIds, "bulletin_post", {
-            title: "Community Notice",
-            body: parsed.data.title,
-            url: "/bulletin",
-          });
+          if (userIds.length > 0) {
+            await sendWebPushToMany(userIds, "bulletin_post", {
+              title: "Community Notice",
+              body: postTitle,
+              url: "/bulletin",
+            });
+          }
         }
+      } catch (err) {
+        console.error("[push] bulletin push failed:", err);
       }
-    })().catch((err) => {
-      console.error("[push] bulletin push failed:", err);
     });
   }
 
