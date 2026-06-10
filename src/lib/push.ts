@@ -33,12 +33,23 @@ const DISCIPLINE_TYPES = new Set([
   "warning_issued",
 ]);
 
-type PushPreferenceColumn = "push_chores" | "push_bulletin" | "push_discipline";
+const SIGN_IN_OUT_TYPES = new Set([
+  "resident_signed_out",
+  "resident_signed_in",
+]);
+
+const INTAKE_TYPES = new Set([
+  "intake_submitted",
+]);
+
+type PushPreferenceColumn = "push_chores" | "push_bulletin" | "push_discipline" | "push_intakes";
 
 function preferenceColumnForType(type: string): PushPreferenceColumn | null {
   if (CHORE_TYPES.has(type)) return "push_chores";
   if (BULLETIN_TYPES.has(type)) return "push_bulletin";
   if (DISCIPLINE_TYPES.has(type)) return "push_discipline";
+  if (INTAKE_TYPES.has(type)) return "push_intakes";
+  // Sign-in/out handled specially in sendWebPush (three-state pref).
   return null;
 }
 
@@ -46,6 +57,11 @@ interface PushPayload {
   title: string;
   body: string;
   url?: string;
+}
+
+interface PushOptions {
+  /** True when the event is a curfew violation (late sign-in). */
+  pastCurfew?: boolean;
 }
 
 /**
@@ -58,15 +74,17 @@ interface PushPayload {
 export async function sendWebPush(
   userId: string,
   type: string,
-  payload: PushPayload
+  payload: PushPayload,
+  options?: PushOptions
 ) {
   if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
     console.warn("[push] VAPID keys not configured, skipping");
     return;
   }
 
+  const isSignInOut = SIGN_IN_OUT_TYPES.has(type);
   const prefColumn = preferenceColumnForType(type);
-  if (!prefColumn) {
+  if (!prefColumn && !isSignInOut) {
     console.warn(`[push] type "${type}" is not push-eligible, skipping`);
     return;
   }
@@ -76,7 +94,7 @@ export async function sendWebPush(
   // Check the user's preference for this category.
   const { data: user, error: userError } = await admin
     .from("users")
-    .select("push_chores, push_bulletin, push_discipline")
+    .select("push_chores, push_bulletin, push_discipline, push_sign_in_out, push_intakes")
     .eq("id", userId)
     .single();
 
@@ -88,10 +106,25 @@ export async function sendWebPush(
     console.warn(`[push] no user found for ${userId}`);
     return;
   }
-  const prefs = user as Record<string, boolean>;
-  if (prefs[prefColumn] === false) {
-    console.log(`[push] user ${userId} has ${prefColumn} disabled, skipping`);
-    return;
+
+  // Sign-in/out has a three-state preference: 'off' | 'all' | 'curfew_only'.
+  if (isSignInOut) {
+    const signPref = (user as Record<string, unknown>).push_sign_in_out as string;
+    if (signPref === "off" || !signPref) {
+      console.log(`[push] user ${userId} has push_sign_in_out=off, skipping`);
+      return;
+    }
+    if (signPref === "curfew_only" && !options?.pastCurfew) {
+      console.log(`[push] user ${userId} has push_sign_in_out=curfew_only and event is not past curfew, skipping`);
+      return;
+    }
+    // 'all' or ('curfew_only' && pastCurfew) — proceed.
+  } else if (prefColumn) {
+    const prefs = user as Record<string, boolean>;
+    if (prefs[prefColumn] === false) {
+      console.log(`[push] user ${userId} has ${prefColumn} disabled, skipping`);
+      return;
+    }
   }
 
   // Fetch all registered push subscriptions for this user.
@@ -163,9 +196,10 @@ export async function sendWebPush(
 export async function sendWebPushToMany(
   userIds: string[],
   type: string,
-  payload: PushPayload
+  payload: PushPayload,
+  options?: PushOptions
 ) {
   await Promise.allSettled(
-    userIds.map((uid) => sendWebPush(uid, type, payload))
+    userIds.map((uid) => sendWebPush(uid, type, payload, options))
   );
 }

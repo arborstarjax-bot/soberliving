@@ -13,7 +13,7 @@ export default async function SettingsPage() {
   const admin = createAdminClient();
   const { data: pushPrefs } = await admin
     .from("users")
-    .select("push_chores, push_bulletin, push_discipline")
+    .select("push_chores, push_bulletin, push_discipline, push_sign_in_out, push_intakes")
     .eq("id", user.id)
     .single();
 
@@ -59,7 +59,10 @@ export default async function SettingsPage() {
           push_chores: pushPrefs?.push_chores ?? true,
           push_bulletin: pushPrefs?.push_bulletin ?? true,
           push_discipline: pushPrefs?.push_discipline ?? true,
+          push_sign_in_out: (pushPrefs?.push_sign_in_out as string) ?? "off",
+          push_intakes: pushPrefs?.push_intakes ?? true,
         }}
+        userRole={user.role}
       />
     </div>
   );

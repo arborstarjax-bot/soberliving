@@ -121,6 +121,7 @@ export async function signOutResident(
   });
 
   // Notify house staff so a manager has visibility someone is out.
+  // past_curfew=false so push.ts sends only when preference is 'all'.
   await notifyHouseStaff(
     resident.house_id,
     {
@@ -130,6 +131,7 @@ export async function signOutResident(
       actionUrl: "/sign-out-sheet",
       entityType: "sign_out_sheet",
       entityId: row.id,
+      metadata: { past_curfew: false },
     },
     { excludeUserId: user.id }
   );
@@ -235,22 +237,26 @@ export async function signInResident(
     metadata: { destination: row.destination, past_curfew: pastCurfew },
   });
 
-  // Notify house staff when sign-in is past curfew so it's not missed.
-  if (pastCurfew) {
-    await notifyHouseStaff(
-      row.house_id,
-      {
-        type: "resident_signed_in",
-        title: "⚠️ Late Sign-In (Past Curfew)",
-        message: `${resident?.full_name ?? "Resident"} signed in past curfew from ${row.destination}`,
-        actionUrl: "/sign-out-sheet",
-        entityType: "sign_out_sheet",
-        entityId: row.id,
-        metadata: { past_curfew: true },
-      },
-      { excludeUserId: user.id }
-    );
-  }
+  // Notify house staff of every sign-in. The metadata carries the
+  // past_curfew flag so push.ts can honour the staff member's preference
+  // ('all' sends for every sign-in, 'curfew_only' only for late returns).
+  await notifyHouseStaff(
+    row.house_id,
+    {
+      type: "resident_signed_in",
+      title: pastCurfew
+        ? "⚠️ Late Sign-In (Past Curfew)"
+        : "Resident Signed In",
+      message: pastCurfew
+        ? `${resident?.full_name ?? "Resident"} signed in past curfew from ${row.destination}`
+        : `${resident?.full_name ?? "Resident"} signed back in from ${row.destination}`,
+      actionUrl: "/sign-out-sheet",
+      entityType: "sign_out_sheet",
+      entityId: row.id,
+      metadata: { past_curfew: pastCurfew },
+    },
+    { excludeUserId: user.id }
+  );
 
   // Optional discipline in the same commit. Only staff reach this.
   // Reason was already validated above; `reason` is guaranteed non-empty.
