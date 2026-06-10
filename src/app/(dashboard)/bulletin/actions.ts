@@ -112,7 +112,9 @@ export async function createBulletinPost(
   const pushTargets = targets.filter((h): h is string => h !== null);
   if (pushTargets.length > 0) {
     const postTitle = parsed.data.title;
+    const postContent = parsed.data.content;
     const authorId = user.id;
+    const authorName = user.full_name;
     after(async () => {
       try {
         const pushAdmin = createAdminClient();
@@ -129,9 +131,13 @@ export async function createBulletinPost(
             .filter((uid) => uid !== authorId);
 
           if (userIds.length > 0) {
+            const bodyText =
+              postContent && postContent !== postTitle
+                ? `${postTitle}\n${postContent.slice(0, 150)}`
+                : postTitle;
             await sendWebPushToMany(userIds, "bulletin_post", {
-              title: "Community Notice",
-              body: postTitle,
+              title: `Community Notice from ${authorName}`,
+              body: bodyText,
               url: "/bulletin",
             });
           }

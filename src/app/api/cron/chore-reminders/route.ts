@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
 
       await sendWebPush(assignment.resident.user_id, "chore_reminder", {
         title: "Chore Reminder",
-        body: `Your chore "${assignment.chore.name}" is due today.`,
+        body: `Your chore "${assignment.chore.name}" is due today and has not been completed yet.`,
         url: "/chores",
       });
       sent++;

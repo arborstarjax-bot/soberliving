@@ -65,8 +65,8 @@ export async function GET(request: NextRequest) {
       if (!assignment?.resident?.user_id) continue;
 
       await sendWebPush(assignment.resident.user_id, "chore_reminder", {
-        title: "Chore Incomplete",
-        body: `Your chore "${assignment.chore.name}" is still not done. Please complete it before the end of the day.`,
+        title: "Chore Must Be Completed",
+        body: `Your chore "${assignment.chore.name}" has not been completed. You must complete it before the end of the day.`,
         url: "/chores",
       });
       sent++;
