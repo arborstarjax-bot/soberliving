@@ -1,5 +1,6 @@
 import "server-only";
 
+import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { sendWebPush } from "@/lib/push";
 
@@ -41,13 +42,19 @@ export async function sendNotification({
     console.error("Failed to send notification:", error);
   }
 
-  // Fire-and-forget web push — never block the in-app notification.
-  sendWebPush(userId, type, {
-    title,
-    body: message,
-    url: actionUrl,
-  }).catch((err) => {
-    console.error("[push] web push failed:", err);
+  // Schedule web push delivery after the response is sent so the
+  // in-app notification is never blocked and the serverless runtime
+  // stays alive until delivery completes.
+  after(async () => {
+    try {
+      await sendWebPush(userId, type, {
+        title,
+        body: message,
+        url: actionUrl,
+      });
+    } catch (err) {
+      console.error("[push] web push failed:", err);
+    }
   });
 }
 
