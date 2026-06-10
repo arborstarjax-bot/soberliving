@@ -1,11 +1,21 @@
 import { requireAuth } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getRoleLabel } from "@/lib/permissions";
 import { ProfileForm } from "./profile-form";
 import { PasswordForm } from "./password-form";
+import { PushNotificationCard } from "./push-notification-card";
 
 export default async function SettingsPage() {
   const user = await requireAuth();
+
+  // Fetch push preferences for the PushNotificationCard.
+  const admin = createAdminClient();
+  const { data: pushPrefs } = await admin
+    .from("users")
+    .select("push_chores, push_bulletin, push_discipline")
+    .eq("id", user.id)
+    .single();
 
   return (
     <div className="space-y-6">
@@ -43,6 +53,14 @@ export default async function SettingsPage() {
           <PasswordForm />
         </CardContent>
       </Card>
+
+      <PushNotificationCard
+        initialPrefs={{
+          push_chores: pushPrefs?.push_chores ?? true,
+          push_bulletin: pushPrefs?.push_bulletin ?? true,
+          push_discipline: pushPrefs?.push_discipline ?? true,
+        }}
+      />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { requireAuth, requireRole } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
+import { sendWebPushToMany } from "@/lib/push";
 import { z } from "zod";
 
 /**
@@ -102,6 +103,36 @@ export async function createBulletinPost(
       entityType: "bulletin",
       entityId: row.id,
       description: `${user.full_name} posted "${parsed.data.title}" to the bulletin board`,
+    });
+  }
+
+  // Send push notifications to residents in each targeted house.
+  // Fire-and-forget so the action returns immediately.
+  const pushTargets = targets.filter((h): h is string => h !== null);
+  if (pushTargets.length > 0) {
+    (async () => {
+      for (const houseId of pushTargets) {
+        const { data: residents } = await adminClient
+          .from("residents")
+          .select("user_id")
+          .eq("house_id", houseId)
+          .eq("status", "active")
+          .not("user_id", "is", null);
+
+        const userIds = (residents ?? [])
+          .map((r) => r.user_id as string)
+          .filter((uid) => uid !== user.id);
+
+        if (userIds.length > 0) {
+          await sendWebPushToMany(userIds, "bulletin_post", {
+            title: "Community Notice",
+            body: parsed.data.title,
+            url: "/bulletin",
+          });
+        }
+      }
+    })().catch((err) => {
+      console.error("[push] bulletin push failed:", err);
     });
   }
 
