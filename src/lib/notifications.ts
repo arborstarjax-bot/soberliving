@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/server";
+import { sendWebPush } from "@/lib/push";
 
 interface SendNotificationParams {
   userId: string;
@@ -39,6 +40,15 @@ export async function sendNotification({
   if (error) {
     console.error("Failed to send notification:", error);
   }
+
+  // Fire-and-forget web push — never block the in-app notification.
+  sendWebPush(userId, type, {
+    title,
+    body: message,
+    url: actionUrl,
+  }).catch((err) => {
+    console.error("[push] web push failed:", err);
+  });
 }
 
 export async function sendNotificationToHouseManagers(

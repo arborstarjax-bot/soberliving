@@ -1,4 +1,4 @@
-// Sober Living PWA service worker — v3
+// Sober Living PWA service worker — v4
 //
 // Strategy:
 //   _next/static/*  → CacheFirst  (content-addressed, never changes)
@@ -8,7 +8,8 @@
 // v3 bumps from v2 to add aggressive _next/static caching which
 // eliminates JS/CSS re-downloads on repeat visits — the single biggest
 // lever for making the app feel instant after the first load.
-const CACHE_VERSION = "v3";
+// v4 adds push notification support.
+const CACHE_VERSION = "v4";
 const STATIC_CACHE = `sl-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `sl-runtime-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline";
@@ -43,6 +44,49 @@ self.addEventListener("activate", (event) => {
       );
       await self.clients.claim();
     })()
+  );
+});
+
+// --- Push notifications ---
+// The server sends a JSON payload with { title, body, url?, icon? }.
+// We show a system notification and, on click, focus or open the target URL.
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+
+  let payload;
+  try {
+    payload = event.data.json();
+  } catch {
+    payload = { title: "HouseFlow", body: event.data.text() };
+  }
+
+  const { title = "HouseFlow", body = "", url, icon } = payload;
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: icon || "/icon-192.png",
+      badge: "/icon-192.png",
+      data: { url: url || "/dashboard" },
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || "/dashboard";
+
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clientList) => {
+        for (const client of clientList) {
+          if (new URL(client.url).pathname === targetUrl && "focus" in client) {
+            return client.focus();
+          }
+        }
+        return self.clients.openWindow(targetUrl);
+      })
   );
 });
 
