@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback, useTransition } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Bell, ClipboardCheck, MessageSquare, ShieldAlert } from "lucide-react";
-import { subscribePush, unsubscribePush, updatePushPreference } from "./push-actions";
+import { Bell, ClipboardCheck, MessageSquare, ShieldAlert, SendHorizontal } from "lucide-react";
+import { subscribePush, unsubscribePush, updatePushPreference, sendTestPush } from "./push-actions";
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
@@ -79,6 +79,8 @@ export function PushNotificationCard({ initialPrefs }: PushNotificationCardProps
   const [pushState, setPushState] = useState<PushState>(getInitialPushState);
   const [prefs, setPrefs] = useState(initialPrefs);
   const [pending, startTransition] = useTransition();
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testPending, setTestPending] = useState(false);
 
   // Check actual push subscription state (async).
   useEffect(() => {
@@ -192,6 +194,46 @@ export function PushNotificationCard({ initialPrefs }: PushNotificationCardProps
                 onToggle={handleMasterToggle}
               />
             </div>
+
+            {showToggles && (
+              <div className="mb-3">
+                <button
+                  type="button"
+                  disabled={testPending}
+                  onClick={async () => {
+                    setTestPending(true);
+                    setTestResult(null);
+                    try {
+                      const result = await sendTestPush();
+                      if ("error" in result && result.error) {
+                        setTestResult(`Error: ${result.error}`);
+                      } else {
+                        setTestResult(
+                          `Sent! (${(result as { debug: { subscriptionCount: number } }).debug.subscriptionCount} device(s)). Check your notifications.`
+                        );
+                      }
+                    } catch (err) {
+                      setTestResult(`Failed: ${String(err)}`);
+                    } finally {
+                      setTestPending(false);
+                    }
+                  }}
+                  className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                >
+                  <SendHorizontal className="h-4 w-4" />
+                  {testPending ? "Sending…" : "Send Test Notification"}
+                </button>
+                {testResult && (
+                  <p className={`mt-2 text-xs ${
+                    testResult.startsWith("Error") || testResult.startsWith("Failed")
+                      ? "text-destructive"
+                      : "text-green-600"
+                  }`}>
+                    {testResult}
+                  </p>
+                )}
+              </div>
+            )}
 
             {showToggles && (
               <div className="space-y-0">
