@@ -78,6 +78,11 @@ export default async function DashboardLayout({
     redirect("/intake");
   }
 
+  // Resident who hasn't acknowledged house rules after completing intake.
+  if (user.role === "resident" && user.intake_completed && !user.rules_acknowledged) {
+    redirect("/rules");
+  }
+
   // Pending workspace members: submitted intake but awaiting admin approval.
   if (
     user.role === "resident" &&

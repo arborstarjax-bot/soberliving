@@ -321,6 +321,7 @@ export interface SessionUser {
   workspace_role: WorkspaceRole | null;
   assigned_house_ids: string[];
   intake_completed: boolean;
+  rules_acknowledged: boolean;
   is_resident: boolean;
   commitment_signed: boolean;
   // True when the resident has a house_commitments row with

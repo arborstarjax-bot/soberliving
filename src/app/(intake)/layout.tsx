@@ -13,8 +13,12 @@ export default async function IntakeLayout({
     redirect("/discharged");
   }
 
-  // If intake is already completed, redirect to dashboard
+  // If intake is already completed, move to next step
   if (user.intake_completed) {
+    // If rules not yet acknowledged, go to rules presentation
+    if (!user.rules_acknowledged) {
+      redirect("/rules");
+    }
     redirect("/dashboard");
   }
 
