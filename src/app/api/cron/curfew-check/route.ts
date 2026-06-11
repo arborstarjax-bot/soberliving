@@ -4,15 +4,19 @@ import { sendWebPushToMany } from "@/lib/push";
 import { getHouseCurfews } from "@/lib/workspace";
 import { DEFAULT_TIMEZONE } from "@/lib/timezone";
 
-// Cron — runs at curfew time (scheduled via Supabase pg_cron).
-// Checks for residents still signed out past curfew and sends a
-// summary push notification to house staff.
+// Cron — runs every 15 minutes via Supabase pg_cron.
+// Dynamically checks each house's curfew for the current day-of-week
+// and sends a summary push to staff when residents are still out past
+// curfew. Uses curfew_notification_log to avoid duplicate notifications
+// for the same house on the same day.
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 type AdminClient = ReturnType<typeof createAdminClient>;
+
+const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
 
 async function getStaffForHouse(admin: AdminClient, houseId: string): Promise<string[]> {
   const [adminsRes, managersRes] = await Promise.all([
@@ -50,6 +54,14 @@ export async function GET(request: NextRequest) {
 
   try {
     const admin = createAdminClient();
+    const tz = DEFAULT_TIMEZONE;
+    const now = new Date();
+    const nowInTz = new Date(now.toLocaleString("en-US", { timeZone: tz }));
+    const currentH = nowInTz.getHours();
+    const currentM = nowInTz.getMinutes();
+    const currentMinutes = currentH * 60 + currentM;
+    const todayName = DAY_NAMES[nowInTz.getDay()];
+    const todayDate = `${nowInTz.getFullYear()}-${String(nowInTz.getMonth() + 1).padStart(2, "0")}-${String(nowInTz.getDate()).padStart(2, "0")}`;
 
     // Find all residents currently signed out (time_in IS NULL).
     const { data: openRows } = await admin
@@ -66,16 +78,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const tz = DEFAULT_TIMEZONE;
-    const now = new Date();
-    const nowInTz = new Date(now.toLocaleString("en-US", { timeZone: tz }));
-    const currentH = nowInTz.getHours();
-    const currentM = nowInTz.getMinutes();
-    const currentMinutes = currentH * 60 + currentM;
-
-    const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
-    const todayName = DAY_NAMES[nowInTz.getDay()];
-
     // Group open sign-outs by house.
     const byHouse = new Map<string, typeof openRows>();
     for (const row of openRows) {
@@ -84,9 +86,22 @@ export async function GET(request: NextRequest) {
       byHouse.set(row.house_id, existing);
     }
 
+    // Check which houses already received a curfew notification today.
+    const houseIds = [...byHouse.keys()];
+    const { data: alreadySent } = await admin
+      .from("curfew_notification_log")
+      .select("house_id")
+      .eq("notification_date", todayDate)
+      .in("house_id", houseIds);
+
+    const sentHouseIds = new Set((alreadySent ?? []).map((r) => (r as { house_id: string }).house_id));
+
     let totalNotified = 0;
 
     for (const [houseId, rows] of byHouse) {
+      // Skip if already notified today.
+      if (sentHouseIds.has(houseId)) continue;
+
       const curfews = await getHouseCurfews(houseId);
       const todayCurfew = curfews.find((c) => c.day_of_week === todayName);
       if (!todayCurfew) continue;
@@ -119,6 +134,14 @@ export async function GET(request: NextRequest) {
         body: summary,
         url: "/sign-out-sheet",
       });
+
+      // Record that we sent a notification for this house today.
+      await admin.from("curfew_notification_log").insert({
+        house_id: houseId,
+        notification_date: todayDate,
+        residents_notified: names.length,
+      });
+
       totalNotified += names.length;
     }
 
