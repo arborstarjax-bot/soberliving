@@ -44,7 +44,7 @@ export function RulesPresentation() {
   }
 
   return (
-    <div className="flex flex-col h-dvh overflow-hidden bg-[#1a1a2e] text-white">
+    <div className="flex flex-col h-dvh overflow-hidden bg-[#1a1a2e] text-white" style={{ paddingTop: "env(safe-area-inset-top)" }}>
       {/* Progress bar */}
       <div className="h-1 bg-[#16213e]">
         <div
@@ -68,7 +68,7 @@ export function RulesPresentation() {
       </div>
 
       {/* Navigation */}
-      <div className="flex items-center justify-between px-5 py-3 border-t border-white/5 bg-[#16213e]">
+      <div className="flex items-center justify-between px-5 py-3 border-t border-white/5 bg-[#16213e]" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
         <button
           onClick={prev}
           disabled={current === 0}
