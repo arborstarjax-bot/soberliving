@@ -112,7 +112,7 @@ export function IntakeFormWizard({
         if (result?.error) {
           setError(result.error);
         } else {
-          router.push("/dashboard");
+          router.push("/rules");
         }
       } catch (err) {
         setError(

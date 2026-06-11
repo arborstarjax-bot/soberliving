@@ -35,7 +35,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     supabase
       .from("users")
       .select(
-        "id, email, full_name, intake_completed, commitment_signed, is_resident, account_status, workspace_id"
+        "id, email, full_name, intake_completed, rules_acknowledged, commitment_signed, is_resident, account_status, workspace_id"
       )
       .eq("id", user.id)
       .single(),
@@ -128,6 +128,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const hasPendingCommitment = isResident ? !!pendingCommitmentRes.data : false;
 
   const intakeCompleted = profile.intake_completed === true;
+  const rulesAcknowledged = (profile as { rules_acknowledged?: boolean }).rules_acknowledged === true;
   const commitmentSigned = profile.commitment_signed === true;
 
   const residentRows = residentStatusRes.data ?? [];
@@ -153,6 +154,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     assigned_house_ids: assignedHouseIds,
     workspace_house_ids: workspaceHouseIds,
     intake_completed: intakeCompleted,
+    rules_acknowledged: rulesAcknowledged,
     is_resident: isResident,
     commitment_signed: commitmentSigned,
     has_pending_commitment: hasPendingCommitment,
