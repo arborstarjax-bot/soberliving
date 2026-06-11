@@ -78,8 +78,9 @@ export default async function DashboardLayout({
     redirect("/intake");
   }
 
-  // Resident who hasn't acknowledged house rules after completing intake.
-  if (user.role === "resident" && user.intake_completed && !user.rules_acknowledged) {
+  // Any resident (including admins/managers who are also residents) who
+  // hasn't acknowledged house rules after completing intake.
+  if (user.is_resident && !user.rules_acknowledged) {
     redirect("/rules");
   }
 

@@ -8,8 +8,9 @@ export default async function RulesLayout({
 }) {
   const user = await requireAuth();
 
-  // Only residents who completed intake but haven't acknowledged rules
-  if (user.role !== "resident") {
+  // Any user who is a resident (regardless of admin/manager role) and
+  // hasn't acknowledged rules yet. Non-residents skip straight to dashboard.
+  if (!user.is_resident) {
     redirect("/dashboard");
   }
 
