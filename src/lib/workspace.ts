@@ -72,6 +72,50 @@ export async function getHouseCurfews(
   return (data ?? []) as HouseCurfew[];
 }
 
+/**
+ * Returns the effective curfews for a house: its own curfews if any,
+ * otherwise falls back to workspace-level defaults (curfews from any
+ * other house in the same workspace).
+ */
+export async function getEffectiveHouseCurfews(
+  houseId: string
+): Promise<HouseCurfew[]> {
+  const own = await getHouseCurfews(houseId);
+  if (own.length > 0) return own;
+
+  // Fall back to workspace defaults: find the workspace, then look for
+  // curfews from any sibling house.
+  const admin = createAdminClient();
+  const { data: house } = await admin
+    .from("houses")
+    .select("workspace_id")
+    .eq("id", houseId)
+    .single();
+
+  if (!house?.workspace_id) return [];
+
+  // Get all sibling house IDs in the workspace.
+  const { data: siblings } = await admin
+    .from("houses")
+    .select("id")
+    .eq("workspace_id", house.workspace_id)
+    .neq("id", houseId);
+
+  if (!siblings || siblings.length === 0) return [];
+
+  // Find the first sibling that has curfews configured.
+  for (const sib of siblings) {
+    const sibCurfews = await getHouseCurfews(sib.id);
+    if (sibCurfews.length > 0) {
+      // Return sibling curfews but with the original house_id so
+      // callers don't need to know about the fallback.
+      return sibCurfews.map((c) => ({ ...c, house_id: houseId }));
+    }
+  }
+
+  return [];
+}
+
 export async function getWorkspaceInvites(
   workspaceId: string
 ): Promise<WorkspaceInvite[]> {

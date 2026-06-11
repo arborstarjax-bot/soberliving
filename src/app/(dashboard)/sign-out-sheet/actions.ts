@@ -7,7 +7,7 @@ import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 import { z } from "zod";
-import { getHouseCurfews } from "@/lib/workspace";
+import { getEffectiveHouseCurfews } from "@/lib/workspace";
 
 const signOutSchema = z.object({
   resident_id: z.string().uuid(),
@@ -369,7 +369,7 @@ async function isPastCurfew(
   timeOutIso: string,
   signInDate: Date
 ): Promise<boolean> {
-  const curfews = await getHouseCurfews(houseId);
+  const curfews = await getEffectiveHouseCurfews(houseId);
   if (curfews.length === 0) return false;
 
   const tz = "America/New_York";

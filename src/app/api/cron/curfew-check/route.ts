@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { sendWebPushToMany } from "@/lib/push";
-import { getHouseCurfews } from "@/lib/workspace";
+import { getEffectiveHouseCurfews } from "@/lib/workspace";
 import { DEFAULT_TIMEZONE } from "@/lib/timezone";
 
 // Cron — runs every 15 minutes via Supabase pg_cron.
@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
       // Skip if already notified today.
       if (sentHouseIds.has(houseId)) continue;
 
-      const curfews = await getHouseCurfews(houseId);
+      const curfews = await getEffectiveHouseCurfews(houseId);
       const todayCurfew = curfews.find((c) => c.day_of_week === todayName);
       if (!todayCurfew) continue;
 
