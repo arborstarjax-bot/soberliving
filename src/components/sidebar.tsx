@@ -190,9 +190,9 @@ export function Sidebar({
                 // them at least 44px of effective height (py-3 = 48px
                 // total) so they meet Apple's HIG minimum without
                 // changing desktop density at lg: breakpoint.
-                "flex items-center gap-3 rounded-md px-3 py-3 lg:py-2 text-sm font-medium transition active:scale-[0.98]",
+                "relative flex items-center gap-3 rounded-md px-3 py-3 lg:py-2 text-sm font-medium transition active:scale-[0.98]",
                 isActive
-                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-5 before:w-[3px] before:rounded-full before:bg-sidebar-primary"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground active:bg-sidebar-accent/60"
               )}
             >
@@ -209,7 +209,7 @@ export function Sidebar({
 
       <div className="border-t border-sidebar-border p-3">
         <div className="flex items-center gap-3 rounded-md px-3 py-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar-primary text-sidebar-primary-foreground text-xs font-bold">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-sidebar-primary to-sidebar-primary/80 text-sidebar-primary-foreground text-xs font-bold shadow-sm">
             {userName
               .split(" ")
               .map((n) => n[0])

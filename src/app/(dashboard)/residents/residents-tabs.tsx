@@ -333,8 +333,8 @@ export function ResidentsTabs({
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {p.days_sober !== null && (
-                <span className="text-xs text-muted-foreground">
-                  {p.days_sober} days sober
+                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                  {p.days_sober}d
                 </span>
               )}
               {p.status !== "active" && (
