@@ -98,9 +98,9 @@ export function EditResidentForm({ residentId, resident, userId, currentRole, is
   }
 
   return (
-    <form action={handleSubmit} className="space-y-4 border rounded-lg p-4 bg-muted/30">
+    <form action={handleSubmit} className="space-y-5 rounded-xl border bg-card p-5 shadow-sm">
       <div className="flex items-center justify-between">
-        <h3 className="font-semibold">Edit Resident Info</h3>
+        <h3 className="text-lg font-semibold">Edit Resident Info</h3>
         <div className="flex items-center gap-2">
           <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)} disabled={pending}>
             Cancel
@@ -111,88 +111,97 @@ export function EditResidentForm({ residentId, resident, userId, currentRole, is
         </div>
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-sm text-destructive rounded-lg bg-destructive/10 px-3 py-2">{error}</p>}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label htmlFor="full_name">Full Name</Label>
-          <Input id="full_name" name="full_name" defaultValue={resident.full_name} required />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="phone">Phone</Label>
-          <Input id="phone" name="phone" defaultValue={resident.phone ?? ""} />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="email">Email</Label>
-          <Input id="email" name="email" type="email" defaultValue={resident.email ?? ""} />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="date_of_birth">Date of Birth</Label>
-          <Input id="date_of_birth" name="date_of_birth" type="date" defaultValue={resident.date_of_birth ?? ""} />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="sobriety_date">Sobriety Date</Label>
-          <Input
-            id="sobriety_date"
-            name="sobriety_date"
-            type="date"
-            defaultValue={resident.sobriety_date ?? ""}
-            max={getHouseToday()}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="move_in_date">Move-in Date</Label>
-          <Input id="move_in_date" name="move_in_date" type="date" defaultValue={resident.move_in_date} required />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="move_out_date">Move-out Date</Label>
-          <Input id="move_out_date" name="move_out_date" type="date" defaultValue={resident.move_out_date ?? ""} />
-        </div>
-        {isAdmin && userId && (
+      <fieldset className="space-y-4 rounded-lg border p-4">
+        <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Personal</legend>
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="role">Role</Label>
-            <select
-              id="role"
-              name="role"
-              value={selectedRole}
-              onChange={(e) => setSelectedRole(e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
-            >
-              <option value="resident">Resident</option>
-              <option value="manager">Manager</option>
-              <option value="admin">Admin</option>
-            </select>
+            <Label htmlFor="full_name">Full Name</Label>
+            <Input id="full_name" name="full_name" defaultValue={resident.full_name} required />
           </div>
-        )}
-        {isAdmin && selectedRole === "manager" && houses && houses.length > 0 && (
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label>Manages Houses</Label>
-            <div className="space-y-2 border rounded-md p-3 bg-background">
-              {houses.map((house) => (
-                <label key={house.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selectedHouses.has(house.id)}
-                    onChange={() => {
-                      setSelectedHouses((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(house.id)) next.delete(house.id);
-                        else next.add(house.id);
-                        return next;
-                      });
-                    }}
-                    className="h-4 w-4 rounded border-input"
-                  />
-                  {house.name}
-                </label>
-              ))}
-            </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="phone">Phone</Label>
+            <Input id="phone" name="phone" defaultValue={resident.phone ?? ""} />
           </div>
-        )}
-      </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="email">Email</Label>
+            <Input id="email" name="email" type="email" defaultValue={resident.email ?? ""} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="date_of_birth">Date of Birth</Label>
+            <Input id="date_of_birth" name="date_of_birth" type="date" defaultValue={resident.date_of_birth ?? ""} />
+          </div>
+        </div>
+      </fieldset>
 
-      <div className="border-t pt-4">
-        <p className="text-sm font-medium mb-3">Emergency Contact</p>
+      <fieldset className="space-y-4 rounded-lg border p-4">
+        <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Residency</legend>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="sobriety_date">Sobriety Date</Label>
+            <Input
+              id="sobriety_date"
+              name="sobriety_date"
+              type="date"
+              defaultValue={resident.sobriety_date ?? ""}
+              max={getHouseToday()}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="move_in_date">Move-in Date</Label>
+            <Input id="move_in_date" name="move_in_date" type="date" defaultValue={resident.move_in_date} required />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="move_out_date">Move-out Date</Label>
+            <Input id="move_out_date" name="move_out_date" type="date" defaultValue={resident.move_out_date ?? ""} />
+          </div>
+          {isAdmin && userId && (
+            <div className="space-y-1.5">
+              <Label htmlFor="role">Role</Label>
+              <select
+                id="role"
+                name="role"
+                value={selectedRole}
+                onChange={(e) => setSelectedRole(e.target.value)}
+                className="flex h-9 w-full rounded-lg border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="resident">Resident</option>
+                <option value="manager">Manager</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+          )}
+          {isAdmin && selectedRole === "manager" && houses && houses.length > 0 && (
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Manages Houses</Label>
+              <div className="space-y-2 rounded-lg border p-3 bg-muted/30">
+                {houses.map((house) => (
+                  <label key={house.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedHouses.has(house.id)}
+                      onChange={() => {
+                        setSelectedHouses((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(house.id)) next.delete(house.id);
+                          else next.add(house.id);
+                          return next;
+                        });
+                      }}
+                      className="h-4 w-4 rounded border-input"
+                    />
+                    {house.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </fieldset>
+
+      <fieldset className="space-y-4 rounded-lg border p-4">
+        <legend className="px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Emergency Contact</legend>
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="space-y-1.5">
             <Label htmlFor="emergency_contact_name">Name</Label>
@@ -207,7 +216,7 @@ export function EditResidentForm({ residentId, resident, userId, currentRole, is
             <Input id="emergency_contact_relationship" name="emergency_contact_relationship" defaultValue={resident.emergency_contact_relationship ?? ""} />
           </div>
         </div>
-      </div>
+      </fieldset>
 
       <div className="space-y-1.5">
         <Label htmlFor="notes">Intake Notes</Label>

@@ -22,6 +22,14 @@ import { SendCheckInDialog } from "./check-ins/send-checkin-dialog";
 import { CheckInList } from "./check-ins/checkin-list";
 import { formatDateOnly } from "@/lib/timezone";
 
+function getSobrietyBadgeClasses(days: number): string {
+  if (days <= 30) return "bg-rose-50 text-rose-700";
+  if (days <= 90) return "bg-amber-50 text-amber-700";
+  if (days <= 180) return "bg-lime-50 text-lime-700";
+  if (days <= 365) return "bg-emerald-50 text-emerald-700";
+  return "bg-blue-50 text-blue-700";
+}
+
 interface Resident {
   id: string;
   full_name: string;
@@ -296,7 +304,7 @@ export function ResidentsTabs({
         <Card className={`hover:bg-muted/50 transition-colors ${p.status !== "active" ? "opacity-60" : ""}`}>
           <CardContent className="flex items-center justify-between py-3">
             <div className="flex items-center gap-3 min-w-0">
-              <AvatarInitials name={p.full_name} size="md" />
+              <AvatarInitials name={p.full_name} size="md" sobrietyDays={p.days_sober} />
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium">{p.full_name}</span>
@@ -333,8 +341,8 @@ export function ResidentsTabs({
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {p.days_sober !== null && (
-                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                  {p.days_sober}d
+                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${getSobrietyBadgeClasses(p.days_sober)}`}>
+                  {p.days_sober} days sober
                 </span>
               )}
               {p.status !== "active" && (
@@ -376,7 +384,7 @@ export function ResidentsTabs({
     <div className="space-y-4">
       {/* Top-level section tabs: Residents | Intake | Applications | Archive */}
       {isStaff && (
-        <div className="flex gap-1 overflow-x-auto no-scrollbar rounded-xl border bg-muted/30 p-1 w-fit">
+        <div className="flex gap-1 overflow-x-auto no-scrollbar rounded-xl border bg-muted/30 p-1 w-fit max-w-full">
           <button
             onClick={() => setTopTab("residents")}
             className={`px-4 py-1.5 text-sm font-medium rounded-lg whitespace-nowrap transition-colors ${
