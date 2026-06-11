@@ -1,20 +1,24 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Sobriety-based gradient tiers (days → color):
- *  0-30   red/rose   (early recovery)
- *  31-90  amber/orange
- *  91-180 yellow/lime
- *  181-365 emerald/teal
- *  365+   blue/indigo (long-term)
+ * Sobriety-based color tiers matching the milestone badge scale:
+ *   ≤29 days  → White (neutral)
+ *   30–59     → Brown (saddle)
+ *   60–89     → Purple
+ *   90–181    → Red
+ *   182–272   → Yellow
+ *   273–364   → Green
+ *   365+      → Blue
  */
-const SOBRIETY_GRADIENTS = [
-  { max: 30, gradient: "from-rose-500 to-red-600" },
-  { max: 90, gradient: "from-amber-500 to-orange-600" },
-  { max: 180, gradient: "from-yellow-500 to-lime-600" },
-  { max: 365, gradient: "from-emerald-500 to-teal-600" },
-  { max: Infinity, gradient: "from-blue-500 to-indigo-600" },
-] as const;
+function getSobrietyClasses(days: number): { bg: string; text: string; border?: string } {
+  if (days >= 365) return { bg: "bg-blue-600", text: "text-white" };
+  if (days >= 273) return { bg: "bg-green-600", text: "text-white" };
+  if (days >= 182) return { bg: "bg-yellow-300", text: "text-gray-900" };
+  if (days >= 90) return { bg: "bg-red-600", text: "text-white" };
+  if (days >= 60) return { bg: "bg-purple-600", text: "text-white" };
+  if (days >= 30) return { bg: "bg-[#8B4513]", text: "text-white" };
+  return { bg: "bg-white", text: "text-gray-700", border: "border border-gray-300" };
+}
 
 const FALLBACK_PALETTE = [
   "from-blue-500 to-indigo-600",
@@ -44,13 +48,6 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
-function getSobrietyGradient(days: number): string {
-  for (const tier of SOBRIETY_GRADIENTS) {
-    if (days <= tier.max) return tier.gradient;
-  }
-  return SOBRIETY_GRADIENTS[SOBRIETY_GRADIENTS.length - 1].gradient;
-}
-
 interface AvatarInitialsProps {
   name: string;
   size?: "sm" | "md" | "lg";
@@ -64,12 +61,29 @@ export function AvatarInitials({
   sobrietyDays,
   className,
 }: AvatarInitialsProps) {
-  const gradient =
-    sobrietyDays != null
-      ? getSobrietyGradient(sobrietyDays)
-      : FALLBACK_PALETTE[hashName(name) % FALLBACK_PALETTE.length];
   const initials = getInitials(name);
 
+  if (sobrietyDays != null) {
+    const tier = getSobrietyClasses(sobrietyDays);
+    return (
+      <span
+        className={cn(
+          "inline-flex shrink-0 items-center justify-center rounded-lg font-semibold shadow-sm",
+          tier.bg,
+          tier.text,
+          tier.border,
+          size === "sm" && "h-7 w-7 text-[10px]",
+          size === "md" && "h-8 w-8 text-xs",
+          size === "lg" && "h-10 w-10 text-sm",
+          className
+        )}
+      >
+        {initials}
+      </span>
+    );
+  }
+
+  const gradient = FALLBACK_PALETTE[hashName(name) % FALLBACK_PALETTE.length];
   return (
     <span
       className={cn(

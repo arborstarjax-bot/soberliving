@@ -23,11 +23,13 @@ import { CheckInList } from "./check-ins/checkin-list";
 import { formatDateOnly } from "@/lib/timezone";
 
 function getSobrietyBadgeClasses(days: number): string {
-  if (days <= 30) return "bg-rose-50 text-rose-700";
-  if (days <= 90) return "bg-amber-50 text-amber-700";
-  if (days <= 180) return "bg-lime-50 text-lime-700";
-  if (days <= 365) return "bg-emerald-50 text-emerald-700";
-  return "bg-blue-50 text-blue-700";
+  if (days >= 365) return "bg-blue-50 text-blue-700";
+  if (days >= 273) return "bg-green-50 text-green-700";
+  if (days >= 182) return "bg-yellow-50 text-yellow-800";
+  if (days >= 90) return "bg-red-50 text-red-700";
+  if (days >= 60) return "bg-purple-50 text-purple-700";
+  if (days >= 30) return "bg-amber-100 text-amber-900";
+  return "bg-white text-gray-700 border border-gray-200";
 }
 
 interface Resident {
