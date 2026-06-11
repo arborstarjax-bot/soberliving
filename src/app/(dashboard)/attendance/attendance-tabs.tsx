@@ -21,7 +21,7 @@ export function AttendanceTabs({ activeTab, isStaff }: AttendanceTabsProps) {
   const tabs = isStaff ? STAFF_TABS : RESIDENT_TABS;
 
   return (
-    <div className="flex gap-1 overflow-x-auto no-scrollbar rounded-xl border bg-muted/30 p-1 w-fit">
+    <div className="flex gap-1 overflow-x-auto no-scrollbar rounded-xl border bg-muted/30 p-1 w-fit max-w-full">
       {tabs.map((tab) => (
         <Link
           key={tab.key}

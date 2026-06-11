@@ -1,6 +1,22 @@
 import { cn } from "@/lib/utils";
 
-const GRADIENT_PALETTE = [
+/**
+ * Sobriety-based gradient tiers (days → color):
+ *  0-30   red/rose   (early recovery)
+ *  31-90  amber/orange
+ *  91-180 yellow/lime
+ *  181-365 emerald/teal
+ *  365+   blue/indigo (long-term)
+ */
+const SOBRIETY_GRADIENTS = [
+  { max: 30, gradient: "from-rose-500 to-red-600" },
+  { max: 90, gradient: "from-amber-500 to-orange-600" },
+  { max: 180, gradient: "from-yellow-500 to-lime-600" },
+  { max: 365, gradient: "from-emerald-500 to-teal-600" },
+  { max: Infinity, gradient: "from-blue-500 to-indigo-600" },
+] as const;
+
+const FALLBACK_PALETTE = [
   "from-blue-500 to-indigo-600",
   "from-emerald-500 to-teal-600",
   "from-violet-500 to-purple-600",
@@ -28,18 +44,30 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
+function getSobrietyGradient(days: number): string {
+  for (const tier of SOBRIETY_GRADIENTS) {
+    if (days <= tier.max) return tier.gradient;
+  }
+  return SOBRIETY_GRADIENTS[SOBRIETY_GRADIENTS.length - 1].gradient;
+}
+
 interface AvatarInitialsProps {
   name: string;
   size?: "sm" | "md" | "lg";
+  sobrietyDays?: number | null;
   className?: string;
 }
 
 export function AvatarInitials({
   name,
   size = "md",
+  sobrietyDays,
   className,
 }: AvatarInitialsProps) {
-  const gradient = GRADIENT_PALETTE[hashName(name) % GRADIENT_PALETTE.length];
+  const gradient =
+    sobrietyDays != null
+      ? getSobrietyGradient(sobrietyDays)
+      : FALLBACK_PALETTE[hashName(name) % FALLBACK_PALETTE.length];
   const initials = getInitials(name);
 
   return (

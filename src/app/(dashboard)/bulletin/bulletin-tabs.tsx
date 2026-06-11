@@ -16,7 +16,7 @@ export function BulletinTabs({ userRole }: { userRole: UserRole }) {
   const isStaff = userRole === "admin" || userRole === "manager";
 
   return (
-    <div className="flex gap-1 overflow-x-auto no-scrollbar rounded-xl border bg-muted/30 p-1 w-fit">
+    <div className="flex gap-1 overflow-x-auto no-scrollbar rounded-xl border bg-muted/30 p-1 w-fit max-w-full">
       <TabLink href="/bulletin" active={isPosts}>
         Bulletin Board
       </TabLink>

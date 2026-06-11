@@ -57,6 +57,9 @@ export const viewport: Viewport = {
   // can paint the dashboard theme edge-to-edge; the actual content is
   // pushed inside safe-area-inset padding in the dashboard layout.
   viewportFit: "cover",
+  // Resize the layout viewport when the virtual keyboard appears so
+  // that fixed-position dialogs (bottom sheets) stay above the keyboard.
+  interactiveWidget: "resizes-content",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#f5f5f5" },
     { media: "(prefers-color-scheme: dark)", color: "#1a1a1a" },
