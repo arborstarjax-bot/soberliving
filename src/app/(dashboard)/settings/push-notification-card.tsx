@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useTransition } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Bell, ClipboardCheck, MessageSquare, ShieldAlert, DoorOpen, FileText } from "lucide-react";
+import { Bell, DoorOpen, FileText } from "lucide-react";
 import { subscribePush, unsubscribePush, updatePushPreference, updateSignInOutPreference } from "./push-actions";
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
@@ -239,89 +239,58 @@ export function PushNotificationCard({ initialPrefs, userRole }: PushNotificatio
               />
             </div>
 
-            {showToggles && (
+            {showToggles && isStaff && (
               <>
-                <div className="space-y-0">
-                  <ToggleRow
-                    icon={ClipboardCheck}
-                    label="Chore Reminders"
-                    hint="Notified at noon on the day your chores are due"
-                    checked={prefs.push_chores}
-                    disabled={pending}
-                    onToggle={(v) => handlePrefToggle("push_chores", v)}
-                  />
-                  <ToggleRow
-                    icon={MessageSquare}
-                    label="Community Notices"
-                    hint="When a new bulletin or community notice is posted"
-                    checked={prefs.push_bulletin}
-                    disabled={pending}
-                    onToggle={(v) => handlePrefToggle("push_bulletin", v)}
-                  />
-                  <ToggleRow
-                    icon={ShieldAlert}
-                    label="Demerits & Warnings"
-                    hint="When you receive a demerit or a warning"
-                    checked={prefs.push_discipline}
-                    disabled={pending}
-                    onToggle={(v) => handlePrefToggle("push_discipline", v)}
-                  />
+                <div className="mt-4 mb-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Staff Notifications
+                  </p>
                 </div>
 
-                {isStaff && (
-                  <>
-                    <div className="mt-4 mb-2">
-                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                        Staff Notifications
-                      </p>
+                <div className="space-y-0">
+                  {/* Sign-In/Out — radio group */}
+                  <div className="py-3 border-b border-border">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <DoorOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+                      Sign-In / Sign-Out Alerts
                     </div>
-
-                    <div className="space-y-0">
-                      {/* Sign-In/Out — radio group */}
-                      <div className="py-3 border-b border-border">
-                        <div className="flex items-center gap-2 text-sm font-medium">
-                          <DoorOpen className="h-4 w-4 text-muted-foreground shrink-0" />
-                          Sign-In / Sign-Out Alerts
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-                          Get notified when residents sign in or out
-                        </p>
-                        <div className="flex flex-col gap-2 pl-6">
-                          <RadioOption
-                            label="Off"
-                            value="off"
-                            selected={prefs.push_sign_in_out === "off"}
-                            disabled={pending}
-                            onSelect={() => handleSignInOutChange("off")}
-                          />
-                          <RadioOption
-                            label="All sign-ins and sign-outs"
-                            value="all"
-                            selected={prefs.push_sign_in_out === "all"}
-                            disabled={pending}
-                            onSelect={() => handleSignInOutChange("all")}
-                          />
-                          <RadioOption
-                            label="Only past-curfew sign-ins"
-                            value="curfew_only"
-                            selected={prefs.push_sign_in_out === "curfew_only"}
-                            disabled={pending}
-                            onSelect={() => handleSignInOutChange("curfew_only")}
-                          />
-                        </div>
-                      </div>
-
-                      <ToggleRow
-                        icon={FileText}
-                        label="New Intake Applications"
-                        hint="When an applicant submits their intake packet"
-                        checked={prefs.push_intakes}
+                    <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+                      Get notified when residents sign in or out
+                    </p>
+                    <div className="flex flex-col gap-2 pl-6">
+                      <RadioOption
+                        label="Off"
+                        value="off"
+                        selected={prefs.push_sign_in_out === "off"}
                         disabled={pending}
-                        onToggle={(v) => handlePrefToggle("push_intakes", v)}
+                        onSelect={() => handleSignInOutChange("off")}
+                      />
+                      <RadioOption
+                        label="All sign-ins and sign-outs"
+                        value="all"
+                        selected={prefs.push_sign_in_out === "all"}
+                        disabled={pending}
+                        onSelect={() => handleSignInOutChange("all")}
+                      />
+                      <RadioOption
+                        label="Only past-curfew sign-ins"
+                        value="curfew_only"
+                        selected={prefs.push_sign_in_out === "curfew_only"}
+                        disabled={pending}
+                        onSelect={() => handleSignInOutChange("curfew_only")}
                       />
                     </div>
-                  </>
-                )}
+                  </div>
+
+                  <ToggleRow
+                    icon={FileText}
+                    label="New Intake Applications"
+                    hint="When an applicant submits their intake packet"
+                    checked={prefs.push_intakes}
+                    disabled={pending}
+                    onToggle={(v) => handlePrefToggle("push_intakes", v)}
+                  />
+                </div>
               </>
             )}
           </>
