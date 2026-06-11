@@ -6,7 +6,7 @@ import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { getHouseToday, getHouseYesterday, DEFAULT_TIMEZONE } from "@/lib/timezone";
-import { sendNotification, sendNotificationToHouseManagers } from "@/lib/notifications";
+import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 
 // Shapes returned by PostgREST joins. TS can't parse the select string, so
 // we narrow the joined rows centrally instead of casting at each access.
@@ -102,16 +102,16 @@ export async function markSignoffComplete(signoffId: string, photoUrl?: string) 
 
   if (error) return { error: error.message };
 
-  // Notify house managers when a resident submits a signoff for review
+  // Notify staff when a resident submits a signoff for review
   if (user.role === "resident" && houseId) {
-    await sendNotificationToHouseManagers(houseId, {
+    await notifyHouseStaff(houseId, {
       type: "chore_submitted",
       title: "Chore Submitted for Review",
-      message: `${user.full_name} submitted a chore for review.`,
+      message: `${user.full_name} submitted their chore for review.`,
       actionUrl: "/chores",
       entityType: "chore_signoff",
       entityId: signoffId,
-    });
+    }, { excludeUserId: user.id });
   }
 
   revalidatePath("/chores");
@@ -364,17 +364,17 @@ export async function redoSignoff(signoffId: string, photoUrl?: string) {
 
   if (error) return { error: error.message };
 
-  // Notify house managers when a resident resubmits a signoff for review
+  // Notify staff when a resident resubmits a signoff for review
   const houseId = assignment?.rotation?.house_id ?? "";
   if (houseId) {
-    await sendNotificationToHouseManagers(houseId, {
+    await notifyHouseStaff(houseId, {
       type: "chore_submitted",
       title: "Chore Resubmitted for Review",
       message: `${user.full_name} resubmitted a chore for review after rejection.`,
       actionUrl: "/chores",
       entityType: "chore_signoff",
       entityId: signoffId,
-    });
+    }, { excludeUserId: user.id });
   }
 
   revalidatePath("/chores");

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { sendWebPush } from "@/lib/push";
+import { sendWebPush, sendWebPushToMany } from "@/lib/push";
 import { getHouseToday, DEFAULT_TIMEZONE } from "@/lib/timezone";
 
 // Vercel Cron — runs daily at noon and 10 PM Eastern (16:00 & 02:00 UTC).
@@ -14,6 +14,26 @@ import { getHouseToday, DEFAULT_TIMEZONE } from "@/lib/timezone";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+type AdminClient = ReturnType<typeof createAdminClient>;
+
+async function getStaffForHouses(admin: AdminClient, houseIds: Set<string>): Promise<string[]> {
+  const [adminsRes, managersRes] = await Promise.all([
+    admin.from("user_roles").select("user_id").eq("role", "admin"),
+    houseIds.size > 0
+      ? admin
+          .from("manager_house_assignments")
+          .select("user_id")
+          .in("house_id", [...houseIds])
+          .is("unassigned_at", null)
+      : Promise.resolve({ data: [] as { user_id: string }[] }),
+  ]);
+
+  const ids = new Set<string>();
+  for (const a of adminsRes.data ?? []) ids.add((a as { user_id: string }).user_id);
+  for (const m of (managersRes as { data: { user_id: string }[] | null }).data ?? []) ids.add(m.user_id);
+  return [...ids];
+}
 
 function getEasternHour(): number {
   const now = new Date();
@@ -59,7 +79,7 @@ export async function GET(request: NextRequest) {
          sign_off_date,
          rotation_assignment:chore_rotation_assignments!inner(
            resident:residents!inner(user_id, full_name),
-           chore:chores!inner(name)
+           chore:chores!inner(name, house_id)
          )`
       )
       .eq("sign_off_date", today)
@@ -75,10 +95,13 @@ export async function GET(request: NextRequest) {
     }
 
     let sent = 0;
+    const missedNames: string[] = [];
+    const housesWithMissed = new Set<string>();
+
     for (const row of signoffs) {
       const assignment = row.rotation_assignment as unknown as {
         resident: { user_id: string | null; full_name: string };
-        chore: { name: string };
+        chore: { name: string; house_id: string };
       } | null;
 
       if (!assignment?.resident?.user_id) continue;
@@ -94,6 +117,26 @@ export async function GET(request: NextRequest) {
         url: "/chores",
       });
       sent++;
+
+      if (isEvening) {
+        missedNames.push(`${assignment.resident.full_name} — ${assignment.chore.name}`);
+        if (assignment.chore.house_id) housesWithMissed.add(assignment.chore.house_id);
+      }
+    }
+
+    // Notify staff about incomplete chores at 10 PM so they have visibility.
+    if (isEvening && missedNames.length > 0) {
+      const staffIds = await getStaffForHouses(admin, housesWithMissed);
+      if (staffIds.length > 0) {
+        const summary = missedNames.length <= 5
+          ? missedNames.join(", ")
+          : `${missedNames.slice(0, 5).join(", ")} +${missedNames.length - 5} more`;
+        await sendWebPushToMany(staffIds, "chore_missed_staff", {
+          title: "Incomplete Chores Tonight",
+          body: summary,
+          url: "/chores",
+        });
+      }
     }
 
     return NextResponse.json({
