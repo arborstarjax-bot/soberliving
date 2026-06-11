@@ -56,7 +56,9 @@ function StatShell({
       <Card className="hover:bg-muted/50 transition-colors">
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">{label}</CardTitle>
-          <Icon className="h-4 w-4 text-muted-foreground" />
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
+            <Icon className="h-3.5 w-3.5 text-primary" />
+          </span>
         </CardHeader>
         <CardContent>{children}</CardContent>
       </Card>

@@ -329,7 +329,7 @@ function VerifyButtons({ signoffId }: { signoffId: string }) {
           <button
             type="button"
             disabled={pending}
-            className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-green-100 text-green-700 hover:bg-green-200 active:scale-95 transition"
+            className="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-green-100 text-green-700 hover:bg-green-200 active:scale-95 transition"
             title="Approve"
             onClick={() => {
               setError(null);
@@ -344,7 +344,7 @@ function VerifyButtons({ signoffId }: { signoffId: string }) {
           <button
             type="button"
             disabled={pending}
-            className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
+            className="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
             title="Reject"
             onClick={() => setShowRejectNote(true)}
           >
@@ -471,20 +471,20 @@ function SignoffBadge({ status, rejectionNote }: { status?: string; rejectionNot
   switch (status) {
     case "approved":
       return (
-        <span className="inline-block h-5 w-5 rounded-full bg-green-500 text-white text-xs leading-5">
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-gradient-to-br from-green-400 to-green-600 text-white text-xs shadow-sm shadow-green-500/30">
           ✓
         </span>
       );
     case "completed_pending_review":
       return (
-        <span className="inline-block h-5 w-5 rounded-full bg-yellow-400 text-white text-xs leading-5">
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-gradient-to-br from-yellow-300 to-yellow-500 text-white text-xs shadow-sm shadow-yellow-400/30">
           ⏳
         </span>
       );
     case "rejected":
       return (
         <div className="flex flex-col items-center gap-0.5">
-          <span className="inline-block h-5 w-5 rounded-full bg-red-500 text-white text-xs leading-5">
+          <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-gradient-to-br from-red-400 to-red-600 text-white text-xs shadow-sm shadow-red-500/30">
             ✗
           </span>
           {rejectionNote && (
@@ -496,7 +496,7 @@ function SignoffBadge({ status, rejectionNote }: { status?: string; rejectionNot
       );
     case "missed":
       return (
-        <span className="inline-block h-5 w-5 rounded-full bg-red-300 text-white text-xs leading-5">
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-gradient-to-br from-red-200 to-red-400 text-white text-xs shadow-sm shadow-red-300/30">
           M
         </span>
       );

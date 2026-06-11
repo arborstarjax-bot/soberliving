@@ -157,9 +157,9 @@ export function ResidentBottomNav({
                 <Link
                   href={item.href}
                   className={cn(
-                    "flex w-full flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium transition",
+                    "relative flex w-full flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium transition",
                     active
-                      ? "text-white"
+                      ? "text-white before:absolute before:top-0 before:left-1/2 before:-translate-x-1/2 before:h-[3px] before:w-5 before:rounded-full before:bg-sidebar-primary"
                       : "text-sidebar-foreground/60 hover:text-sidebar-foreground"
                   )}
                 >
@@ -183,9 +183,9 @@ export function ResidentBottomNav({
               type="button"
               onClick={() => setMoreOpen(!moreOpen)}
               className={cn(
-                "flex w-full flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium transition",
+                "relative flex w-full flex-col items-center justify-center gap-1 py-2 text-[11px] font-medium transition",
                 moreIsActive || moreOpen
-                  ? "text-white"
+                  ? "text-white before:absolute before:top-0 before:left-1/2 before:-translate-x-1/2 before:h-[3px] before:w-5 before:rounded-full before:bg-sidebar-primary"
                   : "text-sidebar-foreground/60 hover:text-sidebar-foreground"
               )}
             >

@@ -45,7 +45,7 @@ export function AvatarInitials({
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br font-semibold text-white",
+        "inline-flex shrink-0 items-center justify-center rounded-lg bg-gradient-to-br font-semibold text-white shadow-sm",
         gradient,
         size === "sm" && "h-7 w-7 text-[10px]",
         size === "md" && "h-8 w-8 text-xs",
