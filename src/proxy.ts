@@ -86,10 +86,13 @@ function readAccessToken(req: NextRequest): string | null {
 export default async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Skip proxy for static assets and API auth routes
+  // Skip proxy for static assets, API auth routes, and cron endpoints.
+  // Cron routes authenticate via CRON_SECRET bearer token — they don't
+  // carry a user session cookie and must not be redirected to /login.
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/api/cron") ||
     pathname.includes(".")
   ) {
     return NextResponse.next();
