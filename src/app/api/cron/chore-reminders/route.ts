@@ -3,15 +3,27 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { sendWebPush } from "@/lib/push";
 import { getHouseToday, DEFAULT_TIMEZONE } from "@/lib/timezone";
 
-// Vercel Cron — scheduled to run daily at noon Eastern (17:00 UTC).
-// Finds all pending chore signoffs due today and sends a push
-// notification to the assigned resident.
+// Vercel Cron — runs daily at noon and 10 PM Eastern (16:00 & 02:00 UTC).
 //
-// Auth: same CRON_SECRET bearer token pattern as sweep-charges.
+// At noon: sends a "chore is due today" reminder.
+// At 10 PM: sends an urgent "chore must be completed" reminder.
+//
+// Both only fire for chores that are still pending or need redo.
+// Auth: CRON_SECRET bearer token.
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+function getEasternHour(): number {
+  const now = new Date();
+  const eastern = now.toLocaleString("en-US", {
+    timeZone: DEFAULT_TIMEZONE,
+    hour: "numeric",
+    hour12: false,
+  });
+  return parseInt(eastern, 10);
+}
 
 export async function GET(request: NextRequest) {
   const expected = process.env.CRON_SECRET;
@@ -30,13 +42,16 @@ export async function GET(request: NextRequest) {
   }
 
   const startedAt = Date.now();
+  const easternHour = getEasternHour();
+
+  // Determine message variant based on time of day.
+  // 10 AM – 4 PM → noon reminder; 6 PM – 2 AM → evening "must complete" reminder.
+  const isEvening = easternHour >= 18 || easternHour < 4;
 
   try {
     const admin = createAdminClient();
     const today = getHouseToday(DEFAULT_TIMEZONE);
 
-    // All pending signoffs due today, joined to get the resident's
-    // user_id and chore name.
     const { data: signoffs } = await admin
       .from("chore_signoffs")
       .select(
@@ -54,6 +69,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         ok: true,
         sent: 0,
+        variant: isEvening ? "evening" : "noon",
         durationMs: Date.now() - startedAt,
       });
     }
@@ -67,9 +83,14 @@ export async function GET(request: NextRequest) {
 
       if (!assignment?.resident?.user_id) continue;
 
+      const title = isEvening ? "Chore Must Be Completed" : "Chore Reminder";
+      const body = isEvening
+        ? `Your chore "${assignment.chore.name}" has not been completed. You must complete it before the end of the day.`
+        : `Your chore "${assignment.chore.name}" is due today and has not been completed yet.`;
+
       await sendWebPush(assignment.resident.user_id, "chore_reminder", {
-        title: "Chore Reminder",
-        body: `Your chore "${assignment.chore.name}" is due today and has not been completed yet.`,
+        title,
+        body,
         url: "/chores",
       });
       sent++;
@@ -78,6 +99,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       sent,
+      variant: isEvening ? "evening" : "noon",
       durationMs: Date.now() - startedAt,
     });
   } catch (e) {
