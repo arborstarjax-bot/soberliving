@@ -304,64 +304,70 @@ export function ResidentsTabs({
     return (
       <Link key={p.key} href={href}>
         <Card className={`hover:bg-muted/50 transition-colors ${p.status !== "active" ? "opacity-60" : ""}`}>
-          <CardContent className="flex items-center justify-between py-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <AvatarInitials name={p.full_name} size="md" sobrietyDays={p.days_sober} />
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium">{p.full_name}</span>
-                  {p.staffRole === "admin" && (
-                    <Badge variant="default">Admin</Badge>
+          <CardContent className="py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 min-w-0">
+                <AvatarInitials name={p.full_name} size="md" sobrietyDays={p.days_sober} />
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium">{p.full_name}</span>
+                    {p.staffRole === "admin" && (
+                      <Badge variant="default">Admin</Badge>
+                    )}
+                    {p.staffRole === "manager" && (
+                      <Badge variant="secondary">Manager</Badge>
+                    )}
+                    {p.isResident && (
+                      <Badge variant="outline">Resident</Badge>
+                    )}
+                    {!p.is_active && <Badge variant="destructive">Inactive</Badge>}
+                  </div>
+                  {p.phone && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); e.preventDefault(); window.location.href = `tel:${p.phone}`; }}
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    >
+                      <Phone className="h-3 w-3" />
+                      {p.phone}
+                    </button>
                   )}
-                  {p.staffRole === "manager" && (
-                    <Badge variant="secondary">Manager</Badge>
-                  )}
-                  {p.isResident && (
-                    <Badge variant="outline">Resident</Badge>
-                  )}
-                  {!p.is_active && <Badge variant="destructive">Inactive</Badge>}
+                  <p className="text-xs text-muted-foreground truncate">
+                    {p.house_name}
+                    {p.bed_label && ` · ${p.bed_label}`}
+                    {p.staffRole === "manager" && p.assigned_house_names.length > 0 && (
+                      ` · Houses: ${p.assigned_house_names.join(", ")}`
+                    )}
+                  </p>
                 </div>
-                {p.phone && (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); e.preventDefault(); window.location.href = `tel:${p.phone}`; }}
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  >
-                    <Phone className="h-3 w-3" />
-                    {p.phone}
-                  </button>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {p.days_sober !== null && (
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${getSobrietyBadgeClasses(p.days_sober)}`}>
+                    {p.days_sober} days sober
+                  </span>
                 )}
-                <p className="text-xs text-muted-foreground truncate">
-                  {p.house_name}
-                  {p.bed_label && ` · ${p.bed_label}`}
-                  {p.move_in_date && ` · Moved in ${formatDateOnly(p.move_in_date)}`}
-                  {p.staffRole === "manager" && p.assigned_house_names.length > 0 && (
-                    ` · Houses: ${p.assigned_house_names.join(", ")}`
-                  )}
-                </p>
+                {p.status !== "active" && (
+                  <Badge
+                    variant={p.status === "discharged" ? "secondary" : "outline"}
+                    className="capitalize"
+                  >
+                    {p.status.replace("_", " ")}
+                  </Badge>
+                )}
+                {isAdmin && p.residentId && (
+                  <DeleteResidentButton
+                    residentId={p.residentId}
+                    residentName={p.full_name}
+                  />
+                )}
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {p.days_sober !== null && (
-                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${getSobrietyBadgeClasses(p.days_sober)}`}>
-                  {p.days_sober} days sober
-                </span>
-              )}
-              {p.status !== "active" && (
-                <Badge
-                  variant={p.status === "discharged" ? "secondary" : "outline"}
-                  className="capitalize"
-                >
-                  {p.status.replace("_", " ")}
-                </Badge>
-              )}
-              {isAdmin && p.residentId && (
-                <DeleteResidentButton
-                  residentId={p.residentId}
-                  residentName={p.full_name}
-                />
-              )}
-            </div>
+            {p.move_in_date && (
+              <p className="text-xs text-muted-foreground mt-2 pl-12">
+                Move-in: {formatDateOnly(p.move_in_date)}
+              </p>
+            )}
           </CardContent>
         </Card>
       </Link>
