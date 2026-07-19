@@ -127,6 +127,7 @@ export default async function DashboardLayout({
         userId={user.id}
         userRole={user.role}
         assignedHouseIds={user.assigned_house_ids}
+        workspaceId={user.workspace_id}
       />
     </Suspense>
   );

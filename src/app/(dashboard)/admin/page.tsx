@@ -388,15 +388,22 @@ export default async function AdminPage() {
   let pendingIntakeCount = 0;
   let newIntakesPendingReview: NewIntakeItem[] = [];
   if (isAdmin) {
+    // Intake applicants have no house yet (house is assigned on
+    // review), so they can't be house-scoped — scope by workspace_id
+    // directly so one workspace never sees another's pending intakes.
+    let intakeUsersQuery = adminClient
+      .from("users")
+      .select("id, full_name, created_at")
+      .eq("intake_completed", true)
+      .eq("commitment_signed", false)
+      .eq("is_active", true)
+      .neq("account_status", "rejected");
+    if (user.workspace_id) {
+      intakeUsersQuery = intakeUsersQuery.eq("workspace_id", user.workspace_id);
+    }
     const [{ data: intakeUsers }, { data: commitments }, { data: forms }] =
       await Promise.all([
-        adminClient
-          .from("users")
-          .select("id, full_name, created_at")
-          .eq("intake_completed", true)
-          .eq("commitment_signed", false)
-          .eq("is_active", true)
-          .neq("account_status", "rejected"),
+        intakeUsersQuery,
         adminClient.from("house_commitments").select("user_id"),
         adminClient
           .from("intake_forms")

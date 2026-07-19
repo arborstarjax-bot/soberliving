@@ -91,7 +91,7 @@ export async function ensureMilestonePosts(
   const { data: residents } = await admin
     .from("residents")
     .select(
-      "user_id, house_id, sobriety_date, user:users!inner(full_name)",
+      "user_id, house_id, sobriety_date, user:users!inner(full_name), house:houses!inner(workspace_id)",
     )
     .eq("status", "active")
     .not("sobriety_date", "is", null)
@@ -104,6 +104,7 @@ export async function ensureMilestonePosts(
     house_id: string;
     sobriety_date: string;
     user: { full_name: string } | { full_name: string }[] | null;
+    house: { workspace_id: string | null } | { workspace_id: string | null }[] | null;
   };
   const rows = residents as unknown as ResidentRow[];
 
@@ -184,12 +185,16 @@ export async function ensureMilestonePosts(
         });
     }
 
+    const houseObj = Array.isArray(r.house) ? r.house[0] : r.house;
+    const workspaceId = houseObj?.workspace_id ?? null;
+
     for (const days of toAnnounce) {
       const label = milestoneLabel(days);
       const { data: inserted, error: postErr } = await admin
         .from("bulletin_posts")
         .insert({
           author_id: r.user_id,
+          workspace_id: workspaceId,
           house_id: r.house_id,
           title: `🎉 ${authorName} — ${label}!`,
           content: `Big congrats to ${authorName} on reaching ${label}. Keep going strong 💪`,

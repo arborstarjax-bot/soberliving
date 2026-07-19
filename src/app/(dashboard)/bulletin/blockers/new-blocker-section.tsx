@@ -20,6 +20,10 @@ export async function NewBlockerSection({ user }: { user: SessionUser }) {
     .eq("status", "active");
   if (user.role === "manager") {
     residentsQuery = residentsQuery.in("house_id", user.assigned_house_ids);
+  } else if (user.role === "admin" && user.workspace_id) {
+    // Scope the admin's target picker to their own workspace's houses
+    // so they can't address residents in another workspace.
+    residentsQuery = residentsQuery.in("house_id", user.workspace_house_ids);
   }
 
   const [allHouses, { data: residentRows }] = await Promise.all([

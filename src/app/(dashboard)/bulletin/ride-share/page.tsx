@@ -80,6 +80,7 @@ export default async function RideSharePage({
           currentUserId={user.id}
           currentUserRole={user.role}
           visibleHouseIds={visibleHouseIds}
+          workspaceId={user.workspace_id}
           showPast={showPast}
           searchParams={params}
         />

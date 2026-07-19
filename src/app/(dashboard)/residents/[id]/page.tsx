@@ -40,11 +40,11 @@ export default async function ResidentDetailPage(
 
   if (!resident) redirect("/residents");
 
-  if (
-    user.role !== "admin" &&
-    user.role !== "resident" &&
-    !canAccessHouse(user, resident.house_id)
-  ) {
+  // Admins and managers must both pass canAccessHouse — for admins
+  // that scopes to their workspace's houses, so an admin can't open a
+  // resident in another workspace by guessing its id. Residents have
+  // their own view guarded separately below.
+  if (user.role !== "resident" && !canAccessHouse(user, resident.house_id)) {
     redirect("/dashboard");
   }
 

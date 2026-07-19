@@ -44,11 +44,14 @@ export async function GrievancesListSection({ user }: { user: SessionUser }) {
     )
     .order("created_at", { ascending: false })
     .limit(200);
-  if (user.role === "admin" && user.workspace_house_ids.length > 0) {
-    query = query.or(`house_id.in.(${user.workspace_house_ids.join(",")}),house_id.is.null`);
-  } else if (user.role === "admin" && user.workspace_id) {
-    query = query.is("house_id", null);
-  } else if (user.role === "manager") {
+  // Scope by workspace_id directly — this is the only reliable tenant
+  // boundary for anonymous grievances (which have no user_id/house_id).
+  // Admins see every grievance in their workspace; managers are further
+  // narrowed to their assigned houses.
+  if (user.workspace_id) {
+    query = query.eq("workspace_id", user.workspace_id);
+  }
+  if (user.role === "manager") {
     query = query.in("house_id", user.assigned_house_ids);
   }
   const { data: rows } = await query;

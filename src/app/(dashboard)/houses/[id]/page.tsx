@@ -33,7 +33,10 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
   const user = await requireAuth();
   const supabase = await createClient();
 
-  if (user.role !== "admin" && !canAccessHouse(user, id)) {
+  // canAccessHouse already scopes admins to their workspace's houses
+  // (workspace_house_ids), so an admin can't open a house in another
+  // workspace by guessing its id.
+  if (!canAccessHouse(user, id)) {
     redirect("/dashboard");
   }
 

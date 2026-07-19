@@ -28,12 +28,19 @@ export default async function GrievanceDetailPage({
   const { data: row } = await admin
     .from("grievances")
     .select(
-      "id, report_type, subject, description, status, created_at, submitted_anonymously, user_id, house_id, attachment_paths, internal_notes, resolved_at, resolved_by, reporter:users!user_id(full_name, email), house:houses!house_id(id, name), resolver:users!resolved_by(full_name)"
+      "id, report_type, subject, description, status, created_at, submitted_anonymously, user_id, house_id, workspace_id, attachment_paths, internal_notes, resolved_at, resolved_by, reporter:users!user_id(full_name, email), house:houses!house_id(id, name), resolver:users!resolved_by(full_name)"
     )
     .eq("id", id)
     .maybeSingle();
 
   if (!row) notFound();
+
+  // Workspace isolation: a grievance (including an anonymous one with
+  // no house) must belong to the viewer's workspace.
+  const rowWorkspaceId = (row.workspace_id as string | null) ?? null;
+  if (user.workspace_id && rowWorkspaceId !== user.workspace_id) {
+    redirect("/bulletin/grievances");
+  }
 
   const houseId = (row.house_id as string | null) ?? null;
   if (user.role === "manager") {

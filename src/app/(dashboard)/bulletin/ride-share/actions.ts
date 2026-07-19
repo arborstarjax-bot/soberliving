@@ -107,6 +107,7 @@ export async function createRideShare(
     .from("bulletin_posts")
     .insert({
       author_id: user.id,
+      workspace_id: user.workspace_id,
       title,
       content: notes ?? "",
       house_id: houseId,

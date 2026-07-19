@@ -100,6 +100,10 @@ export async function submitGrievance(input: SubmitGrievanceInput) {
   const { error } = await admin.from("grievances").insert({
     user_id: input.submitAnonymously ? null : user.id,
     house_id: input.submitAnonymously ? null : houseId,
+    // Set even for anonymous reports: the workspace is a tenant
+    // boundary, not an identifying detail, and it keeps anonymous
+    // grievances from leaking into other workspaces' admin views.
+    workspace_id: user.workspace_id,
     submitted_anonymously: input.submitAnonymously,
     report_type: input.reportType,
     subject,

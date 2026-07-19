@@ -19,8 +19,25 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
 
 async function getStaffForHouse(admin: AdminClient, houseId: string): Promise<string[]> {
+  // Resolve the house's workspace so admins can be scoped to it — an
+  // admin should only be notified about their own workspace's houses.
+  const { data: houseRow } = await admin
+    .from("houses")
+    .select("workspace_id")
+    .eq("id", houseId)
+    .maybeSingle();
+  const workspaceId = (houseRow?.workspace_id as string | null) ?? null;
+
+  const adminsQuery = workspaceId
+    ? admin
+        .from("user_roles")
+        .select("user_id, users!inner(workspace_id)")
+        .eq("role", "admin")
+        .eq("users.workspace_id", workspaceId)
+    : admin.from("user_roles").select("user_id").eq("role", "admin");
+
   const [adminsRes, managersRes] = await Promise.all([
-    admin.from("user_roles").select("user_id").eq("role", "admin"),
+    adminsQuery,
     admin
       .from("manager_house_assignments")
       .select("user_id")

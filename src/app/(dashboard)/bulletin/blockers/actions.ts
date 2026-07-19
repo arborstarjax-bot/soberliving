@@ -145,6 +145,7 @@ export async function createBlocker(input: CreateBlockerInput) {
       save_to_docs: input.saveToDocs,
       require_signature: input.requireSignature,
       created_by: user.id,
+      workspace_id: user.workspace_id,
     })
     .select("id")
     .maybeSingle();
