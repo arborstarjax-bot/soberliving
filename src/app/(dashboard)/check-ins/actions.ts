@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
-import { canAccessHouse } from "@/lib/permissions";
+import { canAccessHouse, getAccessibleHouseFilter } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { getHouseToday } from "@/lib/timezone";
 
@@ -198,11 +198,19 @@ export async function getCheckInBatches() {
 
   const adminClient = createAdminClient();
 
-  const { data: batches, error } = await adminClient
+  // Scope batches to the caller's workspace/houses. A batch is visible
+  // when it targets at least one house the user can access.
+  const houseFilter = getAccessibleHouseFilter(user);
+  let batchesQuery = adminClient
     .from("check_in_batches")
     .select("id, created_by, house_ids, created_at")
     .order("created_at", { ascending: false })
     .limit(50);
+  if (houseFilter) {
+    batchesQuery = batchesQuery.overlaps("house_ids", houseFilter);
+  }
+
+  const { data: batches, error } = await batchesQuery;
 
   if (error) {
     return { error: error.message, batches: [] };

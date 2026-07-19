@@ -61,7 +61,7 @@ export async function ResidentsTabsSection({
       unassigned_at: string | null;
     }>;
   };
-  const staffQuery = isStaff
+  let staffQuery = isStaff
     ? supabase
         .from("users")
         .select(
@@ -69,9 +69,12 @@ export async function ResidentsTabsSection({
         )
         .order("full_name")
     : null;
+  if (staffQuery && user.workspace_id) {
+    staffQuery = staffQuery.eq("workspace_id", user.workspace_id);
+  }
 
   const adminClient = isStaff ? createAdminClient() : null;
-  const intakeUsersQuery =
+  let intakeUsersQuery =
     isStaff && adminClient
       ? adminClient
           .from("users")
@@ -82,6 +85,9 @@ export async function ResidentsTabsSection({
           .eq("is_active", true)
           .order("created_at", { ascending: false })
       : null;
+  if (intakeUsersQuery && user.workspace_id) {
+    intakeUsersQuery = intakeUsersQuery.eq("workspace_id", user.workspace_id);
+  }
 
   const checkInBatchesPromise = isStaff ? getCheckInBatches() : null;
 
@@ -392,11 +398,15 @@ export async function ResidentsTabsSection({
   }> = [];
 
   if (isStaff && adminClient) {
-    const { data: resentUsers } = await adminClient
+    let resentUsersQuery = adminClient
       .from("users")
       .select("id, full_name, email, intake_completed, application_resent")
       .eq("application_resent", true)
       .eq("is_active", true);
+    if (user.workspace_id) {
+      resentUsersQuery = resentUsersQuery.eq("workspace_id", user.workspace_id);
+    }
+    const { data: resentUsers } = await resentUsersQuery;
 
     const typedResentUsers = (resentUsers ?? []) as ResentApp[];
 
