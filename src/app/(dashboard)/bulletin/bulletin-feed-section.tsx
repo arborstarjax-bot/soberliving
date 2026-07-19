@@ -66,6 +66,12 @@ export interface BulletinFeedSectionProps {
    */
   visibleHouseIds: string[] | null;
   /**
+   * Viewer's workspace. When set, the feed only shows posts belonging
+   * to that workspace so a "post to everyone" (house_id NULL) post can
+   * never leak across workspaces. `null` for legacy no-workspace users.
+   */
+  workspaceId: string | null;
+  /**
    * Current URL search params — used to round-trip `c=` (cursor) and
    * preserve any unrelated query state on Prev / Next links.
    */
@@ -83,6 +89,7 @@ export async function BulletinFeedSection({
   currentUserId,
   currentUserRole,
   visibleHouseIds,
+  workspaceId,
   searchParams,
 }: BulletinFeedSectionProps) {
   const supabase = createAdminClient();
@@ -119,6 +126,14 @@ export async function BulletinFeedSection({
     .limit(DEFAULT_PAGE_SIZE + 1);
 
   nonPinnedQuery = applyCursor(nonPinnedQuery, cursor);
+
+  // Workspace scope first: a viewer with a workspace only ever sees
+  // that workspace's posts (this covers house_id-NULL "post to
+  // everyone" posts, which have no house to scope by).
+  if (workspaceId) {
+    pinnedQuery = pinnedQuery.eq("workspace_id", workspaceId);
+    nonPinnedQuery = nonPinnedQuery.eq("workspace_id", workspaceId);
+  }
 
   if (visibleHouseIds && visibleHouseIds.length > 0) {
     const orFilter = `house_id.in.(${visibleHouseIds.join(",")}),house_id.is.null`;

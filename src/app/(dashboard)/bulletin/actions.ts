@@ -13,14 +13,26 @@ import { z } from "zod";
  * Return true if the user can see a bulletin post in the given
  * house (or a null-house global post). Mirrors the visibility rules
  * used by the bulletin feed:
- *  - admin: any post
+ *  - workspace boundary: never a post from another workspace
+ *  - admin: any post in their workspace
  *  - manager: any post in an assigned house, plus null-house posts
  *  - resident: only their own active house, plus null-house posts
  */
 async function canSeeBulletinHouse(
   user: Awaited<ReturnType<typeof requireAuth>>,
-  houseId: string | null
+  houseId: string | null,
+  postWorkspaceId: string | null
 ): Promise<boolean> {
+  // Workspace isolation is the outermost rule — it also covers
+  // null-house "post to everyone" posts, which are only global within
+  // a single workspace.
+  if (
+    user.workspace_id &&
+    postWorkspaceId &&
+    postWorkspaceId !== user.workspace_id
+  ) {
+    return false;
+  }
   if (user.role === "admin") return true;
   if (!houseId) return true;
   if (user.role === "manager") return canAccessHouse(user, houseId);
@@ -84,6 +96,7 @@ export async function createBulletinPost(
   const targets: (string | null)[] = houseIds.length > 0 ? houseIds : [null];
   const rows = targets.map((houseId) => ({
     author_id: user.id,
+    workspace_id: user.workspace_id,
     title: parsed.data.title,
     content: parsed.data.content,
     house_id: houseId,
@@ -162,11 +175,16 @@ export async function deleteBulletinPost(postId: string) {
   // assigned houses.
   const { data: post } = await adminClient
     .from("bulletin_posts")
-    .select("id, author_id, title, house_id")
+    .select("id, author_id, title, house_id, workspace_id")
     .eq("id", postId)
     .maybeSingle();
 
   if (!post) return { error: "Post not found" };
+  // Workspace boundary: never let a user act on another workspace's post.
+  const postWorkspaceId = (post.workspace_id as string | null) ?? null;
+  if (user.workspace_id && postWorkspaceId && postWorkspaceId !== user.workspace_id) {
+    return { error: "Not authorized" };
+  }
   const isAuthor = post.author_id === user.id;
   const isAdmin = user.role === "admin";
   const postHouseId = (post.house_id as string | null) ?? null;
@@ -203,11 +221,17 @@ export async function togglePinPost(postId: string) {
 
   const { data: post } = await adminClient
     .from("bulletin_posts")
-    .select("id, is_pinned, title, house_id")
+    .select("id, is_pinned, title, house_id, workspace_id")
     .eq("id", postId)
     .maybeSingle();
 
   if (!post) return { error: "Post not found" };
+
+  // Workspace boundary: never pin/unpin another workspace's post.
+  const postWorkspaceId = (post.workspace_id as string | null) ?? null;
+  if (user.workspace_id && postWorkspaceId && postWorkspaceId !== user.workspace_id) {
+    return { error: "Not authorized" };
+  }
 
   // Managers can only pin/unpin within their assigned houses. Admin
   // can pin any post (including null-house global posts).
@@ -244,6 +268,21 @@ export async function togglePinPost(postId: string) {
 export async function toggleLike(postId: string) {
   const user = await requireAuth();
   const adminClient = createAdminClient();
+
+  // Only allow liking a post the user can actually see (also enforces
+  // the workspace boundary so a post can't be liked across workspaces).
+  const { data: post } = await adminClient
+    .from("bulletin_posts")
+    .select("id, house_id, workspace_id")
+    .eq("id", postId)
+    .maybeSingle();
+  if (!post) return { error: "Post not found" };
+  const canSee = await canSeeBulletinHouse(
+    user,
+    (post.house_id as string | null) ?? null,
+    (post.workspace_id as string | null) ?? null
+  );
+  if (!canSee) return { error: "Not authorized" };
 
   const { data: existing } = await adminClient
     .from("bulletin_likes")
@@ -285,13 +324,14 @@ export async function addComment(
   // post in another house by guessing the UUID.
   const { data: post } = await adminClient
     .from("bulletin_posts")
-    .select("id, house_id")
+    .select("id, house_id, workspace_id")
     .eq("id", postId)
     .maybeSingle();
   if (!post) return { error: "Post not found" };
   const canSee = await canSeeBulletinHouse(
     user,
-    (post.house_id as string | null) ?? null
+    (post.house_id as string | null) ?? null,
+    (post.workspace_id as string | null) ?? null
   );
   if (!canSee) return { error: "Not authorized" };
 
@@ -316,16 +356,24 @@ export async function deleteComment(commentId: string) {
   // can delete any; manager only within their assigned houses.
   const { data: comment } = await adminClient
     .from("bulletin_comments")
-    .select("id, user_id, post:bulletin_posts(house_id)")
+    .select("id, user_id, post:bulletin_posts(house_id, workspace_id)")
     .eq("id", commentId)
     .maybeSingle();
 
   if (!comment) return { error: "Comment not found" };
+  const postRow =
+    (comment.post as unknown as {
+      house_id: string | null;
+      workspace_id: string | null;
+    } | null) ?? null;
+  // Workspace boundary: never delete a comment on another workspace's post.
+  const postWorkspaceId = postRow?.workspace_id ?? null;
+  if (user.workspace_id && postWorkspaceId && postWorkspaceId !== user.workspace_id) {
+    return { error: "Not authorized" };
+  }
   const isAuthor = comment.user_id === user.id;
   const isAdmin = user.role === "admin";
-  const postHouseId =
-    ((comment.post as unknown as { house_id: string | null } | null)
-      ?.house_id as string | null) ?? null;
+  const postHouseId = postRow?.house_id ?? null;
   const isManagerForHouse =
     user.role === "manager" &&
     postHouseId !== null &&

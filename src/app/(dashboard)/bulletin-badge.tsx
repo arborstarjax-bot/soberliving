@@ -20,10 +20,12 @@ export async function BulletinBadge({
   userId,
   userRole,
   assignedHouseIds,
+  workspaceId,
 }: {
   userId: string;
   userRole: UserRole;
   assignedHouseIds: string[];
+  workspaceId: string | null;
 }) {
   const adminClient = createAdminClient();
 
@@ -60,6 +62,9 @@ export async function BulletinBadge({
 
   let q = adminClient.from("bulletin_posts").select("id").limit(CAP + 1);
   if (lastSeen) q = q.gt("created_at", lastSeen);
+  // Workspace scope so an admin's unread count never includes other
+  // workspaces' posts.
+  if (workspaceId) q = q.eq("workspace_id", workspaceId);
   if (visibleHouseIds && visibleHouseIds.length > 0) {
     q = q.or(`house_id.in.(${visibleHouseIds.join(",")}),house_id.is.null`);
   } else if (visibleHouseIds) {

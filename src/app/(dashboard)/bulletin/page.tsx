@@ -83,6 +83,7 @@ export default async function BulletinPage({ searchParams }: BulletinPageProps) 
               currentUserId={user.id}
               currentUserRole={user.role}
               visibleHouseIds={visibleHouseIds}
+              workspaceId={user.workspace_id}
               searchParams={params}
             />
           </Suspense>

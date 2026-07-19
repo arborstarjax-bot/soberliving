@@ -17,14 +17,30 @@ export const maxDuration = 60;
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
-async function getStaffForHouses(admin: AdminClient, houseIds: Set<string>): Promise<string[]> {
+// Staff to notify about missed chores in a single workspace: admins of
+// that workspace plus managers assigned to the affected houses. Admins
+// are scoped by workspace_id so one workspace's staff never sees another
+// workspace's residents in the summary.
+async function getStaffForWorkspace(
+  admin: AdminClient,
+  workspaceId: string | null,
+  affectedHouseIds: string[]
+): Promise<string[]> {
+  const adminsQuery = workspaceId
+    ? admin
+        .from("user_roles")
+        .select("user_id, users!inner(workspace_id)")
+        .eq("role", "admin")
+        .eq("users.workspace_id", workspaceId)
+    : admin.from("user_roles").select("user_id").eq("role", "admin");
+
   const [adminsRes, managersRes] = await Promise.all([
-    admin.from("user_roles").select("user_id").eq("role", "admin"),
-    houseIds.size > 0
+    adminsQuery,
+    affectedHouseIds.length > 0
       ? admin
           .from("manager_house_assignments")
           .select("user_id")
-          .in("house_id", [...houseIds])
+          .in("house_id", affectedHouseIds)
           .is("unassigned_at", null)
       : Promise.resolve({ data: [] as { user_id: string }[] }),
   ]);
@@ -95,8 +111,7 @@ export async function GET(request: NextRequest) {
     }
 
     let sent = 0;
-    const missedNames: string[] = [];
-    const housesWithMissed = new Set<string>();
+    const missedItems: { label: string; houseId: string }[] = [];
 
     for (const row of signoffs) {
       const assignment = row.rotation_assignment as unknown as {
@@ -119,18 +134,60 @@ export async function GET(request: NextRequest) {
       sent++;
 
       if (isEvening) {
-        missedNames.push(`${assignment.resident.full_name} — ${assignment.chore.name}`);
-        if (assignment.chore.house_id) housesWithMissed.add(assignment.chore.house_id);
+        missedItems.push({
+          label: `${assignment.resident.full_name} — ${assignment.chore.name}`,
+          houseId: assignment.chore.house_id ?? "",
+        });
       }
     }
 
-    // Notify staff about incomplete chores at 10 PM so they have visibility.
-    if (isEvening && missedNames.length > 0) {
-      const staffIds = await getStaffForHouses(admin, housesWithMissed);
-      if (staffIds.length > 0) {
-        const summary = missedNames.length <= 5
-          ? missedNames.join(", ")
-          : `${missedNames.slice(0, 5).join(", ")} +${missedNames.length - 5} more`;
+    // Notify staff about incomplete chores at 10 PM so they have
+    // visibility — grouped by workspace so each workspace's staff only
+    // sees their own residents' missed chores.
+    if (isEvening && missedItems.length > 0) {
+      const houseIds = [
+        ...new Set(missedItems.map((m) => m.houseId).filter(Boolean)),
+      ];
+      const { data: houseRows } =
+        houseIds.length > 0
+          ? await admin
+              .from("houses")
+              .select("id, workspace_id")
+              .in("id", houseIds)
+          : { data: [] as { id: string; workspace_id: string | null }[] };
+      const houseToWs = new Map<string, string | null>();
+      for (const h of houseRows ?? []) {
+        houseToWs.set(h.id as string, (h.workspace_id as string | null) ?? null);
+      }
+
+      // Partition missed items by workspace ("__none__" = legacy houses
+      // with no workspace).
+      const byWorkspace = new Map<
+        string,
+        { names: string[]; houses: Set<string> }
+      >();
+      for (const item of missedItems) {
+        const ws = item.houseId ? houseToWs.get(item.houseId) ?? null : null;
+        const key = ws ?? "__none__";
+        let group = byWorkspace.get(key);
+        if (!group) {
+          group = { names: [], houses: new Set<string>() };
+          byWorkspace.set(key, group);
+        }
+        group.names.push(item.label);
+        if (item.houseId) group.houses.add(item.houseId);
+      }
+
+      for (const [key, group] of byWorkspace) {
+        const workspaceId = key === "__none__" ? null : key;
+        const staffIds = await getStaffForWorkspace(admin, workspaceId, [
+          ...group.houses,
+        ]);
+        if (staffIds.length === 0) continue;
+        const summary =
+          group.names.length <= 5
+            ? group.names.join(", ")
+            : `${group.names.slice(0, 5).join(", ")} +${group.names.length - 5} more`;
         await sendWebPushToMany(staffIds, "chore_missed_staff", {
           title: "Incomplete Chores Tonight",
           body: summary,

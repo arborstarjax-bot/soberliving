@@ -50,25 +50,40 @@ export default async function IntakeReviewPage({
   // Partitioning happens in memory rather than three separate queries
   // because we want a consistent snapshot and the dataset is bounded
   // (one row per prospective resident).
+  // Intake applicants have no house yet, so scope by workspace_id so
+  // one workspace's admin never reviews another workspace's applicants.
+  let intakeUsersQuery = adminClient
+    .from("users")
+    .select(
+      "id, full_name, email, phone, intake_completed, commitment_signed, is_resident, is_active, account_status, denial_reason, denied_at, created_at"
+    )
+    .eq("intake_completed", true)
+    .order("created_at", { ascending: false });
+  if (currentUser.workspace_id) {
+    intakeUsersQuery = intakeUsersQuery.eq(
+      "workspace_id",
+      currentUser.workspace_id
+    );
+  }
+  // Houses used for the housing-assignment dropdown must also be
+  // workspace-scoped.
+  let housesQuery = adminClient
+    .from("houses")
+    .select("id, name, address")
+    .eq("is_active", true)
+    .order("name");
+  if (currentUser.workspace_id) {
+    housesQuery = housesQuery.eq("workspace_id", currentUser.workspace_id);
+  }
   const [{ data: intakeUsersRaw }, { data: commitmentsRaw }, { data: housesRaw }] =
     await Promise.all([
-      adminClient
-        .from("users")
-        .select(
-          "id, full_name, email, phone, intake_completed, commitment_signed, is_resident, is_active, account_status, denial_reason, denied_at, created_at"
-        )
-        .eq("intake_completed", true)
-        .order("created_at", { ascending: false }),
+      intakeUsersQuery,
       adminClient
         .from("house_commitments")
         .select(
           "user_id, status, commitment_start_date, house_id, payment_frequency, rent_amount, admin_fee, commitment_term, notes, parent_commitment_id"
         ),
-      adminClient
-        .from("houses")
-        .select("id, name, address")
-        .eq("is_active", true)
-        .order("name"),
+      housesQuery,
     ]);
 
   // Fetch workspace settings to determine if commitment is required

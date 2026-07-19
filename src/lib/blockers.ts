@@ -25,21 +25,28 @@ export async function maybeAutoArchiveBlocker(
   const { data: blocker } = await admin
     .from("blockers")
     .select(
-      "id, archived_at, target_type, target_house_ids, target_user_ids"
+      "id, archived_at, target_type, target_house_ids, target_user_ids, workspace_id"
     )
     .eq("id", blockerId)
     .maybeSingle();
   if (!blocker || blocker.archived_at) return { archived: false };
 
   const targetType = blocker.target_type as string;
+  const blockerWorkspaceId = (blocker.workspace_id as string | null) ?? null;
 
   // Compute the set of active-resident user_ids this blocker targets.
   let targetUserIds: string[] = [];
   if (targetType === "all") {
-    const { data: rows } = await admin
+    // target_type='all' means "everyone in this blocker's workspace",
+    // never literally every resident across all workspaces.
+    let allQuery = admin
       .from("residents")
-      .select("user_id")
+      .select("user_id, user:users!inner(workspace_id)")
       .eq("status", "active");
+    if (blockerWorkspaceId) {
+      allQuery = allQuery.eq("user.workspace_id", blockerWorkspaceId);
+    }
+    const { data: rows } = await allQuery;
     targetUserIds = (rows ?? []).map((r) => r.user_id as string);
   } else if (targetType === "house") {
     const hids = (blocker.target_house_ids as string[] | null) ?? [];
@@ -108,11 +115,26 @@ export async function isBlockerApplicableToUser(
   const { data: blocker } = await admin
     .from("blockers")
     .select(
-      "id, archived_at, target_type, target_house_ids, target_user_ids"
+      "id, archived_at, target_type, target_house_ids, target_user_ids, workspace_id"
     )
     .eq("id", blockerId)
     .maybeSingle();
   if (!blocker || blocker.archived_at) return false;
+
+  // Workspace isolation: a blocker never applies to a user in a
+  // different workspace, whatever its target_type.
+  const blockerWorkspaceId = (blocker.workspace_id as string | null) ?? null;
+  if (blockerWorkspaceId) {
+    const { data: userRow } = await admin
+      .from("users")
+      .select("workspace_id")
+      .eq("id", userId)
+      .maybeSingle();
+    const userWorkspaceId = (userRow?.workspace_id as string | null) ?? null;
+    if (userWorkspaceId && userWorkspaceId !== blockerWorkspaceId) {
+      return false;
+    }
+  }
 
   const targetType = blocker.target_type as string;
   if (targetType === "all") return true;
@@ -163,26 +185,39 @@ export async function findPendingBlockerForUser(
   // 1) Resolve this user's active house (if any) so we can match
   //    target_type='house' blockers. A resident without an active
   //    residents row can still be targeted via 'all' or 'residents'.
-  const { data: residentRow } = await admin
-    .from("residents")
-    .select("house_id")
-    .eq("user_id", userId)
-    .eq("status", "active")
-    .maybeSingle();
+  const [{ data: residentRow }, { data: userRow }] = await Promise.all([
+    admin
+      .from("residents")
+      .select("house_id")
+      .eq("user_id", userId)
+      .eq("status", "active")
+      .maybeSingle(),
+    admin
+      .from("users")
+      .select("workspace_id")
+      .eq("id", userId)
+      .maybeSingle(),
+  ]);
   const houseId = (residentRow?.house_id as string | null) ?? null;
+  const userWorkspaceId = (userRow?.workspace_id as string | null) ?? null;
 
   // 2) Pull active blockers ordered oldest-first so FIFO resolution
   //    surfaces the earliest pending message first. The result is
   //    bounded because blockers are admin-authored and low-volume;
   //    we filter in memory below so we can express the OR-of-OR
-  //    targeting rules without a complex PostgREST query.
-  const { data: blockers } = await admin
+  //    targeting rules without a complex PostgREST query. Scope to the
+  //    user's workspace so another workspace's blocker never gates them.
+  let blockersQuery = admin
     .from("blockers")
     .select(
       "id, target_type, target_house_ids, target_user_ids, created_at"
     )
     .is("archived_at", null)
     .order("created_at", { ascending: true });
+  if (userWorkspaceId) {
+    blockersQuery = blockersQuery.eq("workspace_id", userWorkspaceId);
+  }
+  const { data: blockers } = await blockersQuery;
 
   if (!blockers || blockers.length === 0) return null;
 

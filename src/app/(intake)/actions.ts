@@ -120,14 +120,18 @@ export async function submitIntakeForm(
     (userRow as { pending_house_id?: string | null } | null)?.pending_house_id ??
     null;
 
-  await notifyHouseStaff(pendingHouseId, {
-    type: "intake_submitted",
-    title: "New Intake Application",
-    message: `${fullName} submitted their intake packet and is waiting for review.`,
-    actionUrl: "/intake-review",
-    entityType: "user",
-    entityId: user.id,
-  });
+  await notifyHouseStaff(
+    pendingHouseId,
+    {
+      type: "intake_submitted",
+      title: "New Intake Application",
+      message: `${fullName} submitted their intake packet and is waiting for review.`,
+      actionUrl: "/intake-review",
+      entityType: "user",
+      entityId: user.id,
+    },
+    { workspaceId: user.workspace_id }
+  );
 
   revalidatePath("/dashboard");
   revalidatePath("/intake-review");
@@ -206,14 +210,18 @@ export async function submitQuickSignup(
     description: `${fullName} completed quick signup`,
   });
 
-  await notifyHouseStaff(null, {
-    type: "intake_submitted",
-    title: "New Resident Signup",
-    message: `${fullName} completed quick signup and is ready for housing assignment.`,
-    actionUrl: "/intake-review",
-    entityType: "user",
-    entityId: user.id,
-  });
+  await notifyHouseStaff(
+    null,
+    {
+      type: "intake_submitted",
+      title: "New Resident Signup",
+      message: `${fullName} completed quick signup and is ready for housing assignment.`,
+      actionUrl: "/intake-review",
+      entityType: "user",
+      entityId: user.id,
+    },
+    { workspaceId: user.workspace_id }
+  );
 
   revalidatePath("/dashboard");
   revalidatePath("/intake-review");

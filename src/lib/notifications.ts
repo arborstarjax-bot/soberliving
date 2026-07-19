@@ -79,18 +79,28 @@ export async function sendNotificationToHouseManagers(
 }
 
 export async function sendNotificationToAdmins(
-  params: Omit<SendNotificationParams, "userId">
+  params: Omit<SendNotificationParams, "userId">,
+  options?: { workspaceId?: string | null }
 ) {
   const adminClient = createAdminClient();
 
-  const { data: admins } = await adminClient
-    .from("user_roles")
-    .select("user_id")
-    .eq("role", "admin");
+  const workspaceId = options?.workspaceId ?? null;
+  const adminsQuery = workspaceId
+    ? adminClient
+        .from("user_roles")
+        .select("user_id, users!inner(workspace_id)")
+        .eq("role", "admin")
+        .eq("users.workspace_id", workspaceId)
+    : adminClient.from("user_roles").select("user_id").eq("role", "admin");
+
+  const { data: admins } = await adminsQuery;
 
   if (admins) {
     for (const a of admins) {
-      await sendNotification({ ...params, userId: a.user_id });
+      await sendNotification({
+        ...params,
+        userId: (a as { user_id: string }).user_id,
+      });
     }
   }
 }
@@ -105,17 +115,39 @@ export async function sendNotificationToAdmins(
  * event (avoids sending someone a notification about their own action).
  * Pass `houseId = null` when no house is associated (e.g. an intake
  * submission where the applicant has not yet picked a house) — only
- * admins will be notified in that case.
+ * admins will be notified in that case. Pass `options.workspaceId` for
+ * those house-less cases so admins are still scoped to one workspace;
+ * when a houseId is given the workspace is derived from the house.
  */
 export async function notifyHouseStaff(
   houseId: string | null,
   params: Omit<SendNotificationParams, "userId">,
-  options?: { excludeUserId?: string | null }
+  options?: { excludeUserId?: string | null; workspaceId?: string | null }
 ) {
   const adminClient = createAdminClient();
 
+  // Resolve the workspace so admins can be scoped to it: an explicit
+  // workspaceId wins, otherwise derive it from the house.
+  let workspaceId = options?.workspaceId ?? null;
+  if (!workspaceId && houseId) {
+    const { data: houseRow } = await adminClient
+      .from("houses")
+      .select("workspace_id")
+      .eq("id", houseId)
+      .maybeSingle();
+    workspaceId = (houseRow?.workspace_id as string | null) ?? null;
+  }
+
+  const adminsQuery = workspaceId
+    ? adminClient
+        .from("user_roles")
+        .select("user_id, users!inner(workspace_id)")
+        .eq("role", "admin")
+        .eq("users.workspace_id", workspaceId)
+    : adminClient.from("user_roles").select("user_id").eq("role", "admin");
+
   const [adminsRes, managersRes] = await Promise.all([
-    adminClient.from("user_roles").select("user_id").eq("role", "admin"),
+    adminsQuery,
     houseId
       ? adminClient
           .from("manager_house_assignments")

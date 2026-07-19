@@ -59,7 +59,7 @@ export default async function DisciplinePage() {
     .eq("is_active", true)
     .lte("end_date", today)
     .not("end_date", "is", null);
-  if (houseFilter && houseFilter.length > 0) expireQuery = expireQuery.in("house_id", houseFilter);
+  if (isStaff && houseFilter) expireQuery = expireQuery.in("house_id", houseFilter);
   if (residentRecordId) expireQuery = expireQuery.eq("resident_id", residentRecordId);
   await expireQuery;
 
@@ -69,7 +69,7 @@ export default async function DisciplinePage() {
     .select("id, full_name, house_id")
     .eq("status", "active")
     .order("full_name");
-  if (houseFilter && houseFilter.length > 0) residentsQuery = residentsQuery.in("house_id", houseFilter);
+  if (isStaff && houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
   if (residentRecordId) residentsQuery = residentsQuery.eq("id", residentRecordId);
 
   let demeritsQuery = adminClient
@@ -77,7 +77,7 @@ export default async function DisciplinePage() {
     .select("id, resident_id, house_id, reason, notes, category, status, auto_generated, created_at, resolved_at, resolution_note, photo_url")
     .order("created_at", { ascending: false })
     .limit(200);
-  if (houseFilter && houseFilter.length > 0) demeritsQuery = demeritsQuery.in("house_id", houseFilter);
+  if (isStaff && houseFilter) demeritsQuery = demeritsQuery.in("house_id", houseFilter);
   if (residentRecordId) demeritsQuery = demeritsQuery.eq("resident_id", residentRecordId);
 
   // Warnings are a separate, no-points disciplinary record. Fetched
@@ -90,7 +90,7 @@ export default async function DisciplinePage() {
     )
     .order("created_at", { ascending: false })
     .limit(200);
-  if (houseFilter && houseFilter.length > 0) warningsQuery = warningsQuery.in("house_id", houseFilter);
+  if (isStaff && houseFilter) warningsQuery = warningsQuery.in("house_id", houseFilter);
   if (residentRecordId) warningsQuery = warningsQuery.eq("resident_id", residentRecordId);
 
   let activeRestrictionsQuery = adminClient
@@ -98,7 +98,7 @@ export default async function DisciplinePage() {
     .select("*, resident:residents(full_name), house:houses(name)")
     .eq("is_active", true)
     .order("created_at", { ascending: false });
-  if (houseFilter && houseFilter.length > 0) activeRestrictionsQuery = activeRestrictionsQuery.in("house_id", houseFilter);
+  if (isStaff && houseFilter) activeRestrictionsQuery = activeRestrictionsQuery.in("house_id", houseFilter);
   if (residentRecordId) activeRestrictionsQuery = activeRestrictionsQuery.eq("resident_id", residentRecordId);
 
   let pastRestrictionsQuery = adminClient
@@ -107,7 +107,7 @@ export default async function DisciplinePage() {
     .eq("is_active", false)
     .order("updated_at", { ascending: false })
     .limit(20);
-  if (houseFilter && houseFilter.length > 0) pastRestrictionsQuery = pastRestrictionsQuery.in("house_id", houseFilter);
+  if (isStaff && houseFilter) pastRestrictionsQuery = pastRestrictionsQuery.in("house_id", houseFilter);
   if (residentRecordId) pastRestrictionsQuery = pastRestrictionsQuery.eq("resident_id", residentRecordId);
 
   const [
@@ -128,7 +128,7 @@ export default async function DisciplinePage() {
 
   const houses = allHouses.filter((h) => {
     if (residentHouseId) return h.id === residentHouseId;
-    if (houseFilter && houseFilter.length > 0) return houseFilter.includes(h.id);
+    if (isStaff && houseFilter) return houseFilter.includes(h.id);
     return true;
   });
 
@@ -235,7 +235,7 @@ export default async function DisciplinePage() {
       .select("id, severity, category, description, occurred_at, photo_url, resident:residents(full_name), house:houses(name), reporter:users!reported_by(full_name)")
       .order("occurred_at", { ascending: false })
       .limit(100);
-    if (houseFilter && houseFilter.length > 0) incidentsQuery = incidentsQuery.in("house_id", houseFilter);
+    if (houseFilter) incidentsQuery = incidentsQuery.in("house_id", houseFilter);
     const { data: rawIncidents } = await incidentsQuery;
     incidents = (rawIncidents ?? []).map((inc) => {
       const resident = Array.isArray(inc.resident) ? inc.resident[0] : inc.resident;

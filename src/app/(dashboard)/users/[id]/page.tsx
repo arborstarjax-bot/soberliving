@@ -22,7 +22,16 @@ export default async function UserDetailPage({
     .eq("id", id)
     .maybeSingle();
 
-  if (!userRecord) {
+  // Workspace isolation: an admin can only view users in their own
+  // workspace. Treat a cross-workspace id the same as "not found" so
+  // it can't be probed by guessing ids.
+  const targetWorkspaceId =
+    (userRecord as { workspace_id?: string | null } | null)?.workspace_id ??
+    null;
+  const outOfWorkspace =
+    !!admin.workspace_id && targetWorkspaceId !== admin.workspace_id;
+
+  if (!userRecord || outOfWorkspace) {
     return (
       <div className="space-y-4">
         <Link href="/users" className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
@@ -35,12 +44,17 @@ export default async function UserDetailPage({
 
   const role = (userRecord.user_roles as Array<{ role: string }>)?.[0]?.role ?? "resident";
 
-  // Get houses for assignment
-  const { data: houses } = await supabase
+  // Get houses for assignment — scoped to the admin's workspace so the
+  // manager-assignment picker never lists other workspaces' houses.
+  let housesQuery = supabase
     .from("houses")
     .select("id, name")
     .eq("is_active", true)
     .order("name");
+  if (admin.workspace_id) {
+    housesQuery = housesQuery.eq("workspace_id", admin.workspace_id);
+  }
+  const { data: houses } = await housesQuery;
 
   // Get current house assignments
   const { data: assignments } = await supabase

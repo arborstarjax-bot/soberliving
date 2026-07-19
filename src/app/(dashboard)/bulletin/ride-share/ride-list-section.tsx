@@ -34,6 +34,7 @@ export interface RideListSectionProps {
   currentUserId: string;
   currentUserRole: UserRole;
   visibleHouseIds: string[] | null;
+  workspaceId: string | null;
   showPast: boolean;
   searchParams: Record<string, string | string[] | undefined>;
 }
@@ -42,6 +43,7 @@ export async function RideListSection({
   currentUserId,
   currentUserRole,
   visibleHouseIds,
+  workspaceId,
   showPast,
   searchParams,
 }: RideListSectionProps) {
@@ -82,6 +84,12 @@ export async function RideListSection({
     .order("departure_at", { ascending: true })
     .order("post_id", { ascending: true })
     .limit(DEFAULT_PAGE_SIZE + 1);
+
+  // Workspace scope: an admin has visibleHouseIds === null, so without
+  // this filter they'd see every workspace's rides.
+  if (workspaceId) {
+    query = query.eq("bulletin_posts.workspace_id", workspaceId);
+  }
 
   if (visibleHouseIds && visibleHouseIds.length > 0) {
     query = query.in("bulletin_posts.house_id", visibleHouseIds);
