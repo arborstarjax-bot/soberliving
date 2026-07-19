@@ -49,38 +49,38 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: oklch(0.965 0.003 260);
+  --foreground: oklch(0.205 0.015 260);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.205 0.015 260);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.205 0.015 260);
+  --primary: oklch(0.335 0.06 260);
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.955 0.008 260);
+  --secondary-foreground: oklch(0.255 0.015 260);
+  --muted: oklch(0.955 0.008 260);
+  --muted-foreground: oklch(0.50 0.01 260);
+  --accent: oklch(0.94 0.01 260);
+  --accent-foreground: oklch(0.255 0.015 260);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
+  --border: oklch(0.905 0.008 260);
+  --input: oklch(0.905 0.008 260);
+  --ring: oklch(0.50 0.06 260);
+  --chart-1: oklch(0.50 0.12 260);
+  --chart-2: oklch(0.60 0.10 200);
+  --chart-3: oklch(0.55 0.15 30);
+  --chart-4: oklch(0.65 0.12 150);
+  --chart-5: oklch(0.45 0.08 300);
+  --radius: 0.875rem;
+  --sidebar: oklch(0.285 0.045 255);
+  --sidebar-foreground: oklch(0.95 0.005 260);
+  --sidebar-primary: oklch(0.55 0.15 260);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-accent: oklch(0.34 0.05 255);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(0.38 0.04 255);
+  --sidebar-ring: oklch(0.55 0.08 260);
 }
 
 .dark {
@@ -123,8 +123,58 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Disable tap-highlight blue flash + lock text scaling on iOS
+       rotation. User-space Dynamic Type is still respected through
+       the root font-size; this just stops Safari from enlarging
+       type 20% when the device is held landscape. */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
   }
   html {
     @apply font-sans;
+  }
+
+  /* iOS Safari zooms the page whenever a focused input has a
+     font-size below 16px. Most of our form fields use text-sm
+     (14px) which is fine on desktop but causes an annoying zoom
+     on phones. Bump only the text input primitives on small
+     screens — leave desktop alone so the existing density stays. */
+  @media (max-width: 640px) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+    textarea,
+    select {
+      font-size: 16px;
+    }
+  }
+}
+
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-page-enter {
+  animation: page-enter 150ms ease-out;
+}
+
+/* Modern card shadow — replaces thin border appearance with depth */
+:root {
+  --shadow-card: 0 2px 8px -2px oklch(0.205 0.015 260 / 0.08), 0 1px 3px -1px oklch(0.205 0.015 260 / 0.06);
+  --shadow-card-hover: 0 8px 25px -5px oklch(0.205 0.015 260 / 0.12), 0 4px 10px -4px oklch(0.205 0.015 260 / 0.07);
+  --shadow-elevated: 0 20px 50px -12px oklch(0.205 0.015 260 / 0.15), 0 8px 20px -8px oklch(0.205 0.015 260 / 0.08);
+}
+
+@layer utilities {
+  /* Hide the scrollbar track for horizontally-scrollable tab strips
+     and pill rows on mobile, while keeping scroll behavior intact.
+     Used by TabsList and similar overflow-x-auto rows so the strip
+     reads as a clean chip rail rather than a scrollbar-decorated
+     box on desktops that expose scrollbars. */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 }
