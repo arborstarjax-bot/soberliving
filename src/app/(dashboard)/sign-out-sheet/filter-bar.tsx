@@ -13,6 +13,7 @@ export interface SignOutFilterBarResident {
 
 interface FilterBarProps {
   residents: SignOutFilterBarResident[];
+  basePath?: string;
 }
 
 /**
@@ -24,7 +25,7 @@ interface FilterBarProps {
  * Any filter change resets pagination (drops `c=` and `cp=`) so
  * the user always lands on page 1 of the filtered result set.
  */
-export function SignOutHistoryFilterBar({ residents }: FilterBarProps) {
+export function SignOutHistoryFilterBar({ residents, basePath = "/attendance" }: FilterBarProps) {
   const router = useRouter();
   const params = useSearchParams();
   const [isPending, startTransition] = useTransition();
@@ -32,6 +33,7 @@ export function SignOutHistoryFilterBar({ residents }: FilterBarProps) {
   const resident = params.get("resident") ?? "";
   const from = params.get("from") ?? "";
   const to = params.get("to") ?? "";
+  const tab = params.get("tab") ?? "";
   const hasAny = !!(resident || from || to);
 
   function apply(next: {
@@ -40,6 +42,7 @@ export function SignOutHistoryFilterBar({ residents }: FilterBarProps) {
     to?: string;
   }) {
     const sp = new URLSearchParams();
+    if (tab) sp.set("tab", tab);
     const r = next.resident ?? resident;
     const f = next.from ?? from;
     const t = next.to ?? to;
@@ -47,7 +50,7 @@ export function SignOutHistoryFilterBar({ residents }: FilterBarProps) {
     if (f) sp.set("from", f);
     if (t) sp.set("to", t);
     const qs = sp.toString();
-    const url = qs ? `/sign-out-sheet?${qs}` : "/sign-out-sheet";
+    const url = qs ? `${basePath}?${qs}` : basePath;
     startTransition(() => router.push(url));
   }
 

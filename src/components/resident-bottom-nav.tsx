@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   Home,
@@ -28,13 +28,13 @@ const PRIMARY_ITEMS: BottomNavItem[] = [
   { label: "Home", href: "/dashboard", icon: Home },
   { label: "Chores", href: "/chores", icon: ClipboardCheck },
   { label: "Discipline", href: "/discipline", icon: ShieldAlert },
-  { label: "Leave", href: "/leave-requests", icon: CalendarClock },
+  { label: "Attendance", href: "/attendance", icon: CalendarClock },
   { label: "Bulletin", href: "/bulletin", icon: MessageSquare },
 ];
 
 const MORE_ITEMS: BottomNavItem[] = [
   { label: "My Documents", href: "/my-documents", icon: Folder },
-  { label: "Report", href: "/report", icon: Flag },
+  { label: "Report", href: "/bulletin?report=1", icon: Flag },
 ];
 
 interface ResidentBottomNavProps {
@@ -47,17 +47,22 @@ export function ResidentBottomNav({
   bulletinBadge = null,
 }: ResidentBottomNavProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [moreOpen, setMoreOpen] = useState(false);
 
   const primaryItems = hasNoLeaveRestriction
-    ? PRIMARY_ITEMS.filter((item) => item.href !== "/leave-requests")
+    ? PRIMARY_ITEMS.filter((item) => item.href !== "/attendance")
     : PRIMARY_ITEMS;
 
   const isActive = useCallback(
-    (href: string) =>
-      pathname === href ||
-      (href !== "/dashboard" && pathname.startsWith(href)),
-    [pathname]
+    (href: string) => {
+      if (href === "/bulletin?report=1") {
+        return pathname === "/bulletin" && searchParams.get("report") === "1";
+      }
+      return pathname === href ||
+        (href !== "/dashboard" && pathname.startsWith(href));
+    },
+    [pathname, searchParams]
   );
 
   const moreIsActive = MORE_ITEMS.some((item) => isActive(item.href));

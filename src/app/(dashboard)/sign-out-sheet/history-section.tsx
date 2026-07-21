@@ -72,10 +72,12 @@ export async function SignOutHistorySection({
   user,
   searchParams,
   pastCurfewOnly = false,
+  basePath = "/attendance",
 }: {
   user: SessionUser;
   searchParams: Record<string, string | string[] | undefined>;
   pastCurfewOnly?: boolean;
+  basePath?: string;
 }) {
   const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
@@ -145,7 +147,7 @@ export async function SignOutHistorySection({
     ? (() => {
         if (cpList.length === 0) {
           return buildCursorHref(
-            "/sign-out-sheet",
+            basePath,
             { ...searchParams, cp: undefined, c: undefined },
             null,
           );
@@ -153,7 +155,7 @@ export async function SignOutHistorySection({
         const newCp = cpList.slice(0, -1);
         const prevEnc = cpList[cpList.length - 1];
         return buildCursorHref(
-          "/sign-out-sheet",
+          basePath,
           {
             ...searchParams,
             cp: newCp.length ? newCp.join(",") : undefined,
@@ -165,7 +167,7 @@ export async function SignOutHistorySection({
 
   const nextHref: string | null = nextCursor
     ? buildCursorHref(
-        "/sign-out-sheet",
+        basePath,
         {
           ...searchParams,
           cp:
