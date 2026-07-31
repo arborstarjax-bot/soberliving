@@ -306,6 +306,49 @@ export async function overrideSignoffStatus(
   return {};
 }
 
+export async function dismissMissedChore(signoffId: string) {
+  const user = await requireAuth();
+  if (user.role === "resident") return { error: "Not authorized" };
+
+  const supabase = await createClient();
+
+  const { data: rawSignoff } = await supabase
+    .from("chore_signoffs")
+    .select("id, status, rotation_assignment:chore_rotation_assignments(resident_id, chore:chores(name, house_id))")
+    .eq("id", signoffId)
+    .maybeSingle();
+
+  const signoff = rawSignoff as unknown as SignoffRow | null;
+  if (!signoff) return { error: "Signoff not found" };
+  if (signoff.status !== "missed") return { error: "Only missed signoffs can be dismissed" };
+
+  const ra = signoff.rotation_assignment;
+  const houseId = ra?.chore?.house_id ?? "";
+  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+    return { error: "Not authorized" };
+  }
+
+  const { error } = await supabase
+    .from("chore_signoffs")
+    .update({ status: "dismissed", updated_at: new Date().toISOString() })
+    .eq("id", signoffId);
+
+  if (error) return { error: error.message };
+
+  await logActivity({
+    houseId,
+    residentId: ra?.resident_id,
+    actorId: user.id,
+    eventType: "chore_signoff_dismissed",
+    entityType: "chore_signoff",
+    entityId: signoffId,
+    description: `Missed chore "${ra?.chore?.name}" dismissed (no action) by ${user.full_name}`,
+  });
+
+  revalidatePath("/chores");
+  return {};
+}
+
 // --- Resident Redo After Rejection ---
 
 export async function redoSignoff(signoffId: string, photoUrl?: string) {
