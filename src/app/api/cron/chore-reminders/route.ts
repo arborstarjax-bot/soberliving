@@ -148,6 +148,24 @@ export async function GET(request: NextRequest) {
       .eq("sign_off_date", today)
       .in("status", ["pending", "redo"]);
 
+    // --- hygiene: archive reviewed signoffs (30d) + old notifications ---
+    // Reviewed/closed chore signoffs older than 30 days are removed so
+    // the Needs Review backlog stays meaningful. Read notifications
+    // older than 30 days are purged so badges/bell counts don't grow
+    // unbounded.
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      .toISOString();
+    await admin
+      .from("chore_signoffs")
+      .delete()
+      .in("status", ["approved", "rejected", "missed"])
+      .lt("updated_at", cutoff);
+    await admin
+      .from("notifications")
+      .delete()
+      .eq("is_read", true)
+      .lt("created_at", cutoff);
+
     if (!signoffs || signoffs.length === 0) {
       return NextResponse.json({
         ok: true,

@@ -5,6 +5,7 @@ import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { ListSkeleton } from "@/components/ui/skeleton";
 import { CreateUserDialog } from "../users/create-user-dialog";
 import { ResidentsTabsSection } from "./residents-tabs-section";
+import { ResidentsSearch } from "./residents-search";
 
 /**
  * Residents page shell. Header, active-count badge, and Create User
@@ -18,9 +19,15 @@ import { ResidentsTabsSection } from "./residents-tabs-section";
  * payload — that lookup is an index-only scan and returns in
  * single-digit ms.
  */
-export default async function ResidentsPage() {
+export default async function ResidentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
   const user = await requireAuth();
   const isStaff = user.role === "admin" || user.role === "manager";
+  const { q } = await searchParams;
+  const query = (q ?? "").trim();
 
   return (
     <div className="space-y-6">
@@ -42,10 +49,12 @@ export default async function ResidentsPage() {
         )}
       </div>
 
+      {isStaff && <ResidentsSearch defaultValue={query} />}
+
       <Suspense
         fallback={<ListSkeleton rows={6} rowClassName="h-20 w-full" />}
       >
-        <ResidentsTabsSection user={user} />
+        <ResidentsTabsSection user={user} searchQuery={query} />
       </Suspense>
     </div>
   );
