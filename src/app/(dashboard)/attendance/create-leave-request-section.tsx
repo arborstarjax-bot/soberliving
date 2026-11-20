@@ -26,9 +26,30 @@ export async function CreateLeaveRequestSection({ user }: { user: SessionUser })
   if (houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
   const { data: residents } = await residentsQuery;
 
+  // Residents already carrying chore assignments in their house's current
+  // rotation can't be picked as covering residents — they'd be covering
+  // someone else's chores while doing their own.
+  let rotationQuery = supabase
+    .from("chore_rotations")
+    .select("id")
+    .eq("is_current", true);
+  if (houseFilter) rotationQuery = rotationQuery.in("house_id", houseFilter);
+  const { data: rotations } = await rotationQuery;
+
+  const rotationIds = (rotations ?? []).map((r) => r.id);
+  const busyResidentIds = new Set<string>();
+  if (rotationIds.length > 0) {
+    const { data: assignments } = await supabase
+      .from("chore_rotation_assignments")
+      .select("resident_id")
+      .in("rotation_id", rotationIds);
+    for (const a of assignments ?? []) busyResidentIds.add(a.resident_id);
+  }
+
   return (
     <CreateLeaveRequestDialog
       residents={residents ?? []}
+      busyResidentIds={[...busyResidentIds]}
       userRole={user.role}
       userId={user.id}
       userResidentId={userResidentId}

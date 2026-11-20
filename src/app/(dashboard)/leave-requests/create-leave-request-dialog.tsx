@@ -17,24 +17,37 @@ import { Plus } from "lucide-react";
 
 interface Props {
   residents: { id: string; full_name: string; house_id: string }[];
+  /** Residents who already hold chore assignments in the current rotation
+   *  and therefore cannot cover someone else's chores. */
+  busyResidentIds?: string[];
   userRole: string;
   userId: string;
   userResidentId?: string;
 }
 
-export function CreateLeaveRequestDialog({ residents, userRole, userResidentId }: Props) {
+export function CreateLeaveRequestDialog({ residents, busyResidentIds = [], userRole, userResidentId }: Props) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState(createLeaveRequest, undefined);
   const [selectedResidentId, setSelectedResidentId] = useState(userResidentId ?? "");
 
   // Filter covering residents to same house only
   const selectedResident = residents.find((r) => r.id === selectedResidentId);
+  const busy = useMemo(() => new Set(busyResidentIds), [busyResidentIds]);
   const sameHouseResidents = useMemo(() => {
     if (!selectedResident) return [];
     return residents.filter(
       (r) => r.house_id === selectedResident.house_id && r.id !== selectedResidentId
     );
   }, [residents, selectedResident, selectedResidentId]);
+
+  // A covering resident must be free of their own chore duties this
+  // rotation — they can't cover someone else's chores while doing theirs.
+  // If every same-house resident is busy, fall back to the full list so
+  // the form stays usable.
+  const eligibleCoverResidents = useMemo(() => {
+    const eligible = sameHouseResidents.filter((r) => !busy.has(r.id));
+    return eligible.length > 0 ? eligible : sameHouseResidents;
+  }, [sameHouseResidents, busy]);
 
   // For residents, auto-select themselves
   const availableResidents = userRole === "resident" && userResidentId
@@ -81,11 +94,11 @@ export function CreateLeaveRequestDialog({ residents, userRole, userResidentId }
               <option value="">
                 {!selectedResidentId
                   ? "Select a resident first"
-                  : sameHouseResidents.length === 0
+                  : eligibleCoverResidents.length === 0
                   ? "No other residents in this house"
                   : "Select covering resident"}
               </option>
-              {sameHouseResidents.map((r) => (
+              {eligibleCoverResidents.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.full_name}
                 </option>
@@ -93,6 +106,8 @@ export function CreateLeaveRequestDialog({ residents, userRole, userResidentId }
             </select>
             <p className="text-xs text-muted-foreground">
               The covering resident must approve before the request proceeds.
+              Residents with assigned chores this rotation aren&apos;t shown —
+              they can&apos;t cover someone else&apos;s duties while doing their own.
             </p>
           </div>
 
