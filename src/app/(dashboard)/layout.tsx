@@ -142,6 +142,7 @@ export default async function DashboardLayout({
           workspaceName={workspaceName}
           hasNoLeaveRestriction={hasNoLeaveRestriction}
           enablePayments={paymentsEnabled}
+          enabledModules={wsSettings?.enabled_modules}
           notificationBadge={notificationBadge}
           bulletinBadge={bulletinBadge}
         />
@@ -152,6 +153,7 @@ export default async function DashboardLayout({
         </main>
         <ResidentBottomNav
           hasNoLeaveRestriction={hasNoLeaveRestriction}
+          enabledModules={wsSettings?.enabled_modules}
           bulletinBadge={bulletinBadge}
         />
       </div>
@@ -166,6 +168,7 @@ export default async function DashboardLayout({
         workspaceName={workspaceName}
         hasNoLeaveRestriction={hasNoLeaveRestriction}
         enablePayments={paymentsEnabled}
+        enabledModules={wsSettings?.enabled_modules}
         notificationBadge={notificationBadge}
         bulletinBadge={bulletinBadge}
       />

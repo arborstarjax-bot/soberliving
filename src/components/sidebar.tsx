@@ -30,6 +30,8 @@ interface NavItem {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   roles: UserRole[];
+  group?: string;
+  module?: string;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -44,18 +46,22 @@ const NAV_ITEMS: NavItem[] = [
     href: "/houses",
     icon: Home,
     roles: ["admin", "manager"],
+    group: "Operations",
   },
   {
     label: "Residents",
     href: "/residents",
     icon: Users,
     roles: ["admin", "manager"],
+    group: "Operations",
   },
   {
     label: "Chores",
     href: "/chores",
     icon: ClipboardCheck,
     roles: ["admin", "manager", "resident"],
+    group: "Operations",
+    module: "chores",
   },
   // Incidents page removed — lives as a Discipline tab
   {
@@ -63,6 +69,8 @@ const NAV_ITEMS: NavItem[] = [
     href: "/discipline",
     icon: ShieldAlert,
     roles: ["admin", "manager", "resident"],
+    group: "Operations",
+    module: "discipline",
   },
   {
     // Unified Attendance hub — sign-out sheet + overnight requests.
@@ -72,6 +80,8 @@ const NAV_ITEMS: NavItem[] = [
     href: "/attendance",
     icon: CalendarClock,
     roles: ["admin", "manager", "resident"],
+    group: "Operations",
+    module: "attendance",
   },
   {
     // Staff-only Payments hub — By Resident / Outstanding / Paid tabs.
@@ -82,6 +92,7 @@ const NAV_ITEMS: NavItem[] = [
     href: "/payments",
     icon: DollarSign,
     roles: ["admin", "manager"],
+    group: "Operations",
   },
   {
     // Resident-facing doc library — application, signed commitment,
@@ -91,12 +102,16 @@ const NAV_ITEMS: NavItem[] = [
     href: "/my-documents",
     icon: Folder,
     roles: ["resident"],
+    group: "Community",
+    module: "documents",
   },
   {
     label: "Community Services",
     href: "/bulletin",
     icon: MessageSquare,
     roles: ["admin", "manager", "resident"],
+    group: "Community",
+    module: "bulletin",
   },
   // Report folded into Community Services — residents reach it via
   // the "Report" tab inside /bulletin
@@ -105,12 +120,14 @@ const NAV_ITEMS: NavItem[] = [
     href: "/notifications",
     icon: Bell,
     roles: ["admin", "manager", "resident"],
+    group: "Community",
   },
   {
     label: "Workspace",
     href: "/admin/workspace",
     icon: Building2,
     roles: ["admin"],
+    group: "Administration",
   },
   // Intake Review is now a tab inside the Residents page
   // Users & Roles folded into Residents page — /users route still works for direct access
@@ -128,6 +145,7 @@ interface SidebarProps {
   workspaceName?: string;
   hasNoLeaveRestriction?: boolean;
   enablePayments?: boolean;
+  enabledModules?: string[];
   // Badges are passed as React nodes (not numbers) so the server
   // can stream them into the sidebar behind `<Suspense>` — the
   // sidebar paints immediately and the badges fill in on their own.
@@ -142,6 +160,7 @@ export function Sidebar({
   workspaceName = "Sober Living",
   hasNoLeaveRestriction,
   enablePayments = true,
+  enabledModules,
   notificationBadge = null,
   bulletinBadge = null,
 }: SidebarProps) {
@@ -152,8 +171,18 @@ export function Sidebar({
     if (!item.roles.includes(role)) return false;
     if (item.href === "/attendance" && hasNoLeaveRestriction && role === "resident") return false;
     if (item.href === "/payments" && !enablePayments) return false;
+    if (item.module && enabledModules && !enabledModules.includes(item.module)) return false;
     return true;
   });
+
+  // Group adjacent items under small section headers.
+  const navSections: { group: string | null; items: NavItem[] }[] = [];
+  for (const item of filteredItems) {
+    const group = item.group ?? null;
+    const last = navSections[navSections.length - 1];
+    if (last && last.group === group) last.items.push(item);
+    else navSections.push({ group, items: [item] });
+  }
 
   const routesToPrefetch = useMemo(
     () => filteredItems.map((item) => item.href),
@@ -176,7 +205,14 @@ export function Sidebar({
       </div>
 
       <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-        {filteredItems.map((item) => {
+        {navSections.map((section, si) => (
+          <div key={section.group ?? `top-${si}`} className={si > 0 ? "pt-3" : ""}>
+            {section.group && (
+              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
+                {section.group}
+              </p>
+            )}
+            {section.items.map((item) => {
           const isActive =
             pathname === item.href ||
             (item.href !== "/dashboard" && pathname.startsWith(item.href));
@@ -204,7 +240,9 @@ export function Sidebar({
               {item.label}
             </Link>
           );
-        })}
+            })}
+          </div>
+        ))}
       </nav>
 
       <div className="border-t border-sidebar-border p-3">

@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { updateWorkspaceSettings } from "./actions";
+import { WORKSPACE_MODULES } from "@/lib/modules";
 import type { WorkspaceSettings } from "@/lib/types";
 
 function Toggle({
@@ -64,6 +65,9 @@ export function OnboardingSection({
   const [requireMeetingPhoto, setRequireMeetingPhoto] = useState(
     settings?.require_meeting_photo ?? false
   );
+  const [enabledModules, setEnabledModules] = useState<string[]>(
+    settings?.enabled_modules ?? WORKSPACE_MODULES.map((m) => m.slug)
+  );
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
 
@@ -77,6 +81,7 @@ export function OnboardingSection({
         auto_demerit_missed_chores: autoDemerit,
         require_chore_photo: requireChorePhoto,
         require_meeting_photo: requireMeetingPhoto,
+        enabled_modules: enabledModules,
       });
       if (result.error) {
         setMessage(result.error);
@@ -233,6 +238,42 @@ export function OnboardingSection({
           />
         </div>
 
+        <div className="flex items-center gap-3">
+          <Button onClick={handleSave} disabled={pending}>
+            {pending ? "Saving..." : "Save Changes"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle>Modules</CardTitle>
+        <CardDescription>
+          Turn entire app sections on or off for this workspace
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {WORKSPACE_MODULES.map((mod) => (
+          <div key={mod.slug} className="flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <Label htmlFor={`module-${mod.slug}`}>{mod.label}</Label>
+            </div>
+            <Toggle
+              id={`module-${mod.slug}`}
+              checked={enabledModules.includes(mod.slug)}
+              onCheckedChange={(v) =>
+                setEnabledModules((prev) =>
+                  v ? [...prev, mod.slug] : prev.filter((s) => s !== mod.slug)
+                )
+              }
+            />
+          </div>
+        ))}
+        <p className="text-xs text-muted-foreground">
+          Disabled modules disappear from the sidebar and their pages redirect
+          to Home for everyone in this workspace.
+        </p>
         <div className="flex items-center gap-3">
           <Button onClick={handleSave} disabled={pending}>
             {pending ? "Saving..." : "Save Changes"}

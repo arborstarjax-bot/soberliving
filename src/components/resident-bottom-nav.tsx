@@ -22,36 +22,45 @@ interface BottomNavItem {
   label: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
+  module?: string;
 }
 
 const PRIMARY_ITEMS: BottomNavItem[] = [
   { label: "Home", href: "/dashboard", icon: Home },
-  { label: "Chores", href: "/chores", icon: ClipboardCheck },
-  { label: "Discipline", href: "/discipline", icon: ShieldAlert },
-  { label: "Leave", href: "/leave-requests", icon: CalendarClock },
-  { label: "Bulletin", href: "/bulletin", icon: MessageSquare },
+  { label: "Chores", href: "/chores", icon: ClipboardCheck, module: "chores" },
+  { label: "Discipline", href: "/discipline", icon: ShieldAlert, module: "discipline" },
+  { label: "Leave", href: "/leave-requests", icon: CalendarClock, module: "attendance" },
+  { label: "Bulletin", href: "/bulletin", icon: MessageSquare, module: "bulletin" },
 ];
 
 const MORE_ITEMS: BottomNavItem[] = [
-  { label: "My Documents", href: "/my-documents", icon: Folder },
+  { label: "My Documents", href: "/my-documents", icon: Folder, module: "documents" },
   { label: "Report", href: "/report", icon: Flag },
 ];
 
 interface ResidentBottomNavProps {
   hasNoLeaveRestriction?: boolean;
+  enabledModules?: string[];
   bulletinBadge?: React.ReactNode;
 }
 
 export function ResidentBottomNav({
   hasNoLeaveRestriction,
+  enabledModules,
   bulletinBadge = null,
 }: ResidentBottomNavProps) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
 
-  const primaryItems = hasNoLeaveRestriction
-    ? PRIMARY_ITEMS.filter((item) => item.href !== "/leave-requests")
-    : PRIMARY_ITEMS;
+  const moduleOn = (item: BottomNavItem) =>
+    !item.module || !enabledModules || enabledModules.includes(item.module);
+
+  const primaryItems = PRIMARY_ITEMS.filter(
+    (item) =>
+      moduleOn(item) &&
+      !(item.href === "/leave-requests" && hasNoLeaveRestriction)
+  );
+  const moreItems = MORE_ITEMS.filter(moduleOn);
 
   const isActive = useCallback(
     (href: string) =>
@@ -60,10 +69,10 @@ export function ResidentBottomNav({
     [pathname]
   );
 
-  const moreIsActive = MORE_ITEMS.some((item) => isActive(item.href));
+  const moreIsActive = moreItems.some((item) => isActive(item.href));
 
   const allRoutes = useMemo(
-    () => [...primaryItems, ...MORE_ITEMS].map((item) => item.href),
+    () => [...primaryItems, ...moreItems].map((item) => item.href),
     [primaryItems]
   );
   usePrefetchRoutes(allRoutes);
@@ -103,7 +112,7 @@ export function ResidentBottomNav({
             </button>
           </div>
           <nav className="grid grid-cols-3 gap-1 p-3">
-            {MORE_ITEMS.map((item) => {
+            {moreItems.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.href);
               return (

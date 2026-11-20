@@ -54,6 +54,7 @@ export interface WorkspaceSettings {
   auto_demerit_missed_chores: boolean;
   require_chore_photo: boolean;
   require_meeting_photo: boolean;
+  enabled_modules: string[];
   created_at: string;
   updated_at: string;
 }
