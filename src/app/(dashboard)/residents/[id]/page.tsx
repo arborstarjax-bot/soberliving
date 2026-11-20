@@ -607,36 +607,31 @@ export default async function ResidentDetailPage(
         </Card>
       )}
 
-      <Tabs defaultValue="chores">
+      <Tabs defaultValue="overview">
         <TabsList>
-          <TabsTrigger value="chores">
-            Chores ({choreAssignments?.length ?? 0})
-          </TabsTrigger>
-          <TabsTrigger value="discipline">
-            Discipline (
-            {(demerits?.length ?? 0) + (warnings?.length ?? 0)})
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="compliance">
+            Compliance (
+            {(choreAssignments?.length ?? 0) +
+              (demerits?.length ?? 0) +
+              (warnings?.length ?? 0) +
+              (leaveRequests?.length ?? 0)})
           </TabsTrigger>
           {paymentsEnabled && (
             <TabsTrigger value="payments">
               Payments ({(residentOpenCharges ?? []).length})
             </TabsTrigger>
           )}
-          <TabsTrigger value="leave">
-            Leave ({leaveRequests?.length ?? 0})
+          <TabsTrigger value="records">
+            Records ({(documents?.length ?? 0) + (notes?.length ?? 0)})
           </TabsTrigger>
-          <TabsTrigger value="documents">
-            Documents ({documents?.length ?? 0})
-          </TabsTrigger>
-          {isStaff && (
-            <TabsTrigger value="notes">
-              Notes ({notes?.length ?? 0})
-            </TabsTrigger>
-          )}
-          <TabsTrigger value="details">Details</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="chores" className="mt-4">
+        <TabsContent value="compliance" className="mt-4 space-y-6">
+          <div className="space-y-2">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            Chores ({choreAssignments?.length ?? 0})
+          </h3>
           {choreAssignments && choreAssignments.length > 0 ? (
             <div className="space-y-2">
               {choreAssignments.map((ca) => {
@@ -677,9 +672,12 @@ export default async function ResidentDetailPage(
               No chore assignments
             </p>
           )}
-        </TabsContent>
+          </div>
 
-        <TabsContent value="discipline" className="mt-4 space-y-6">
+          <div className="space-y-4">
+          <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            Discipline
+          </h3>
           {/* Active restrictions — surfaced first because they shape
               what the resident can / can't do today. */}
           {restrictions && restrictions.length > 0 && (
@@ -823,6 +821,50 @@ export default async function ResidentDetailPage(
               </p>
             )}
           </div>
+          </div>
+
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+              Passes ({leaveRequests?.length ?? 0})
+            </h3>
+            {leaveRequests && leaveRequests.length > 0 ? (
+              <div className="space-y-2">
+                {leaveRequests.map((lr) => (
+                  <Card key={lr.id}>
+                    <CardContent className="flex items-center justify-between py-3">
+                      <div>
+                        <p className="text-sm">
+                          {formatDateOnly(lr.departure_date)} →{" "}
+                          {formatDateOnly(lr.expected_return_date)}
+                        </p>
+                        {lr.reason && (
+                          <p className="text-xs text-muted-foreground">
+                            {lr.reason}
+                          </p>
+                        )}
+                      </div>
+                      <Badge
+                        variant={
+                          lr.status === "denied"
+                            ? "destructive"
+                            : lr.status === "approved"
+                              ? "default"
+                              : "outline"
+                        }
+                        className="capitalize"
+                      >
+                        {lr.status}
+                      </Badge>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <p className="text-muted-foreground py-4 text-center text-sm">
+                No leave requests
+              </p>
+            )}
+          </div>
         </TabsContent>
 
         {paymentsEnabled && <TabsContent value="payments" className="mt-4">
@@ -927,64 +969,31 @@ export default async function ResidentDetailPage(
           />
         </TabsContent>}
 
-        <TabsContent value="leave" className="mt-4">
-          {leaveRequests && leaveRequests.length > 0 ? (
+        <TabsContent value="records" className="mt-4 space-y-6">
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+              Documents ({documents?.length ?? 0})
+            </h3>
+            <DocumentsList
+              documents={documents ?? []}
+              canDelete={user.role === "admin"}
+            />
+          </div>
+          {isStaff && (
             <div className="space-y-2">
-              {leaveRequests.map((lr) => (
-                <Card key={lr.id}>
-                  <CardContent className="flex items-center justify-between py-3">
-                    <div>
-                      <p className="text-sm">
-                        {formatDateOnly(lr.departure_date)} →{" "}
-                        {formatDateOnly(lr.expected_return_date)}
-                      </p>
-                      {lr.reason && (
-                        <p className="text-xs text-muted-foreground">
-                          {lr.reason}
-                        </p>
-                      )}
-                    </div>
-                    <Badge
-                      variant={
-                        lr.status === "denied"
-                          ? "destructive"
-                          : lr.status === "approved"
-                            ? "default"
-                            : "outline"
-                      }
-                      className="capitalize"
-                    >
-                      {lr.status}
-                    </Badge>
-                  </CardContent>
-                </Card>
-              ))}
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                Notes ({notes?.length ?? 0})
+              </h3>
+              <ResidentNotes
+                residentId={id}
+                notes={notes ?? []}
+                userRole={user.role}
+              />
             </div>
-          ) : (
-            <p className="text-muted-foreground py-8 text-center">
-              No leave requests
-            </p>
           )}
         </TabsContent>
 
-        {isStaff && (
-          <TabsContent value="notes" className="mt-4">
-            <ResidentNotes
-              residentId={id}
-              notes={notes ?? []}
-              userRole={user.role}
-            />
-          </TabsContent>
-        )}
-
-        <TabsContent value="documents" className="mt-4">
-          <DocumentsList
-            documents={documents ?? []}
-            canDelete={user.role === "admin"}
-          />
-        </TabsContent>
-
-        <TabsContent value="details" className="mt-4">
+        <TabsContent value="overview" className="mt-4 space-y-6">
           <Card>
             <CardContent className="space-y-4 pt-6">
               {isStaff && (
@@ -1114,10 +1123,12 @@ export default async function ResidentDetailPage(
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-
-        <TabsContent value="activity" className="mt-4">
-          <ResidentTimeline activity={activity ?? []} />
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+              Activity
+            </h3>
+            <ResidentTimeline activity={activity ?? []} />
+          </div>
         </TabsContent>
       </Tabs>
     </div>
