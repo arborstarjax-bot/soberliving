@@ -136,7 +136,9 @@ export function OnboardingSection({
         require_commitment: requireCommitment,
         enable_payments: enablePayments,
         auto_cycle_chores: autoCycleChores,
-        auto_cycle_frequency: autoCycleFrequency,
+        // Only write the frequency column when auto-cycle is on — older
+        // databases may not have the column yet, and it is unused otherwise.
+        ...(autoCycleChores ? { auto_cycle_frequency: autoCycleFrequency } : {}),
         auto_demerit_missed_chores: autoDemerit,
         auto_demerit_missed_meetings: autoDemeritMeetings,
         auto_demerit_missed_curfew: autoDemeritCurfew,
