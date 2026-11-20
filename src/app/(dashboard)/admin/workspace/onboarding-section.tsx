@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { updateWorkspaceSettings } from "./actions";
 import { WORKSPACE_MODULES } from "@/lib/modules";
@@ -75,6 +76,16 @@ export function OnboardingSection({
   const [enabledModules, setEnabledModules] = useState<string[]>(
     settings?.enabled_modules ?? WORKSPACE_MODULES.map((m) => m.slug)
   );
+  const [intakeMode, setIntakeMode] = useState<"auto" | "requires_signoff">(
+    settings?.intake_mode ?? "requires_signoff"
+  );
+  const [intakeSteps, setIntakeSteps] = useState<
+    { id: string; label: string; required?: boolean }[]
+  >(settings?.intake_steps ?? []);
+  const [rulesText, setRulesText] = useState(settings?.rules_text ?? "");
+  const [requireRuleCheckoff, setRequireRuleCheckoff] = useState(
+    settings?.require_rule_checkoff ?? false
+  );
   const [residentModules, setResidentModules] = useState<string[]>(
     settings?.resident_modules ?? WORKSPACE_MODULES.map((m) => m.slug)
   );
@@ -114,6 +125,10 @@ export function OnboardingSection({
         require_meeting_photo: requireMeetingPhoto,
         enabled_modules: enabledModules,
         pass_approver: passApprover,
+        intake_mode: intakeMode,
+        intake_steps: intakeSteps,
+        rules_text: rulesText || null,
+        require_rule_checkoff: requireRuleCheckoff,
         resident_modules: residentModules,
         reminder_settings: reminders,
       });
@@ -371,6 +386,143 @@ export function OnboardingSection({
             reviews the pass after them.
           </p>
         </div>
+        <div className="flex items-center gap-3">
+          <Button onClick={handleSave} disabled={pending}>
+            {pending ? "Saving..." : "Save Changes"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle>Intake Pipeline</CardTitle>
+        <CardDescription>
+          How new residents enter — and what they must complete
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-2">
+          <Label>When someone joins via the invite link</Label>
+          <div className="flex flex-col gap-2 text-sm">
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="intake-mode"
+                checked={intakeMode === "auto"}
+                onChange={() => setIntakeMode("auto")}
+              />
+              <span>
+                <strong>Auto entry</strong> — they join the workspace
+                immediately and can use the app right away.
+              </span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name="intake-mode"
+                checked={intakeMode === "requires_signoff"}
+                onChange={() => setIntakeMode("requires_signoff")}
+              />
+              <span>
+                <strong>Require intake signoff</strong> — an admin must
+                approve them before they get in.
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <Label>Intake Checklist</Label>
+          <p className="text-sm text-muted-foreground">
+            Steps staff mark off during intake — e.g. paperwork signed,
+            UA collected, rent collected, house walk done.
+          </p>
+          {intakeSteps.map((step, i) => (
+            <div key={step.id} className="flex items-center gap-2">
+              <Input
+                value={step.label}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setIntakeSteps((prev) =>
+                    prev.map((x, j) =>
+                      j === i ? { ...x, label: e.target.value } : x
+                    )
+                  )
+                }
+              />
+              <label className="flex items-center gap-1 text-xs whitespace-nowrap">
+                <input
+                  type="checkbox"
+                  checked={!!step.required}
+                  onChange={(e) =>
+                    setIntakeSteps((prev) =>
+                      prev.map((x, j) =>
+                        j === i ? { ...x, required: e.target.checked } : x
+                      )
+                    )
+                  }
+                />
+                Required
+              </label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  setIntakeSteps((prev) => prev.filter((_, j) => j !== i))
+                }
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              setIntakeSteps((prev) => [
+                ...prev,
+                { id: `step-${Date.now()}`, label: "", required: false },
+              ])
+            }
+          >
+            Add Step
+          </Button>
+        </div>
+
+        <div className="space-y-3">
+          <Label htmlFor="rules-text">Rules Sheet</Label>
+          <p className="text-sm text-muted-foreground">
+            House rules shown to residents — write them here, or flag a
+            vault document for intake acknowledgment instead.
+          </p>
+          <textarea
+            id="rules-text"
+            value={rulesText}
+            onChange={(e) => setRulesText(e.target.value)}
+            rows={5}
+            className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+            placeholder="Enter house rules, one per line…"
+          />
+          <div className="flex items-center justify-between">
+            <div>
+              <Label htmlFor="require-rule-checkoff">
+                Require rule checkoff
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Resident must check off every rule before intake
+                completes
+              </p>
+            </div>
+            <Toggle
+              id="require-rule-checkoff"
+              checked={requireRuleCheckoff}
+              onCheckedChange={setRequireRuleCheckoff}
+            />
+          </div>
+        </div>
+
         <div className="flex items-center gap-3">
           <Button onClick={handleSave} disabled={pending}>
             {pending ? "Saving..." : "Save Changes"}
