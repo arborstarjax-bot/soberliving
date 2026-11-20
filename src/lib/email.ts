@@ -236,3 +236,36 @@ export async function sendApplicationEmail({
 
   return { error: null, id: data?.id };
 }
+
+/** Generic transactional email with optional attachments. */
+export async function sendEmail({
+  to,
+  subject,
+  text,
+  attachments,
+}: {
+  to: string;
+  subject: string;
+  text: string;
+  attachments?: { filename: string; content: Buffer }[];
+}) {
+  const resend = getResend();
+  if (!resend) {
+    console.warn("[email] RESEND_API_KEY missing — email not sent");
+    return { error: "Email is not configured" };
+  }
+  try {
+    const { error } = await resend.emails.send({
+      from: fromEmail,
+      to,
+      subject,
+      text,
+      html: `<p>${escapeHtml(text).replace(/\n/g, "<br>")}</p>`,
+      attachments,
+    });
+    if (error) return { error: error.message };
+    return {};
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Email failed" };
+  }
+}
