@@ -46,6 +46,15 @@ export async function updateWorkspaceSettings(
     rules_text?: string | null;
     rules_document_id?: string | null;
     require_rule_checkoff?: boolean;
+    check_in_schedules?: {
+      id: string;
+      label?: string;
+      house_ids?: string[];
+      frequency?: "daily" | "weekly";
+      day_of_week?: number;
+      enabled?: boolean;
+      last_sent_on?: string;
+    }[];
     reminder_settings?: Record<
       string,
       { enabled?: boolean; timing?: "day_of" | "day_before" }
@@ -88,6 +97,9 @@ export async function updateWorkspaceSettings(
         : {}),
       ...(settings.require_rule_checkoff !== undefined
         ? { require_rule_checkoff: settings.require_rule_checkoff }
+        : {}),
+      ...(settings.check_in_schedules !== undefined
+        ? { check_in_schedules: settings.check_in_schedules }
         : {}),
       ...(settings.reminder_settings !== undefined
         ? { reminder_settings: settings.reminder_settings }

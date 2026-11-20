@@ -68,6 +68,15 @@ export interface WorkspaceSettings {
   rules_text: string | null;
   rules_document_id: string | null;
   require_rule_checkoff: boolean;
+  check_in_schedules: {
+    id: string;
+    label?: string;
+    house_ids?: string[];
+    frequency?: "daily" | "weekly";
+    day_of_week?: number;
+    enabled?: boolean;
+    last_sent_on?: string;
+  }[];
   created_at: string;
   updated_at: string;
 }
