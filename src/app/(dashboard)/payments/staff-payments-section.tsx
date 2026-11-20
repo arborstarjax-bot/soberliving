@@ -170,9 +170,14 @@ export async function StaffPaymentsSection({ user }: { user: SessionUser }) {
     const start = parseIsoDate(
       c.billing_anchor_date ?? c.commitment_start_date
     );
+    // Mirror the opener's filter — anchors before the billing start
+    // belong to a superseded schedule and would display a different
+    // cycle than Pay Early actually bills.
     const anchor = nextDueDate(
       start,
-      anchorsByCommitment.get(c.id) ?? [],
+      (anchorsByCommitment.get(c.id) ?? []).filter(
+        (d) => d.getTime() >= start.getTime()
+      ),
       frequency
     );
     termsByResident.set(c.resident_id, {

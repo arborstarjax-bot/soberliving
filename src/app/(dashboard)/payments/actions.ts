@@ -1082,27 +1082,16 @@ export async function updateRentTerms(
       .in("status", ["open", "partial"]);
     // Close out fees already covered by payments so a reduced fee
     // doesn't linger on the outstanding list with a zero balance.
+    // Settle fees already covered by payments. The gte check runs
+    // server-side per row, so a voided payment can't leave a stale
+    // "paid" flag on a still-owed fee.
     await admin
       .from("payment_charges")
       .update({ status: "paid" })
       .eq("commitment_id", commitmentId)
       .eq("charge_type", "admin_fee")
       .in("status", ["open", "partial"])
-      .lte("amount", 0);
-    const { data: feeCharges } = await admin
-      .from("payment_charges")
-      .select("id, amount, paid_amount")
-      .eq("commitment_id", commitmentId)
-      .eq("charge_type", "admin_fee")
-      .in("status", ["open", "partial"]);
-    for (const c of feeCharges ?? []) {
-      if (Number(c.paid_amount) >= Number(c.amount)) {
-        await admin
-          .from("payment_charges")
-          .update({ status: "paid" })
-          .eq("id", c.id);
-      }
-    }
+      .gte("paid_amount", adminFee);
   }
 
   const { data: resident } = await admin
