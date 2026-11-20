@@ -22,7 +22,10 @@ function RegisterForm() {
   const workspaceCode = searchParams.get("workspace");
   const [state, action, pending] = useActionState(signup, undefined);
 
-  const isJoin = !!workspaceCode;
+  // Presence of the ?workspace param at all = invite flow. Even an
+  // empty/invalid code locks the form to join-only — invitees must
+  // never accidentally create their own workspace.
+  const isJoin = workspaceCode !== null;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
@@ -44,8 +47,12 @@ function RegisterForm() {
             </p>
           ) : (
             <form action={action} className="space-y-4">
-              {workspaceCode && (
-                <input type="hidden" name="workspace_code" value={workspaceCode} />
+              {isJoin && (
+                <input
+                  type="hidden"
+                  name="workspace_code"
+                  value={workspaceCode ?? ""}
+                />
               )}
 
               <div className="space-y-2">
@@ -106,7 +113,17 @@ function RegisterForm() {
               {state?.error && (
                 <p className="text-sm text-destructive">{state.error}</p>
               )}
-              <Button type="submit" className="w-full" disabled={pending}>
+              {isJoin && !workspaceCode && (
+                <p className="text-sm text-destructive">
+                  This invite link is missing a workspace code. Ask your
+                  administrator for a new link.
+                </p>
+              )}
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={pending || (isJoin && !workspaceCode)}
+              >
                 {pending
                   ? "Creating account..."
                   : isJoin
