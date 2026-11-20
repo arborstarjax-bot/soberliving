@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { logMeeting } from "./actions";
 import { Button } from "@/components/ui/button";
@@ -19,13 +19,14 @@ export function LogMeetingForm({ photoRequired }: Props) {
   const [signature, setSignature] = useState<string | null>(null);
   const [state, action, pending] = useActionState(logMeeting, undefined);
 
-  if (!pending && state && !state.error) {
-    queueMicrotask(() => {
+  useEffect(() => {
+    if (!pending && state && !state.error) {
       formRef.current?.reset();
       setSignature(null);
       router.refresh();
-    });
-  }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, pending]);
 
   return (
     <Card>
