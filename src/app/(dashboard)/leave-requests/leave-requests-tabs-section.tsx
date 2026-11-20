@@ -273,7 +273,7 @@ export async function LeaveRequestsTabsSection({
                         target="_blank"
                         className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                       >
-                        <Printer className="h-3 w-3" /> Print pass
+                        <Printer className="h-3 w-3" /> View pass
                       </Link>
                     </div>
                   </CardContent>
