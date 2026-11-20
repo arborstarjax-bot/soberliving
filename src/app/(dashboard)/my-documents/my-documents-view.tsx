@@ -3,7 +3,12 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { FileText, Download, Eye } from "lucide-react";
+import { FileText, Download, Eye, Upload, Loader2 } from "lucide-react";
+import { useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { uploadIntakeDocument } from "@/app/(intake)/actions";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 
 // We render View / Download as native anchor tags against pre-signed
 // Supabase URLs rather than routing through a server action on click.
@@ -38,8 +43,65 @@ function formatBytes(bytes: number | null) {
 }
 
 export function MyDocumentsView({ groups, signedUrls }: Props) {
+  const router = useRouter();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const labelRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function handleUpload() {
+    const file = fileRef.current?.files?.[0];
+    if (!file) {
+      setError("Choose a file first");
+      return;
+    }
+    setError(null);
+    const fd = new FormData();
+    fd.set("file", file);
+    fd.set("label", labelRef.current?.value ?? "");
+    startTransition(async () => {
+      const result = await uploadIntakeDocument(fd);
+      if (result?.error) setError(result.error);
+      else router.refresh();
+    });
+  }
+
   return (
     <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Upload a document</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="vault-label">Name (optional)</Label>
+              <Input id="vault-label" ref={labelRef} placeholder="e.g. Photo ID" />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="vault-file">File</Label>
+              <Input id="vault-file" ref={fileRef} type="file" />
+            </div>
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <button
+            type="button"
+            onClick={handleUpload}
+            disabled={pending}
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "h-9"
+            )}
+          >
+            {pending ? (
+              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="mr-1 h-4 w-4" />
+            )}
+            Upload
+          </button>
+        </CardContent>
+      </Card>
       {groups.map((g) => (
         <Card key={g.key}>
           <CardHeader>
