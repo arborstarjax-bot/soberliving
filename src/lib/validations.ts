@@ -261,14 +261,6 @@ export const deletePaymentSchema = z.object({
   payment_id: z.string().uuid(),
 });
 
-// --- Rent Config ---
-
-export const upsertRentConfigSchema = z.object({
-  house_id: z.string().uuid(),
-  monthly_amount: z.coerce.number().positive("Monthly amount must be greater than 0"),
-  due_day_of_month: z.coerce.number().int().min(1).max(28, "Due day must be between 1 and 28"),
-});
-
 // --- Demerits ---
 
 export const createDemeritSchema = z.object({
