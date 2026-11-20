@@ -1,5 +1,9 @@
 import { requireAuth } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { getWorkspaceSettings } from "@/lib/workspace";
+import { isModuleEnabled } from "@/lib/modules";
+
 import { getCachedActiveHouses } from "@/lib/cached-dropdowns";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { CreateRestrictionDialog } from "./create-restriction-dialog";
@@ -13,6 +17,8 @@ import { getHouseToday } from "@/lib/timezone";
 
 export default async function DisciplinePage() {
   const user = await requireAuth();
+  const wsSettings = user.workspace_id ? await getWorkspaceSettings(user.workspace_id) : null;
+  if (!isModuleEnabled(wsSettings, "discipline")) redirect("/dashboard");
   const supabase = await createClient();
   const adminClient = createAdminClient();
   const houseFilter = getAccessibleHouseFilter(user);

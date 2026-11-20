@@ -36,6 +36,7 @@ export async function updateWorkspaceSettings(
     auto_demerit_missed_chores: boolean;
     require_chore_photo: boolean;
     require_meeting_photo: boolean;
+    enabled_modules: string[];
   }
 ) {
   const user = await requireRole("admin");
@@ -53,6 +54,7 @@ export async function updateWorkspaceSettings(
       auto_demerit_missed_chores: settings.auto_demerit_missed_chores,
       require_chore_photo: settings.require_chore_photo,
       require_meeting_photo: settings.require_meeting_photo,
+      enabled_modules: settings.enabled_modules,
       updated_at: new Date().toISOString(),
     })
     .eq("workspace_id", workspaceId);

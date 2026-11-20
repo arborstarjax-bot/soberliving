@@ -1,6 +1,7 @@
 import { requireAuth } from "@/lib/auth";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getWorkspaceSettings } from "@/lib/workspace";
+import { isModuleEnabled } from "@/lib/modules";
 import { redirect } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { MyDocumentsView } from "./my-documents-view";
@@ -36,6 +37,8 @@ interface DocRow {
 
 export default async function MyDocumentsPage() {
   const user = await requireAuth();
+  const wsSettings = user.workspace_id ? await getWorkspaceSettings(user.workspace_id) : null;
+  if (!isModuleEnabled(wsSettings, "documents")) redirect("/dashboard");
   if (user.role !== "resident") {
     redirect("/dashboard");
   }
@@ -47,9 +50,6 @@ export default async function MyDocumentsPage() {
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
-  const wsSettings = user.workspace_id
-    ? await getWorkspaceSettings(user.workspace_id)
-    : null;
   const paymentsEnabled = wsSettings?.enable_payments !== false;
 
   const typed: DocRow[] = (docs ?? []) as DocRow[];
