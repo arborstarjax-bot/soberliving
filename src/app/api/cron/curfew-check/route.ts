@@ -152,6 +152,42 @@ export async function GET(request: NextRequest) {
         url: "/sign-out-sheet",
       });
 
+      // Auto-demerit residents still out past curfew when the
+      // workspace enabled it (one per resident per day via dedupe).
+      const { data: houseWs } = await admin
+        .from("houses")
+        .select("workspace_id")
+        .eq("id", houseId)
+        .maybeSingle();
+      const wsId = (houseWs?.workspace_id as string | null) ?? null;
+      if (wsId) {
+        const { data: wsRow } = await admin
+          .from("workspace_settings")
+          .select("auto_demerit_missed_curfew")
+          .eq("workspace_id", wsId)
+          .maybeSingle();
+        if (wsRow?.auto_demerit_missed_curfew) {
+          for (const row of rows) {
+            const reason = `Missed curfew on ${todayDate}`;
+            const { data: dup } = await admin
+              .from("demerits")
+              .select("id")
+              .eq("resident_id", row.resident_id)
+              .eq("reason", reason)
+              .limit(1);
+            if (dup && dup.length > 0) continue;
+            await admin.from("demerits").insert({
+              resident_id: row.resident_id,
+              house_id: houseId,
+              points: 1,
+              reason,
+              category: "Missed Curfew",
+              issued_by: null,
+            });
+          }
+        }
+      }
+
       // Record that we sent a notification for this house today.
       await admin.from("curfew_notification_log").insert({
         house_id: houseId,

@@ -34,10 +34,17 @@ export async function updateWorkspaceSettings(
     enable_payments: boolean;
     auto_cycle_chores: boolean;
     auto_demerit_missed_chores: boolean;
+    auto_demerit_missed_meetings: boolean;
+    auto_demerit_missed_curfew: boolean;
     require_chore_photo: boolean;
     require_meeting_photo: boolean;
     enabled_modules: string[];
     pass_approver: "manager" | "admin" | "both";
+    resident_modules?: string[];
+    reminder_settings?: Record<
+      string,
+      { enabled?: boolean; timing?: "day_of" | "day_before" }
+    >;
   }
 ) {
   const user = await requireRole("admin");
@@ -53,10 +60,18 @@ export async function updateWorkspaceSettings(
       enable_payments: settings.enable_payments,
       auto_cycle_chores: settings.auto_cycle_chores,
       auto_demerit_missed_chores: settings.auto_demerit_missed_chores,
+      auto_demerit_missed_meetings: settings.auto_demerit_missed_meetings,
+      auto_demerit_missed_curfew: settings.auto_demerit_missed_curfew,
       require_chore_photo: settings.require_chore_photo,
       require_meeting_photo: settings.require_meeting_photo,
       enabled_modules: settings.enabled_modules,
       pass_approver: settings.pass_approver,
+      ...(settings.resident_modules !== undefined
+        ? { resident_modules: settings.resident_modules }
+        : {}),
+      ...(settings.reminder_settings !== undefined
+        ? { reminder_settings: settings.reminder_settings }
+        : {}),
       updated_at: new Date().toISOString(),
     })
     .eq("workspace_id", workspaceId);

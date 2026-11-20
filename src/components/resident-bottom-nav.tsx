@@ -42,19 +42,26 @@ const MORE_ITEMS: BottomNavItem[] = [
 interface ResidentBottomNavProps {
   hasNoLeaveRestriction?: boolean;
   enabledModules?: string[];
+  residentModules?: string[] | null;
   bulletinBadge?: React.ReactNode;
 }
 
 export function ResidentBottomNav({
   hasNoLeaveRestriction,
   enabledModules,
+  residentModules,
   bulletinBadge = null,
 }: ResidentBottomNavProps) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
 
   const moduleOn = (item: BottomNavItem) =>
-    !item.module || !enabledModules || enabledModules.includes(item.module);
+    (!item.module ||
+      !enabledModules ||
+      enabledModules.includes(item.module)) &&
+    (!item.module ||
+      !residentModules ||
+      residentModules.includes(item.module));
 
   const primaryItems = PRIMARY_ITEMS.filter(
     (item) =>

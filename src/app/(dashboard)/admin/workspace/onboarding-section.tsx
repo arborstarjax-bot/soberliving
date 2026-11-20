@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { updateWorkspaceSettings } from "./actions";
 import { WORKSPACE_MODULES } from "@/lib/modules";
+import { REMINDER_TYPES } from "@/lib/reminders";
 import type { WorkspaceSettings } from "@/lib/types";
 
 function Toggle({
@@ -59,6 +60,12 @@ export function OnboardingSection({
   const [autoDemerit, setAutoDemerit] = useState(
     settings?.auto_demerit_missed_chores ?? false
   );
+  const [autoDemeritMeetings, setAutoDemeritMeetings] = useState(
+    settings?.auto_demerit_missed_meetings ?? false
+  );
+  const [autoDemeritCurfew, setAutoDemeritCurfew] = useState(
+    settings?.auto_demerit_missed_curfew ?? false
+  );
   const [requireChorePhoto, setRequireChorePhoto] = useState(
     settings?.require_chore_photo ?? false
   );
@@ -68,6 +75,25 @@ export function OnboardingSection({
   const [enabledModules, setEnabledModules] = useState<string[]>(
     settings?.enabled_modules ?? WORKSPACE_MODULES.map((m) => m.slug)
   );
+  const [residentModules, setResidentModules] = useState<string[]>(
+    settings?.resident_modules ?? WORKSPACE_MODULES.map((m) => m.slug)
+  );
+  const [reminders, setReminders] = useState<
+    Record<string, { enabled: boolean; timing: "day_of" | "day_before" }>
+  >(() => {
+    const out: Record<
+      string,
+      { enabled: boolean; timing: "day_of" | "day_before" }
+    > = {};
+    for (const t of REMINDER_TYPES) {
+      const saved = settings?.reminder_settings?.[t.slug];
+      out[t.slug] = {
+        enabled: saved?.enabled !== false,
+        timing: saved?.timing === "day_before" ? "day_before" : "day_of",
+      };
+    }
+    return out;
+  });
   const [passApprover, setPassApprover] = useState<
     "manager" | "admin" | "both"
   >(settings?.pass_approver ?? "both");
@@ -82,10 +108,14 @@ export function OnboardingSection({
         enable_payments: enablePayments,
         auto_cycle_chores: autoCycleChores,
         auto_demerit_missed_chores: autoDemerit,
+        auto_demerit_missed_meetings: autoDemeritMeetings,
+        auto_demerit_missed_curfew: autoDemeritCurfew,
         require_chore_photo: requireChorePhoto,
         require_meeting_photo: requireMeetingPhoto,
         enabled_modules: enabledModules,
         pass_approver: passApprover,
+        resident_modules: residentModules,
+        reminder_settings: reminders,
       });
       if (result.error) {
         setMessage(result.error);
@@ -214,6 +244,40 @@ export function OnboardingSection({
 
         <div className="flex items-center justify-between gap-4">
           <div className="space-y-1">
+            <Label htmlFor="auto-demerit-meetings">
+              Auto-Demerit on Missed Meeting
+            </Label>
+            <p className="text-sm text-muted-foreground">
+              Issue a 1-point demerit at week&apos;s end when a resident
+              logged no meeting that week.
+            </p>
+          </div>
+          <Toggle
+            id="auto-demerit-meetings"
+            checked={autoDemeritMeetings}
+            onCheckedChange={setAutoDemeritMeetings}
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <Label htmlFor="auto-demerit-curfew">
+              Auto-Demerit on Missed Curfew
+            </Label>
+            <p className="text-sm text-muted-foreground">
+              Issue a 1-point demerit when a resident is still signed
+              out past curfew.
+            </p>
+          </div>
+          <Toggle
+            id="auto-demerit-curfew"
+            checked={autoDemeritCurfew}
+            onCheckedChange={setAutoDemeritCurfew}
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
             <Label htmlFor="require-chore-photo">Require Photo for Chores</Label>
             <p className="text-sm text-muted-foreground">
               When enabled, residents must upload a photo to sign off a chore.
@@ -307,6 +371,113 @@ export function OnboardingSection({
             reviews the pass after them.
           </p>
         </div>
+        <div className="flex items-center gap-3">
+          <Button onClick={handleSave} disabled={pending}>
+            {pending ? "Saving..." : "Save Changes"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle>Resident View</CardTitle>
+        <CardDescription>
+          Which modules residents can see. Staff always see every
+          enabled module.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {WORKSPACE_MODULES.map((m) => (
+          <div
+            key={m.slug}
+            className="flex items-center justify-between"
+          >
+            <Label htmlFor={`resident-module-${m.slug}`}>
+              {m.label}
+            </Label>
+            <Toggle
+              id={`resident-module-${m.slug}`}
+              checked={residentModules.includes(m.slug)}
+              onCheckedChange={(checked) =>
+                setResidentModules((prev) =>
+                  checked
+                    ? [...new Set([...prev, m.slug])]
+                    : prev.filter((x) => x !== m.slug)
+                )
+              }
+            />
+          </div>
+        ))}
+        <div className="flex items-center gap-3">
+          <Button onClick={handleSave} disabled={pending}>
+            {pending ? "Saving..." : "Save Changes"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle>Reminders</CardTitle>
+        <CardDescription>
+          Which automated reminders residents receive, and when
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {REMINDER_TYPES.map((t) => {
+          const r = reminders[t.slug];
+          return (
+            <div
+              key={t.slug}
+              className="flex items-start justify-between gap-4"
+            >
+              <div className="space-y-2">
+                <Label htmlFor={`reminder-${t.slug}`}>{t.label}</Label>
+                <div className="flex gap-4 text-sm">
+                  <label className="flex items-center gap-1.5">
+                    <input
+                      type="radio"
+                      name={`timing-${t.slug}`}
+                      checked={r.timing === "day_of"}
+                      onChange={() =>
+                        setReminders((prev) => ({
+                          ...prev,
+                          [t.slug]: { ...prev[t.slug], timing: "day_of" },
+                        }))
+                      }
+                    />
+                    Day of
+                  </label>
+                  <label className="flex items-center gap-1.5">
+                    <input
+                      type="radio"
+                      name={`timing-${t.slug}`}
+                      checked={r.timing === "day_before"}
+                      onChange={() =>
+                        setReminders((prev) => ({
+                          ...prev,
+                          [t.slug]: { ...prev[t.slug], timing: "day_before" },
+                        }))
+                      }
+                    />
+                    24 hours before
+                  </label>
+                </div>
+              </div>
+              <Toggle
+                id={`reminder-${t.slug}`}
+                checked={r.enabled}
+                onCheckedChange={(v) =>
+                  setReminders((prev) => ({
+                    ...prev,
+                    [t.slug]: { ...prev[t.slug], enabled: v },
+                  }))
+                }
+              />
+            </div>
+          );
+        })}
         <div className="flex items-center gap-3">
           <Button onClick={handleSave} disabled={pending}>
             {pending ? "Saving..." : "Save Changes"}

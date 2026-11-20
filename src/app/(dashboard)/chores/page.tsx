@@ -3,7 +3,7 @@ import { requireAuth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getWorkspaceSettings } from "@/lib/workspace";
-import { isModuleEnabled } from "@/lib/modules";
+import { isModuleVisibleToRole } from "@/lib/modules";
 
 import { getCachedActiveHouses } from "@/lib/cached-dropdowns";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
@@ -30,7 +30,7 @@ interface ChoresPageProps {
 export default async function ChoresPage({ searchParams }: ChoresPageProps) {
   const user = await requireAuth();
   const wsSettings = user.workspace_id ? await getWorkspaceSettings(user.workspace_id) : null;
-  if (!isModuleEnabled(wsSettings, "chores")) redirect("/dashboard");
+  if (!isModuleVisibleToRole(wsSettings, "chores", user.role)) redirect("/dashboard");
   const isStaff = user.role === "admin" || user.role === "manager";
 
   const sp = await searchParams;
