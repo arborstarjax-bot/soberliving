@@ -57,6 +57,7 @@ interface ResidentRow {
   house_name: string;
   commitment_id: string | null;
   rent_amount: number | null;
+  admin_fee: number | null;
   payment_frequency: "weekly" | "monthly" | null;
   // Next rent due date, computed server-side — either the earliest
   // open rent charge or the next cycle on the commitment schedule.
@@ -333,6 +334,7 @@ export function PaymentsByResident({
                         residentName={selected.resident.full_name}
                         currentAmount={selected.resident.rent_amount}
                         currentFrequency={selected.resident.payment_frequency}
+                        currentAdminFee={selected.resident.admin_fee}
                         nextDue={selected.resident.next_due}
                       />
                     )}

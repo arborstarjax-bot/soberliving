@@ -99,7 +99,7 @@ export async function StaffPaymentsSection({ user }: { user: SessionUser }) {
   let commitmentsQuery = supabase
     .from("house_commitments")
     .select(
-      "id, resident_id, house_id, rent_amount, payment_frequency, commitment_start_date, billing_anchor_date"
+      "id, resident_id, house_id, rent_amount, admin_fee, payment_frequency, commitment_start_date, billing_anchor_date"
     )
     .eq("status", "active")
     .not("resident_id", "is", null);
@@ -130,6 +130,7 @@ export async function StaffPaymentsSection({ user }: { user: SessionUser }) {
     resident_id: string;
     house_id: string;
     rent_amount: number;
+    admin_fee: number | null;
     payment_frequency: string | null;
     commitment_start_date: string;
     billing_anchor_date: string | null;
@@ -159,6 +160,7 @@ export async function StaffPaymentsSection({ user }: { user: SessionUser }) {
     {
       commitmentId: string;
       rentAmount: number;
+      adminFee: number | null;
       frequency: PaymentFrequency;
       nextDueIso: string | null;
     }
@@ -176,6 +178,7 @@ export async function StaffPaymentsSection({ user }: { user: SessionUser }) {
     termsByResident.set(c.resident_id, {
       commitmentId: c.id,
       rentAmount: Number(c.rent_amount),
+      adminFee: c.admin_fee === null ? null : Number(c.admin_fee),
       frequency,
       nextDueIso: toIsoDate(computeRentDueDate(anchor)),
     });
@@ -217,6 +220,7 @@ export async function StaffPaymentsSection({ user }: { user: SessionUser }) {
                 houses.find((h) => h.id === r.house_id)?.name ?? "",
               commitment_id: terms?.commitmentId ?? null,
               rent_amount: terms?.rentAmount ?? null,
+              admin_fee: terms?.adminFee ?? null,
               payment_frequency: terms?.frequency ?? null,
               next_due: terms?.nextDueIso ?? null,
             };

@@ -976,6 +976,8 @@ export async function updateRentTerms(
   const rentAmount = Number(formData.get("rent_amount"));
   const frequency = String(formData.get("payment_frequency") ?? "");
   const nextDue = String(formData.get("next_due_date") ?? "");
+  const rawAdminFee = String(formData.get("admin_fee") ?? "").trim();
+  const adminFee = rawAdminFee === "" ? null : Number(rawAdminFee);
 
   if (!commitmentId) return { error: "Missing commitment" };
   if (!Number.isFinite(rentAmount) || rentAmount <= 0) {
@@ -986,6 +988,9 @@ export async function updateRentTerms(
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(nextDue)) {
     return { error: "Next due date is required" };
+  }
+  if (adminFee !== null && (!Number.isFinite(adminFee) || adminFee < 0)) {
+    return { error: "Admin fee must be a non-negative number" };
   }
 
   const admin = createAdminClient();
@@ -1011,6 +1016,7 @@ export async function updateRentTerms(
       rent_amount: rentAmount,
       payment_frequency: frequency,
       billing_anchor_date: anchorIso,
+      admin_fee: adminFee,
       updated_at: new Date().toISOString(),
     })
     .eq("id", commitmentId);

@@ -26,6 +26,7 @@ interface Props {
   residentName: string;
   currentAmount: number | null;
   currentFrequency: "weekly" | "monthly" | null;
+  currentAdminFee: number | null;
   nextDue: string | null;
 }
 
@@ -34,6 +35,7 @@ export function EditRentTermsDialog({
   residentName,
   currentAmount,
   currentFrequency,
+  currentAdminFee,
   nextDue,
 }: Props) {
   const router = useRouter();
@@ -92,6 +94,23 @@ export function EditRentTermsDialog({
                   <option value="monthly">Monthly</option>
                 </select>
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="admin_fee">
+                Admin Fee{" "}
+                <span className="text-muted-foreground">
+                  (optional, one-time)
+                </span>
+              </Label>
+              <Input
+                id="admin_fee"
+                name="admin_fee"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Leave blank for none"
+                defaultValue={currentAdminFee ?? ""}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="next_due_date">Next Due Date *</Label>
