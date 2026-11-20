@@ -271,11 +271,24 @@ export async function generateMissedChoreDemerits(houseId?: string) {
 
   const { data: houseRow } = await supabase
     .from("houses")
-    .select("timezone")
+    .select("timezone, workspace_id")
     .eq("id", houseId)
     .single();
   const houseTz = houseRow?.timezone ?? DEFAULT_TIMEZONE;
   const yesterdayStr = getHouseYesterday(houseTz);
+
+  // Workspace setting: when on, a signoff flipped to `missed` also gets
+  // an automatic 1-point demerit (staff can still reverse it by changing
+  // the signoff status back — the linked demerit is removed).
+  let autoDemerit = false;
+  if (houseRow?.workspace_id) {
+    const { data: wsSettings } = await supabase
+      .from("workspace_settings")
+      .select("auto_demerit_missed_chores")
+      .eq("workspace_id", houseRow.workspace_id)
+      .maybeSingle();
+    autoDemerit = wsSettings?.auto_demerit_missed_chores ?? false;
+  }
 
   // Pending signoffs whose date has already passed. created_at lets us
   // skip back-fills (signoffs inserted mid-cycle, after the sign_off_date
@@ -283,7 +296,7 @@ export async function generateMissedChoreDemerits(houseId?: string) {
   const { data: missedSignoffs } = await supabase
     .from("chore_signoffs")
     .select(
-      "id, sign_off_date, day_of_week, created_at, rotation_assignment:chore_rotation_assignments(chore:chores(house_id, days_of_week))"
+      "id, sign_off_date, day_of_week, created_at, rotation_assignment:chore_rotation_assignments(resident_id, chore:chores(house_id, name, days_of_week))"
     )
     .eq("status", "pending")
     .lte("sign_off_date", yesterdayStr);
@@ -299,7 +312,8 @@ export async function generateMissedChoreDemerits(houseId?: string) {
     day_of_week: string;
     created_at: string | null;
     rotation_assignment: {
-      chore: { house_id: string; days_of_week: string[] | null } | null;
+      resident_id: string;
+      chore: { house_id: string; name: string; days_of_week: string[] | null } | null;
     } | null;
   }>;
   for (const signoff of missedSignoffRows) {
@@ -342,7 +356,66 @@ export async function generateMissedChoreDemerits(houseId?: string) {
       .eq("status", "pending")
       .select("id");
 
-    if (!flagError && updated && updated.length > 0) count++;
+    if (!flagError && updated && updated.length > 0) {
+      count++;
+
+      if (autoDemerit && ra.chore) {
+        // Dedupe via the unique signoff_id — a second flip can't double-issue.
+        const { data: existingDemerit } = await supabase
+          .from("demerits")
+          .select("id")
+          .eq("signoff_id", signoff.id)
+          .maybeSingle();
+
+        if (!existingDemerit) {
+          const reason = `Missed chore: ${ra.chore.name} on ${signoff.sign_off_date}`;
+          const { data: demerit } = await supabase
+            .from("demerits")
+            .insert({
+              resident_id: ra.resident_id,
+              house_id: ra.chore.house_id,
+              points: 1,
+              reason,
+              category: "Missed Chore",
+              signoff_id: signoff.id,
+              issued_by: user.id,
+            })
+            .select("id")
+            .single();
+
+          if (demerit) {
+            const { data: resident } = await supabase
+              .from("residents")
+              .select("full_name, user_id")
+              .eq("id", ra.resident_id)
+              .single();
+
+            await logActivity({
+              houseId: ra.chore.house_id,
+              residentId: ra.resident_id,
+              actorId: user.id,
+              eventType: "demerit_issued",
+              entityType: "demerit",
+              entityId: demerit.id,
+              description: `Auto-issued 1-point demerit to ${resident?.full_name}: ${reason}`,
+              metadata: { points: 1, reason, signoff_id: signoff.id },
+            });
+
+            if (resident?.user_id) {
+              await sendNotification({
+                userId: resident.user_id,
+                type: "demerit_issued",
+                title: "Demerit Issued",
+                message: `You received a 1-point demerit: ${reason}`,
+                actionUrl: "/discipline",
+                entityType: "demerit",
+                entityId: demerit.id,
+              });
+            }
+          }
+        }
+      }
+    }
   }
 
   revalidatePath("/discipline");

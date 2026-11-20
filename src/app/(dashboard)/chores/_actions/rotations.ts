@@ -10,6 +10,7 @@ import {
   assignRotationChoreSchema,
 } from "@/lib/validations";
 import { getHouseToday, DEFAULT_TIMEZONE, addCalendarDays } from "@/lib/timezone";
+import { buildFairAssignments, buildSignoffRows, performRotation } from "@/lib/chore-rotation";
 import { sendNotification } from "@/lib/notifications";
 
 async function getResidentCurrentRoomId(
@@ -47,196 +48,14 @@ export async function createRotation(
 
   const supabase = await createClient();
 
-  // Snapshot the previous rotation's assignments before marking it
-  // not-current, so we can carry them forward when rotating.
-  let previousAssignments: Array<{
-    chore_id: string;
-    resident_id: string;
-    chore: { days_of_week?: string[]; cycle_weeks?: number } | null;
-  }> = [];
-  if (parsed.data.rotate_from_previous) {
-    const { data: prevRotation } = await supabase
-      .from("chore_rotations")
-      .select("id")
-      .eq("house_id", parsed.data.house_id)
-      .eq("is_current", true)
-      .maybeSingle();
-
-    if (prevRotation) {
-      const { data: prevAssigns } = await supabase
-        .from("chore_rotation_assignments")
-        .select("chore_id, resident_id, chore:chores(days_of_week, cycle_weeks)")
-        .eq("rotation_id", prevRotation.id)
-        .order("created_at");
-      previousAssignments = (prevAssigns ?? []) as typeof previousAssignments;
-    }
-  }
-
-  // Mark any existing current rotation as not current
-  await supabase
-    .from("chore_rotations")
-    .update({ is_current: false })
-    .eq("house_id", parsed.data.house_id)
-    .eq("is_current", true);
-
-  // Determine cycle length from the max cycle_weeks of active chores in this house
-  const { data: houseChores } = await supabase
-    .from("chores")
-    .select("cycle_weeks")
-    .eq("house_id", parsed.data.house_id)
-    .eq("is_active", true);
-
-  const maxCycleWeeks = houseChores && houseChores.length > 0
-    ? Math.max(...houseChores.map((c) => c.cycle_weeks ?? 2))
-    : 2;
-
-  const cycleEndDateStr = addCalendarDays(
-    parsed.data.cycle_start_date,
-    maxCycleWeeks * 7 - 1
-  );
-
-  const { data, error } = await supabase
-    .from("chore_rotations")
-    .insert({
-      house_id: parsed.data.house_id,
-      cycle_start_date: parsed.data.cycle_start_date,
-      cycle_end_date: cycleEndDateStr,
-      is_current: true,
-      created_by: user.id,
-    })
-    .select("id")
-    .single();
-
-  if (error) return { error: error.message };
-
-  // Carry forward assignments from the previous rotation, shifted
-  // down by one position (round-robin), respecting room exclusions.
-  if (parsed.data.rotate_from_previous && previousAssignments.length > 0) {
-    const choreIds = previousAssignments.map((a) => a.chore_id);
-    const residentIds = previousAssignments.map((a) => a.resident_id);
-
-    // Build exclusion set (resident-level + room-level)
-    const { data: exclusions } = await supabase
-      .from("chore_exclusions")
-      .select("chore_id, resident_id")
-      .in("chore_id", choreIds);
-    const exclusionSet = new Set(
-      (exclusions ?? []).map((e) => `${e.chore_id}:${e.resident_id}`)
-    );
-
-    const { data: roomExclusions } = await supabase
-      .from("chore_room_exclusions")
-      .select("chore_id, room_id")
-      .in("chore_id", choreIds);
-
-    const residentRoomMap = new Map<string, string>();
-    if (residentIds.length > 0) {
-      const { data: beds } = await supabase
-        .from("bed_assignments")
-        .select("resident_id, bed:beds(room_id)")
-        .in("resident_id", residentIds)
-        .is("end_date", null);
-      const bedRows = (beds ?? []) as unknown as Array<{
-        resident_id: string;
-        bed: { room_id: string } | null;
-      }>;
-      for (const row of bedRows) {
-        if (row.bed?.room_id) {
-          residentRoomMap.set(row.resident_id, row.bed.room_id);
-        }
-      }
-    }
-
-    for (const rx of roomExclusions ?? []) {
-      for (const [resId, roomId] of residentRoomMap.entries()) {
-        if (roomId === rx.room_id) {
-          exclusionSet.add(`${rx.chore_id}:${resId}`);
-        }
-      }
-    }
-
-    // Rotate: shift residents down by one position
-    const rotatedResidents = [...residentIds.slice(1), residentIds[0]];
-
-    // Resolve exclusion conflicts by swapping
-    const finalResidents = [...rotatedResidents];
-    for (let i = 0; i < previousAssignments.length; i++) {
-      const choreId = previousAssignments[i].chore_id;
-      if (exclusionSet.has(`${choreId}:${finalResidents[i]}`)) {
-        let swapped = false;
-        for (let j = i + 1; j < finalResidents.length; j++) {
-          if (
-            !exclusionSet.has(`${choreId}:${finalResidents[j]}`) &&
-            !exclusionSet.has(`${previousAssignments[j].chore_id}:${finalResidents[i]}`)
-          ) {
-            [finalResidents[i], finalResidents[j]] = [finalResidents[j], finalResidents[i]];
-            swapped = true;
-            break;
-          }
-        }
-        if (!swapped) {
-          finalResidents[i] = residentIds[i];
-        }
-      }
-    }
-
-    // Create assignments + signoffs in the new rotation
-    const dayToOffset: Record<string, number> = {
-      monday: 0, tuesday: 1, wednesday: 2, thursday: 3,
-      friday: 4, saturday: 5, sunday: 6,
-    };
-
-    for (let i = 0; i < previousAssignments.length; i++) {
-      const prev = previousAssignments[i];
-      const newResidentId = finalResidents[i];
-
-      const { data: assignment } = await supabase
-        .from("chore_rotation_assignments")
-        .insert({
-          rotation_id: data.id,
-          chore_id: prev.chore_id,
-          resident_id: newResidentId,
-          assigned_by: user.id,
-        })
-        .select("id")
-        .single();
-
-      if (!assignment) continue;
-
-      const choreData = prev.chore as { days_of_week?: string[]; cycle_weeks?: number } | null;
-      const choreDays: string[] = choreData?.days_of_week ?? ["monday", "wednesday", "friday"];
-      const choreCycleWeeks: number = choreData?.cycle_weeks ?? 2;
-
-      const signoffs = [];
-      for (let weekNum = 1; weekNum <= choreCycleWeeks; weekNum++) {
-        const weekOffset = (weekNum - 1) * 7;
-        for (const day of choreDays) {
-          const offset = dayToOffset[day];
-          if (offset === undefined) continue;
-          signoffs.push({
-            rotation_assignment_id: assignment.id,
-            sign_off_date: addCalendarDays(parsed.data.cycle_start_date, weekOffset + offset),
-            day_of_week: day,
-            week_number: weekNum,
-            status: "pending",
-          });
-        }
-      }
-
-      if (signoffs.length > 0) {
-        await supabase.from("chore_signoffs").insert(signoffs);
-      }
-    }
-  }
-
-  await logActivity({
+  const result = await performRotation(supabase, {
     houseId: parsed.data.house_id,
+    cycleStartDate: parsed.data.cycle_start_date,
     actorId: user.id,
-    eventType: "rotation_created",
-    entityType: "chore_rotation",
-    entityId: data.id,
-    description: `New ${maxCycleWeeks}-week chore rotation started by ${user.full_name} (${parsed.data.cycle_start_date})${parsed.data.rotate_from_previous ? " — residents rotated from previous cycle" : ""}`,
+    actorName: user.full_name,
+    assignChores: parsed.data.rotate_from_previous ?? false,
   });
+  if (result.error) return { error: result.error };
 
   revalidatePath("/chores");
   return {};
@@ -584,83 +403,17 @@ export async function rotateSchedule(rotationId: string) {
     return { error: "Need at least 2 assigned chores to rotate" };
   }
 
-  // Get resident-level exclusions for this house's chores
+  // Fairly re-deal this rotation's chores across ALL active residents
+  // in the house (not just the residents already holding chores) so
+  // double-ups and sit-outs rotate cycle over cycle.
   const choreIds = assignments.map((a) => a.chore_id);
-  const { data: exclusions } = await supabase
-    .from("chore_exclusions")
-    .select("chore_id, resident_id")
-    .in("chore_id", choreIds);
+  const fair = await buildFairAssignments(supabase, rotation.house_id, {
+    onlyChoreIds: choreIds,
+  });
 
-  const exclusionSet = new Set(
-    (exclusions ?? []).map((e) => `${e.chore_id}:${e.resident_id}`)
-  );
-
-  // Also collect room-level exclusions. Any resident currently bedded
-  // in an excluded room is treated the same as a resident-level
-  // exclusion for that chore.
-  const { data: roomExclusions } = await supabase
-    .from("chore_room_exclusions")
-    .select("chore_id, room_id")
-    .in("chore_id", choreIds);
-
-  // Map resident_id -> current room_id for every resident in this rotation.
-  const residentIds = assignments.map((a) => a.resident_id);
-  const residentRoomMap = new Map<string, string>();
-  if (residentIds.length > 0) {
-    const { data: beds } = await supabase
-      .from("bed_assignments")
-      .select("resident_id, bed:beds(room_id)")
-      .in("resident_id", residentIds)
-      .is("end_date", null);
-    const bedRows = (beds ?? []) as unknown as Array<{ resident_id: string; bed: { room_id: string } | null }>;
-    for (const row of bedRows) {
-      if (row.bed?.room_id) {
-        residentRoomMap.set(row.resident_id, row.bed.room_id);
-      }
-    }
-  }
-
-  // Derive per-chore excluded resident set (from room exclusions) and
-  // merge with the resident-level exclusionSet.
-  for (const rx of roomExclusions ?? []) {
-    for (const [residentId, roomId] of residentRoomMap.entries()) {
-      if (roomId === rx.room_id) {
-        exclusionSet.add(`${rx.chore_id}:${residentId}`);
-      }
-    }
-  }
-
-  // Rotate residents: shift by one position (round-robin)
-  const rotatedResidents = [...residentIds.slice(1), residentIds[0]];
-
-  // Check for exclusion conflicts and skip excluded residents
-  const finalResidents = [...rotatedResidents];
-  for (let i = 0; i < assignments.length; i++) {
-    const choreId = assignments[i].chore_id;
-    if (exclusionSet.has(`${choreId}:${finalResidents[i]}`)) {
-      // Find the next non-excluded resident
-      let swapped = false;
-      for (let j = i + 1; j < finalResidents.length; j++) {
-        if (
-          !exclusionSet.has(`${choreId}:${finalResidents[j]}`) &&
-          !exclusionSet.has(`${assignments[j].chore_id}:${finalResidents[i]}`)
-        ) {
-          [finalResidents[i], finalResidents[j]] = [finalResidents[j], finalResidents[i]];
-          swapped = true;
-          break;
-        }
-      }
-      if (!swapped) {
-        // If can't swap, keep original assignment for this chore
-        finalResidents[i] = residentIds[i];
-      }
-    }
-  }
-
-  // Update each assignment with new resident and recreate signoffs
-  for (let i = 0; i < assignments.length; i++) {
-    const assignment = assignments[i];
-    const newResidentId = finalResidents[i];
+  // Update each assignment with its fair resident and recreate signoffs
+  for (const assignment of assignments) {
+    const newResidentId = fair.get(assignment.chore_id) ?? assignment.resident_id;
 
     // Update the assignment
     await supabase
@@ -674,40 +427,15 @@ export async function rotateSchedule(rotationId: string) {
       .delete()
       .eq("rotation_assignment_id", assignment.id);
 
-    // Recreate signoffs for new assignment
-    const choreData = assignment.chore as unknown as { days_of_week?: string[]; cycle_weeks?: number } | null;
-    const choreDays: string[] = choreData?.days_of_week ?? ["monday", "wednesday", "friday"];
-    const choreCycleWeeks: number = choreData?.cycle_weeks ?? 2;
-
-    const dayToOffset: Record<string, number> = {
-      monday: 0, tuesday: 1, wednesday: 2, thursday: 3,
-      friday: 4, saturday: 5, sunday: 6,
-    };
-
-    const signoffs = [];
-    const startDate = new Date(rotation.cycle_start_date);
-
-    for (let weekNum = 1; weekNum <= choreCycleWeeks; weekNum++) {
-      const weekOffset = (weekNum - 1) * 7;
-      for (const day of choreDays) {
-        const offset = dayToOffset[day];
-        if (offset === undefined) continue;
-        const signoffDateStr = addCalendarDays(
-          rotation.cycle_start_date,
-          weekOffset + offset
-        );
-        // Skip past days (see rotateTodayStr comment near rotation fetch).
-        if (signoffDateStr < rotateTodayStr) continue;
-        signoffs.push({
-          rotation_assignment_id: assignment.id,
-          sign_off_date: signoffDateStr,
-          day_of_week: day,
-          week_number: weekNum,
-          status: "pending",
-        });
-      }
-    }
-
+    // Recreate signoffs for new assignment, skipping past days (see
+    // rotateTodayStr comment near the rotation fetch).
+    const choreData = assignment.chore as unknown as { days_of_week?: string[] | null; cycle_weeks?: number | null } | null;
+    const signoffs = buildSignoffRows(
+      assignment.id,
+      rotation.cycle_start_date,
+      { days_of_week: choreData?.days_of_week ?? null, cycle_weeks: choreData?.cycle_weeks ?? null },
+      rotateTodayStr
+    );
     if (signoffs.length > 0) {
       await supabase.from("chore_signoffs").insert(signoffs);
     }

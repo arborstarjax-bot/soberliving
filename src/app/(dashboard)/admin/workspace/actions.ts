@@ -32,6 +32,10 @@ export async function updateWorkspaceSettings(
     require_application: boolean;
     require_commitment: boolean;
     enable_payments: boolean;
+    auto_cycle_chores: boolean;
+    auto_demerit_missed_chores: boolean;
+    require_chore_photo: boolean;
+    require_meeting_photo: boolean;
   }
 ) {
   const user = await requireRole("admin");
@@ -45,6 +49,10 @@ export async function updateWorkspaceSettings(
       require_application: settings.require_application,
       require_commitment: settings.require_commitment,
       enable_payments: settings.enable_payments,
+      auto_cycle_chores: settings.auto_cycle_chores,
+      auto_demerit_missed_chores: settings.auto_demerit_missed_chores,
+      require_chore_photo: settings.require_chore_photo,
+      require_meeting_photo: settings.require_meeting_photo,
       updated_at: new Date().toISOString(),
     })
     .eq("workspace_id", workspaceId);

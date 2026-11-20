@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { sendWebPush, sendWebPushToMany } from "@/lib/push";
-import { getHouseToday, DEFAULT_TIMEZONE } from "@/lib/timezone";
+import { getHouseToday, DEFAULT_TIMEZONE, addCalendarDays } from "@/lib/timezone";
+import { performRotation } from "@/lib/chore-rotation";
 
 // Vercel Cron — runs daily at noon and 10 PM Eastern (16:00 & 02:00 UTC).
 //
@@ -88,6 +89,46 @@ export async function GET(request: NextRequest) {
     const admin = createAdminClient();
     const today = getHouseToday(DEFAULT_TIMEZONE);
 
+    // Auto-cycle: when a workspace enables it, a house whose current
+    // rotation has ended gets a fresh fairly-dealt rotation. Starts the
+    // day after the old cycle (or today, if the cron was off long enough
+    // that starting back then would be in the past).
+    let autoCycled = 0;
+    const { data: endedRotations } = await admin
+      .from("chore_rotations")
+      .select("id, house_id, cycle_end_date, house:houses(workspace_id, timezone)")
+      .eq("is_current", true)
+      .lt("cycle_end_date", today);
+
+    for (const rot of endedRotations ?? []) {
+      const house = rot.house as unknown as {
+        workspace_id: string | null;
+        timezone: string | null;
+      } | null;
+      if (!house?.workspace_id) continue;
+      const { data: ws } = await admin
+        .from("workspace_settings")
+        .select("auto_cycle_chores")
+        .eq("workspace_id", house.workspace_id)
+        .maybeSingle();
+      if (!ws?.auto_cycle_chores) continue;
+
+      const houseToday = getHouseToday(house.timezone ?? DEFAULT_TIMEZONE);
+      if ((rot.cycle_end_date as string) >= houseToday) continue;
+      const nextStart = addCalendarDays(rot.cycle_end_date as string, 1);
+      const cycleStart = nextStart > houseToday ? nextStart : houseToday;
+
+      const result = await performRotation(admin, {
+        houseId: rot.house_id,
+        cycleStartDate: cycleStart,
+        actorId: null,
+        actorName: "auto-cycle",
+        assignChores: true,
+      });
+      if (!result.error) autoCycled++;
+      else console.error(`[cron/chore-reminders] auto-cycle failed for house ${rot.house_id}:`, result.error);
+    }
+
     const { data: signoffs } = await admin
       .from("chore_signoffs")
       .select(
@@ -105,6 +146,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         ok: true,
         sent: 0,
+        autoCycled,
         variant: isEvening ? "evening" : "noon",
         durationMs: Date.now() - startedAt,
       });
@@ -199,6 +241,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       sent,
+      autoCycled,
       variant: isEvening ? "evening" : "noon",
       durationMs: Date.now() - startedAt,
     });

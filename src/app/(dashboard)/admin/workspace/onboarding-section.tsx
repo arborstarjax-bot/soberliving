@@ -52,6 +52,18 @@ export function OnboardingSection({
   const [enablePayments, setEnablePayments] = useState(
     settings?.enable_payments ?? true
   );
+  const [autoCycleChores, setAutoCycleChores] = useState(
+    settings?.auto_cycle_chores ?? false
+  );
+  const [autoDemerit, setAutoDemerit] = useState(
+    settings?.auto_demerit_missed_chores ?? false
+  );
+  const [requireChorePhoto, setRequireChorePhoto] = useState(
+    settings?.require_chore_photo ?? false
+  );
+  const [requireMeetingPhoto, setRequireMeetingPhoto] = useState(
+    settings?.require_meeting_photo ?? false
+  );
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
 
@@ -61,6 +73,10 @@ export function OnboardingSection({
         require_application: requireApp,
         require_commitment: requireCommitment,
         enable_payments: enablePayments,
+        auto_cycle_chores: autoCycleChores,
+        auto_demerit_missed_chores: autoDemerit,
+        require_chore_photo: requireChorePhoto,
+        require_meeting_photo: requireMeetingPhoto,
       });
       if (result.error) {
         setMessage(result.error);
@@ -72,6 +88,7 @@ export function OnboardingSection({
   }
 
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle>Resident Onboarding</CardTitle>
@@ -145,5 +162,84 @@ export function OnboardingSection({
         </div>
       </CardContent>
     </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle>Chores &amp; Meetings</CardTitle>
+        <CardDescription>
+          Automation and photo requirements for this workspace
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <Label htmlFor="auto-cycle">Auto-Cycle Chores</Label>
+            <p className="text-sm text-muted-foreground">
+              When enabled, a new chore rotation starts automatically when the
+              current cycle ends — chores are re-dealt fairly across all active
+              residents. When disabled, staff start each rotation manually.
+            </p>
+          </div>
+          <Toggle
+            id="auto-cycle"
+            checked={autoCycleChores}
+            onCheckedChange={setAutoCycleChores}
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <Label htmlFor="auto-demerit">Auto-Demerit on Missed Chore</Label>
+            <p className="text-sm text-muted-foreground">
+              When enabled, a chore not marked completed by the next day gets a
+              1-point demerit automatically. When disabled, missed chores are
+              flagged for staff to issue a warning or demerit by hand.
+            </p>
+          </div>
+          <Toggle
+            id="auto-demerit"
+            checked={autoDemerit}
+            onCheckedChange={setAutoDemerit}
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <Label htmlFor="require-chore-photo">Require Photo for Chores</Label>
+            <p className="text-sm text-muted-foreground">
+              When enabled, residents must upload a photo to sign off a chore.
+              When disabled, photos are optional unless set per resident.
+            </p>
+          </div>
+          <Toggle
+            id="require-chore-photo"
+            checked={requireChorePhoto}
+            onCheckedChange={setRequireChorePhoto}
+          />
+        </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <Label htmlFor="require-meeting-photo">Require Photo for Meetings</Label>
+            <p className="text-sm text-muted-foreground">
+              When enabled, residents must upload a photo (e.g. of a signed
+              slip) when logging a meeting signoff.
+            </p>
+          </div>
+          <Toggle
+            id="require-meeting-photo"
+            checked={requireMeetingPhoto}
+            onCheckedChange={setRequireMeetingPhoto}
+          />
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button onClick={handleSave} disabled={pending}>
+            {pending ? "Saving..." : "Save Changes"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+    </>
   );
 }
