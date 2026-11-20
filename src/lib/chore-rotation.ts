@@ -180,9 +180,11 @@ export async function performRotation(
     actorId: string | null;
     actorName: string;
     assignChores: boolean;
+    cycleLengthDays?: number;
   }
 ): Promise<{ rotationId?: string; error?: string }> {
   const { houseId, cycleStartDate, actorId, actorName, assignChores } = opts;
+  const cycleLengthDays = opts.cycleLengthDays;
 
   await supabase
     .from("chore_rotations")
@@ -205,7 +207,12 @@ export async function performRotation(
     .insert({
       house_id: houseId,
       cycle_start_date: cycleStartDate,
-      cycle_end_date: addCalendarDays(cycleStartDate, maxCycleWeeks * 7 - 1),
+      cycle_end_date: addCalendarDays(
+        cycleStartDate,
+        cycleLengthDays && cycleLengthDays > 0
+          ? cycleLengthDays - 1
+          : maxCycleWeeks * 7 - 1
+      ),
       is_current: true,
       created_by: actorId,
     })

@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
       if (!house?.workspace_id) continue;
       const { data: ws } = await admin
         .from("workspace_settings")
-        .select("auto_cycle_chores")
+        .select("auto_cycle_chores, auto_cycle_frequency")
         .eq("workspace_id", house.workspace_id)
         .maybeSingle();
       if (!ws?.auto_cycle_chores) continue;
@@ -124,12 +124,20 @@ export async function GET(request: NextRequest) {
       const nextStart = addCalendarDays(rot.cycle_end_date as string, 1);
       const cycleStart = nextStart > houseToday ? nextStart : houseToday;
 
+      const freqDays: Record<string, number> = {
+        daily: 1,
+        weekly: 7,
+        biweekly: 14,
+        monthly: 28,
+      };
       const result = await performRotation(admin, {
         houseId: rot.house_id,
         cycleStartDate: cycleStart,
         actorId: null,
         actorName: "auto-cycle",
         assignChores: true,
+        cycleLengthDays:
+          freqDays[(ws.auto_cycle_frequency as string) ?? "weekly"] ?? 7,
       });
       if (!result.error) autoCycled++;
       else console.error(`[cron/chore-reminders] auto-cycle failed for house ${rot.house_id}:`, result.error);
