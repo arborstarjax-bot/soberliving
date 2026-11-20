@@ -1004,6 +1004,18 @@ export async function updateRentTerms(
     return { error: "No active commitment found" };
   }
 
+  const { data: commitmentHouse } = await admin
+    .from("houses")
+    .select("workspace_id")
+    .eq("id", commitment.house_id)
+    .maybeSingle();
+  if (
+    !commitmentHouse ||
+    commitmentHouse.workspace_id !== user.workspace_id
+  ) {
+    return { error: "No active commitment found" };
+  }
+
   // The anchor for the next cycle is the day AFTER the due date
   // (rent is due the day before the period it covers).
   const anchorDate = new Date(`${nextDue}T12:00:00`);
@@ -1022,10 +1034,35 @@ export async function updateRentTerms(
     .eq("id", commitmentId);
   if (error) return { error: error.message };
 
-  // Rebuild the open rent schedule under the new terms. Past-due
-  // open charges are owed debt and stay; the opener only removes
-  // future open rows and inserts what's now due.
+  // Rebuild the open rent schedule under the new terms. Clearing
+  // every OPEN rent row (not just future ones) keeps an earlier
+  // same-month anchor from skipping the requested cycle; the opener
+  // re-creates every charge due ≤ today at the new terms.
+  await admin
+    .from("payment_charges")
+    .delete()
+    .eq("commitment_id", commitmentId)
+    .eq("charge_type", "rent")
+    .eq("status", "open");
   await openRentChargesForCommitment(commitmentId);
+
+  // Keep an open admin-fee charge in sync with the new value:
+  // null clears it, otherwise the latest amount wins.
+  if (adminFee === null) {
+    await admin
+      .from("payment_charges")
+      .delete()
+      .eq("commitment_id", commitmentId)
+      .eq("charge_type", "admin_fee")
+      .eq("status", "open");
+  } else {
+    await admin
+      .from("payment_charges")
+      .update({ amount: adminFee })
+      .eq("commitment_id", commitmentId)
+      .eq("charge_type", "admin_fee")
+      .in("status", ["open", "partial"]);
+  }
 
   const { data: resident } = await admin
     .from("residents")

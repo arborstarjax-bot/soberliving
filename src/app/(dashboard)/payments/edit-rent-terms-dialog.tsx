@@ -6,7 +6,7 @@
 // plain rent change (the signed agreement PDF stays as the original
 // contract document).
 
-import { useActionState, useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { updateRentTerms } from "./actions";
 import { Button } from "@/components/ui/button";
@@ -40,14 +40,20 @@ export function EditRentTermsDialog({
 }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [state, action, pending] = useActionState(updateRentTerms, undefined);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
 
-  if (open && !pending && state && !state.error) {
-    queueMicrotask(() => {
-      setOpen(false);
-      router.refresh();
+  const submit = (formData: FormData) => {
+    startTransition(async () => {
+      const result = await updateRentTerms(undefined, formData);
+      if (result?.error) {
+        setError(result.error);
+      } else {
+        setOpen(false);
+        router.refresh();
+      }
     });
-  }
+  };
 
   return (
     <>
@@ -66,7 +72,7 @@ export function EditRentTermsDialog({
           <DialogHeader>
             <DialogTitle>Rent Terms — {residentName}</DialogTitle>
           </DialogHeader>
-          <form action={action} className="space-y-4">
+          <form action={submit} className="space-y-4">
             <input type="hidden" name="commitment_id" value={commitmentId} />
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
@@ -126,9 +132,7 @@ export function EditRentTermsDialog({
                 stay on the books.
               </p>
             </div>
-            {state?.error && (
-              <p className="text-sm text-destructive">{state.error}</p>
-            )}
+            {error && <p className="text-sm text-destructive">{error}</p>}
             <DialogFooter>
               <Button
                 type="button"
