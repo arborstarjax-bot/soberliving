@@ -37,6 +37,7 @@ export async function updateWorkspaceSettings(
     require_chore_photo: boolean;
     require_meeting_photo: boolean;
     enabled_modules: string[];
+    pass_approver: "manager" | "admin" | "both";
   }
 ) {
   const user = await requireRole("admin");
@@ -55,6 +56,7 @@ export async function updateWorkspaceSettings(
       require_chore_photo: settings.require_chore_photo,
       require_meeting_photo: settings.require_meeting_photo,
       enabled_modules: settings.enabled_modules,
+      pass_approver: settings.pass_approver,
       updated_at: new Date().toISOString(),
     })
     .eq("workspace_id", workspaceId);

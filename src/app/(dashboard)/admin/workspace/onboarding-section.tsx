@@ -68,6 +68,9 @@ export function OnboardingSection({
   const [enabledModules, setEnabledModules] = useState<string[]>(
     settings?.enabled_modules ?? WORKSPACE_MODULES.map((m) => m.slug)
   );
+  const [passApprover, setPassApprover] = useState<
+    "manager" | "admin" | "both"
+  >(settings?.pass_approver ?? "both");
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
 
@@ -82,6 +85,7 @@ export function OnboardingSection({
         require_chore_photo: requireChorePhoto,
         require_meeting_photo: requireMeetingPhoto,
         enabled_modules: enabledModules,
+        pass_approver: passApprover,
       });
       if (result.error) {
         setMessage(result.error);
@@ -238,6 +242,71 @@ export function OnboardingSection({
           />
         </div>
 
+        <div className="flex items-center gap-3">
+          <Button onClick={handleSave} disabled={pending}>
+            {pending ? "Saving..." : "Save Changes"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle>Passes</CardTitle>
+        <CardDescription>
+          Who gives the final approval on an overnight pass
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-3">
+          {(
+            [
+              {
+                value: "both",
+                label: "House Manager, then Admin",
+                desc: "A house manager approves first, then an admin gives the final approval.",
+              },
+              {
+                value: "manager",
+                label: "House Manager only",
+                desc: "The house manager's approval is final — no admin step.",
+              },
+              {
+                value: "admin",
+                label: "Admin only",
+                desc: "Passes skip the house manager and go straight to an admin.",
+              },
+            ] as const
+          ).map((opt) => (
+            <label
+              key={opt.value}
+              className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition ${
+                passApprover === opt.value
+                  ? "border-primary bg-primary/5"
+                  : "border-border"
+              }`}
+            >
+              <input
+                type="radio"
+                name="pass-approver"
+                value={opt.value}
+                checked={passApprover === opt.value}
+                onChange={() => setPassApprover(opt.value)}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="block text-sm font-medium">{opt.label}</span>
+                <span className="block text-sm text-muted-foreground">
+                  {opt.desc}
+                </span>
+              </span>
+            </label>
+          ))}
+          <p className="text-xs text-muted-foreground">
+            The covering resident always approves first — this controls who
+            reviews the pass after them.
+          </p>
+        </div>
         <div className="flex items-center gap-3">
           <Button onClick={handleSave} disabled={pending}>
             {pending ? "Saving..." : "Save Changes"}
