@@ -10,11 +10,6 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 
-interface Step {
-  id: string;
-  label: string;
-  required?: boolean;
-}
 interface AckDoc {
   id: string;
   name: string;
@@ -22,27 +17,23 @@ interface AckDoc {
 }
 
 export function ChecklistView({
-  steps,
   rules,
   rulesDocId,
   ackDocs,
 }: {
-  steps: Step[];
   rules: string[];
   rulesDocId: string | null;
   ackDocs: AckDoc[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [checked, setChecked] = useState<Set<string>>(new Set());
   const [rulesChecked, setRulesChecked] = useState<Set<number>>(new Set());
   const [signatures, setSignatures] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
-  const missingStep = steps.some((s) => s.required && !checked.has(s.id));
   const missingRule = rulesChecked.size < rules.length;
   const missingAck = ackDocs.some((d) => !signatures[d.id]);
-  const blocked = missingStep || missingRule || missingAck;
+  const blocked = missingRule || missingAck;
 
   const openDoc = async (path: string) => {
     const res = await getDocumentUrl(path);
@@ -53,7 +44,7 @@ export function ChecklistView({
     setError(null);
     startTransition(async () => {
       const fd = new FormData();
-      fd.set("checked_steps", JSON.stringify([...checked]));
+      fd.set("checked_steps", "[]");
       fd.set(
         "acks",
         JSON.stringify(
@@ -66,7 +57,7 @@ export function ChecklistView({
         error?: string;
       };
       if (res?.error) setError(res.error);
-      else router.push("/rules");
+      else router.push("/dashboard");
     });
   };
 
@@ -74,36 +65,7 @@ export function ChecklistView({
     <div className="mx-auto max-w-lg space-y-6 py-6">
       <h1 className="text-2xl font-bold">Intake Checklist</h1>
 
-      {steps.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Steps</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {steps.map((s) => (
-              <label key={s.id} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={checked.has(s.id)}
-                  onChange={(e) =>
-                    setChecked((prev) => {
-                      const next = new Set(prev);
-                      if (e.target.checked) next.add(s.id);
-                      else next.delete(s.id);
-                      return next;
-                    })
-                  }
-                />
-                {s.label}
-                {s.required && (
-                  <span className="text-destructive">*</span>
-                )}
-              </label>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
+      
       {rules.length > 0 && (
         <Card>
           <CardHeader>

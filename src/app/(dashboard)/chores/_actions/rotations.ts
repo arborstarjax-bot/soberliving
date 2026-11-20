@@ -434,7 +434,8 @@ export async function rotateSchedule(rotationId: string) {
       assignment.id,
       rotation.cycle_start_date,
       { days_of_week: choreData?.days_of_week ?? null, cycle_weeks: choreData?.cycle_weeks ?? null },
-      rotateTodayStr
+      rotateTodayStr,
+      rotation.cycle_end_date
     );
     if (signoffs.length > 0) {
       await supabase.from("chore_signoffs").insert(signoffs);

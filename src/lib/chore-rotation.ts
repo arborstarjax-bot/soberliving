@@ -14,10 +14,16 @@ export type RotationChore = {
   cycle_weeks: number | null;
 };
 
-const DAY_TO_OFFSET: Record<string, number> = {
-  monday: 0, tuesday: 1, wednesday: 2, thursday: 3,
-  friday: 4, saturday: 5, sunday: 6,
-};
+// Weekday names indexed by getUTCDay() so a signoff's stored
+// `day_of_week` always matches the actual weekday of `sign_off_date`
+// — even when a cycle starts mid-week (daily/monthly auto-cycles).
+const WEEKDAY_NAMES = [
+  "sunday", "monday", "tuesday", "wednesday",
+  "thursday", "friday", "saturday",
+];
+function weekdayName(isoDate: string): string {
+  return WEEKDAY_NAMES[new Date(`${isoDate}T00:00:00Z`).getUTCDay()];
+}
 
 /**
  * Build a fair chore_id -> resident_id assignment map for a house.
@@ -137,31 +143,51 @@ export async function buildFairAssignments(
   return assignments;
 }
 
-/** Generate pending signoff rows for an assignment. */
+/**
+ * Generate pending signoff rows for an assignment.
+ *
+ * Walks the actual calendar days of the cycle so every row's
+ * `day_of_week` matches the real weekday of `sign_off_date` and no
+ * rows are created past `cycleEndDate`. `chore.cycle_weeks` caps how
+ * far out rows go when no end date is given; when it is, the
+ * rotation boundary wins (a daily cycle never gets week-long
+ * obligations, a monthly one isn't truncated at 2 weeks).
+ */
 export function buildSignoffRows(
   rotationAssignmentId: string,
   cycleStartDate: string,
   chore: Pick<RotationChore, "days_of_week" | "cycle_weeks">,
-  skipBeforeDate?: string
+  skipBeforeDate?: string,
+  cycleEndDate?: string
 ) {
-  const days = chore.days_of_week ?? ["monday", "wednesday", "friday"];
-  const weeks = chore.cycle_weeks ?? 2;
+  const days = new Set(
+    chore.days_of_week ?? ["monday", "wednesday", "friday"]
+  );
+  const spanDays = chore.cycle_weeks
+    ? chore.cycle_weeks * 7
+    : cycleEndDate
+      ? undefined
+      : 14;
   const rows = [];
-  for (let weekNum = 1; weekNum <= weeks; weekNum++) {
-    const weekOffset = (weekNum - 1) * 7;
-    for (const day of days) {
-      const offset = DAY_TO_OFFSET[day];
-      if (offset === undefined) continue;
-      const signOffDate = addCalendarDays(cycleStartDate, weekOffset + offset);
-      if (skipBeforeDate && signOffDate < skipBeforeDate) continue;
-      rows.push({
-        rotation_assignment_id: rotationAssignmentId,
-        sign_off_date: signOffDate,
-        day_of_week: day,
-        week_number: weekNum,
-        status: "pending",
-      });
+  let offset = 0;
+  // Iterate at most `spanDays` days from the start; when undefined,
+  // the loop is bounded by cycleEndDate instead.
+  while (spanDays === undefined || offset < spanDays) {
+    const signOffDate = addCalendarDays(cycleStartDate, offset);
+    if (cycleEndDate && signOffDate > cycleEndDate) break;
+    if (days.has(weekdayName(signOffDate))) {
+      if (!skipBeforeDate || signOffDate >= skipBeforeDate) {
+        rows.push({
+          rotation_assignment_id: rotationAssignmentId,
+          sign_off_date: signOffDate,
+          day_of_week: weekdayName(signOffDate),
+          week_number: Math.floor(offset / 7) + 1,
+          status: "pending",
+        });
+      }
     }
+    offset++;
+    if (offset > 400) break; // safety bound
   }
   return rows;
 }
@@ -202,17 +228,19 @@ export async function performRotation(
     ? Math.max(...choreList.map((c) => c.cycle_weeks ?? 2))
     : 2;
 
+  const cycleEndDate = addCalendarDays(
+    cycleStartDate,
+    cycleLengthDays && cycleLengthDays > 0
+      ? cycleLengthDays - 1
+      : maxCycleWeeks * 7 - 1
+  );
+
   const { data: rotation, error } = await supabase
     .from("chore_rotations")
     .insert({
       house_id: houseId,
       cycle_start_date: cycleStartDate,
-      cycle_end_date: addCalendarDays(
-        cycleStartDate,
-        cycleLengthDays && cycleLengthDays > 0
-          ? cycleLengthDays - 1
-          : maxCycleWeeks * 7 - 1
-      ),
+      cycle_end_date: cycleEndDate,
       is_current: true,
       created_by: actorId,
     })
@@ -238,7 +266,13 @@ export async function performRotation(
       if (!assignment) continue;
       const chore = choreById.get(choreId);
       if (!chore) continue;
-      const rows = buildSignoffRows(assignment.id, cycleStartDate, chore);
+      const rows = buildSignoffRows(
+        assignment.id,
+        cycleStartDate,
+        chore,
+        undefined,
+        cycleEndDate
+      );
       if (rows.length > 0) await supabase.from("chore_signoffs").insert(rows);
     }
   }
