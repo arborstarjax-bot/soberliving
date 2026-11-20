@@ -5,6 +5,7 @@ export const WORKSPACE_MODULES = [
   { slug: "attendance", label: "Attendance & Leave" },
   { slug: "bulletin", label: "Community Services" },
   { slug: "documents", label: "Resident Documents" },
+  { slug: "meetings", label: "Meetings" },
 ] as const;
 
 export type WorkspaceModule = (typeof WORKSPACE_MODULES)[number]["slug"];

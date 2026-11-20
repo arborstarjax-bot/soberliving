@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import {
-  Home,
+import {Home,
   ClipboardCheck,
   ShieldAlert,
   CalendarClock,
@@ -14,7 +13,7 @@ import {
   Flag,
   LogOut,
   X,
-} from "lucide-react";
+  CalendarCheck,} from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 import { usePrefetchRoutes } from "@/lib/use-prefetch-routes";
 
@@ -35,6 +34,7 @@ const PRIMARY_ITEMS: BottomNavItem[] = [
 
 const MORE_ITEMS: BottomNavItem[] = [
   { label: "Passes", href: "/passes", icon: CalendarClock, module: "attendance" },
+  { label: "Meetings", href: "/meetings", icon: CalendarCheck, module: "meetings" },
   { label: "My Documents", href: "/my-documents", icon: Folder, module: "documents" },
   { label: "Report", href: "/report", icon: Flag },
 ];
