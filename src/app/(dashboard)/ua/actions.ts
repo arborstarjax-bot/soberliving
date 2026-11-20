@@ -14,6 +14,11 @@ export async function drawUaTest(
 
   const houseId = String(formData.get("house_id") ?? "");
   const count = Math.max(1, Math.min(50, Number(formData.get("count")) || 0));
+  const reason = String(formData.get("reason") ?? "").trim() || null;
+  const manualIds = String(formData.get("resident_ids") ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
   if (!houseId) return { error: "Pick a house" };
 
   const admin = createAdminClient();
@@ -25,12 +30,19 @@ export async function drawUaTest(
   const pool = (residents ?? []).map((r) => r.id as string);
   if (pool.length === 0) return { error: "No active residents in this house" };
 
-  // Fisher-Yates shuffle, take `count`
-  for (let i = pool.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pool[i], pool[j]] = [pool[j], pool[i]];
+  let picked: string[];
+  if (manualIds.length > 0) {
+    picked = pool.filter((id) => manualIds.includes(id));
+    if (picked.length === 0)
+      return { error: "No selected residents are active in this house" };
+  } else {
+    // Fisher-Yates shuffle, take `count`
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    picked = pool.slice(0, Math.min(count, pool.length));
   }
-  const picked = pool.slice(0, Math.min(count, pool.length));
 
   const { data: test, error: tErr } = await admin
     .from("ua_tests")
@@ -38,6 +50,7 @@ export async function drawUaTest(
       workspace_id: user.workspace_id,
       house_id: houseId,
       count: picked.length,
+      reason,
       created_by: user.id,
     })
     .select("id")
