@@ -35,17 +35,31 @@ interface Test {
   id: string;
   house_id: string | null;
   count: number;
+  reason: string | null;
   status: string;
   created_at: string;
   house: { name: string } | null;
   ua_results: Result[];
 }
 
+const UA_REASONS = [
+  "Random",
+  "Returning from leave",
+  "Suspected use",
+  "House-wide",
+  "Other",
+];
+
 export function UaView({
   houses,
   tests,
+  residentsByHouse = {},
 }: {
   houses: { id: string; name: string }[];
+  residentsByHouse?: Record<
+    string,
+    { id: string; full_name: string }[]
+  >;
   tests: Test[];
 }) {
   const router = useRouter();
@@ -53,6 +67,9 @@ export function UaView({
   const [error, setError] = useState<string | null>(null);
   const [houseId, setHouseId] = useState(houses[0]?.id ?? "");
   const [count, setCount] = useState(3);
+  const [mode, setMode] = useState<"random" | "manual">("random");
+  const [reason, setReason] = useState(UA_REASONS[0]);
+  const [pickedIds, setPickedIds] = useState<Set<string>>(new Set());
 
   const open = tests.filter((t) => t.status === "open");
   const archived = tests.filter((t) => t.status !== "open");
@@ -63,6 +80,8 @@ export function UaView({
       const fd = new FormData();
       fd.set("house_id", houseId);
       fd.set("count", String(count));
+      fd.set("reason", reason);
+      if (mode === "manual") fd.set("resident_ids", [...pickedIds].join(","));
       const res = await drawUaTest(undefined, fd);
       if (res?.error) setError(res.error);
       else router.refresh();
@@ -190,6 +209,27 @@ export function UaView({
         </CardHeader>
         <CardContent className="flex flex-wrap items-end gap-3">
           <div className="space-y-1">
+            <Label>Mode</Label>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={mode === "random" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setMode("random")}
+              >
+                Random
+              </Button>
+              <Button
+                type="button"
+                variant={mode === "manual" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setMode("manual")}
+              >
+                Pick residents
+              </Button>
+            </div>
+          </div>
+          <div className="space-y-1">
             <Label htmlFor="ua-house">House</Label>
             <select
               id="ua-house"
@@ -205,6 +245,22 @@ export function UaView({
             </select>
           </div>
           <div className="space-y-1">
+            <Label htmlFor="ua-reason">Reason</Label>
+            <select
+              id="ua-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="flex h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+            >
+              {UA_REASONS.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </div>
+          {mode === "random" && (
+          <div className="space-y-1">
             <Label htmlFor="ua-count">How many UAs</Label>
             <Input
               id="ua-count"
@@ -216,7 +272,42 @@ export function UaView({
               className="w-24"
             />
           </div>
-          <Button onClick={draw} disabled={pending || !houseId}>
+          )}
+          {mode === "manual" && (
+            <div className="w-full space-y-1">
+              <Label>Select residents</Label>
+              <div className="flex max-h-40 flex-wrap gap-3 overflow-y-auto rounded-md border p-3 text-sm">
+                {(residentsByHouse[houseId] ?? []).map((r) => (
+                  <label key={r.id} className="flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={pickedIds.has(r.id)}
+                      onChange={(e) =>
+                        setPickedIds((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(r.id);
+                          else next.delete(r.id);
+                          return next;
+                        })
+                      }
+                    />
+                    {r.full_name}
+                  </label>
+                ))}
+                {(residentsByHouse[houseId] ?? []).length === 0 && (
+                  <span className="text-muted-foreground">
+                    No active residents in this house
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+          <Button
+            onClick={draw}
+            disabled={
+              pending || !houseId || (mode === "manual" && pickedIds.size === 0)
+            }
+          >
             Draw Names
           </Button>
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -227,7 +318,8 @@ export function UaView({
         <Card key={t.id}>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-base">
-              {t.house?.name ?? "House"} — {t.count} drawn —{" "}
+              {t.house?.name ?? "House"} — {t.count} drawn
+              {t.reason ? ` — ${t.reason}` : ""} —{" "}
               {new Date(t.created_at).toLocaleString()}
             </CardTitle>
             <div className="flex gap-2">
@@ -256,7 +348,8 @@ export function UaView({
             {archived.map((t) => (
               <div key={t.id} className="space-y-2">
                 <p className="text-sm font-medium">
-                  {t.house?.name ?? "House"} —{" "}
+                  {t.house?.name ?? "House"}
+              {t.reason ? ` — ${t.reason}` : ""} —{" "}
                   {new Date(t.created_at).toLocaleString()}
                 </p>
                 {renderResults(t)}

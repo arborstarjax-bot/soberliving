@@ -15,21 +15,38 @@ export default async function UaPage() {
     redirect("/dashboard");
 
   const admin = createAdminClient();
-  const [{ data: houses }, { data: tests }] = await Promise.all([
+  const [{ data: houses }, { data: residents }, { data: tests }] =
+    await Promise.all([
     admin
       .from("houses")
       .select("id, name")
       .eq("workspace_id", user.workspace_id)
       .order("name"),
     admin
+      .from("residents")
+      .select("id, full_name, house_id")
+      .in("house_id", (await admin.from("houses").select("id").eq("workspace_id", user.workspace_id)).data?.map((h) => h.id) ?? [])
+      .eq("status", "active")
+      .order("full_name"),
+    admin
       .from("ua_tests")
       .select(
-        "id, house_id, count, status, created_at, house:houses(name), ua_results(id, resident_id, result, photo_path, resident:residents(full_name))"
+        "id, house_id, count, reason, status, created_at, house:houses(name), ua_results(id, resident_id, result, photo_path, resident:residents(full_name))"
       )
       .eq("workspace_id", user.workspace_id)
       .order("created_at", { ascending: false })
       .limit(50),
-  ]);
+    ]);
+
+  const residentsByHouse: Record<string, { id: string; full_name: string }[]> =
+    {};
+  for (const r of residents ?? []) {
+    if (!residentsByHouse[r.house_id]) residentsByHouse[r.house_id] = [];
+    residentsByHouse[r.house_id].push({
+      id: r.id,
+      full_name: r.full_name,
+    });
+  }
 
   return (
     <div className="space-y-6">
@@ -42,6 +59,7 @@ export default async function UaPage() {
       </div>
       <UaView
         houses={houses ?? []}
+        residentsByHouse={residentsByHouse}
         tests={
           (tests ?? []).map((t) => ({
             ...t,
