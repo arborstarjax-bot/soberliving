@@ -106,6 +106,10 @@ export async function signup(
   const fullName = (formData.get("full_name") as string | null)?.trim() ?? "";
   const workspaceName = (formData.get("workspace_name") as string | null)?.trim() ?? "";
   const workspaceCode = (formData.get("workspace_code") as string | null)?.trim() ?? "";
+  // Lockdown: if the form carries a workspace_code field at all, this
+  // is a join attempt — an empty or bad code must fail, never fall
+  // through to creating a new workspace.
+  const attemptedJoin = formData.has("workspace_code");
 
   if (!email) {
     return { error: "Email is required" };
@@ -117,7 +121,10 @@ export async function signup(
     return { error: "Password must be at least 8 characters" };
   }
 
-  const isJoinFlow = !!workspaceCode;
+  const isJoinFlow = attemptedJoin;
+  if (isJoinFlow && !workspaceCode) {
+    return { error: "Invalid invite link. Please check with your administrator." };
+  }
 
   // If creating a workspace, name is required
   if (!isJoinFlow && !workspaceName) {
