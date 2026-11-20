@@ -1085,3 +1085,36 @@ export async function getRoomsForHouse(
     return { ok: false, error: `Unexpected error: ${message}` };
   }
 }
+
+/** Staff tick a workspace intake step on/off for a specific applicant. */
+export async function setStaffIntakeCheckoff(
+  residentUserId: string,
+  stepId: string,
+  checked: boolean
+) {
+  const user = await requireAuth();
+  if (user.role === "resident" || !user.workspace_id) {
+    return { error: "Not authorized" };
+  }
+  const admin = createAdminClient();
+  if (checked) {
+    const { error } = await admin.from("intake_checkoffs").upsert(
+      {
+        user_id: residentUserId,
+        workspace_id: user.workspace_id,
+        step_id: stepId,
+      },
+      { onConflict: "user_id,workspace_id,step_id" }
+    );
+    if (error) return { error: error.message };
+  } else {
+    const { error } = await admin
+      .from("intake_checkoffs")
+      .delete()
+      .eq("user_id", residentUserId)
+      .eq("workspace_id", user.workspace_id)
+      .eq("step_id", stepId);
+    if (error) return { error: error.message };
+  }
+  return {};
+}

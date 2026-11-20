@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { MarkCompleteButton } from "./mark-complete-button";
+import { IntakeChecklistPanel } from "./intake-checklist-panel";
 import { ReopenButton } from "./reopen-button";
 import { ApplicationReview } from "./application-review";
 import { EditPendingCommitmentDialog } from "./edit-pending-commitment-dialog";
@@ -146,6 +147,26 @@ export default async function IntakeReviewPage({
     (intakeForms ?? []).map((f) => [f.user_id, f])
   );
 
+  // Workspace intake checklist steps + which are already checked off
+  // per applicant (staff tick these during the in-person intake).
+  const intakeSteps = (wsSettings?.intake_steps ?? []).filter(
+    (s) => s.label?.trim()
+  );
+  const { data: checkoffs } =
+    intakeSteps.length > 0
+      ? await adminClient
+          .from("intake_checkoffs")
+          .select("user_id, step_id")
+          .eq("workspace_id", currentUser.workspace_id ?? "")
+          .in("user_id", visibleIds.length > 0 ? visibleIds : ["none"])
+      : { data: [] };
+  const checkedByUser = new Map<string, string[]>();
+  for (const c of checkoffs ?? []) {
+    const list = checkedByUser.get(c.user_id) ?? [];
+    list.push(c.step_id as string);
+    checkedByUser.set(c.user_id, list);
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -220,6 +241,13 @@ export default async function IntakeReviewPage({
                   requireCommitment={requireCommitment}
                   facilityName={facilityName}
                 />
+                <div className="mt-4">
+                  <IntakeChecklistPanel
+                    residentUserId={user.id}
+                    steps={intakeSteps}
+                    checkedStepIds={checkedByUser.get(user.id) ?? []}
+                  />
+                </div>
               </CardContent>
             </Card>
           );

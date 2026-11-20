@@ -1,18 +1,16 @@
 import type { createClient } from "@/lib/supabase/server";
 import { getHouseToday, DEFAULT_TIMEZONE, addCalendarDays } from "@/lib/timezone";
 
-// Day-of-week → offset from the rotation's cycle_start_date.
-// Rotations start on Monday by convention (enforced by the start
-// dialog), so Monday is offset 0.
-const DAY_TO_OFFSET: Record<string, number> = {
-  monday: 0,
-  tuesday: 1,
-  wednesday: 2,
-  thursday: 3,
-  friday: 4,
-  saturday: 5,
-  sunday: 6,
-};
+// Weekday names indexed by getUTCDay() so a regenerated signoff's
+// `day_of_week` matches the real weekday of `sign_off_date` even
+// when a cycle starts mid-week.
+const WEEKDAY_NAMES = [
+  "sunday", "monday", "tuesday", "wednesday",
+  "thursday", "friday", "saturday",
+];
+function weekdayName(isoDate: string): string {
+  return WEEKDAY_NAMES[new Date(`${isoDate}T00:00:00Z`).getUTCDay()];
+}
 
 type SupabaseServer = Awaited<ReturnType<typeof createClient>>;
 
@@ -64,7 +62,7 @@ export async function regenerateFutureSignoffsForChore(
   const { data: assignments } = await supabase
     .from("chore_rotation_assignments")
     .select(
-      "id, rotation:chore_rotations!inner(cycle_start_date, is_current)"
+      "id, rotation:chore_rotations!inner(cycle_start_date, cycle_end_date, is_current)"
     )
     .eq("chore_id", choreId)
     .eq("rotation.is_current", true);
@@ -74,7 +72,11 @@ export async function regenerateFutureSignoffsForChore(
   for (const raw of assignments) {
     const row = raw as unknown as {
       id: string;
-      rotation: { cycle_start_date: string; is_current: boolean } | null;
+      rotation: {
+        cycle_start_date: string;
+        cycle_end_date: string | null;
+        is_current: boolean;
+      } | null;
     };
     const cycleStartDate = row.rotation?.cycle_start_date;
     if (!cycleStartDate) continue;
@@ -116,27 +118,29 @@ export async function regenerateFutureSignoffsForChore(
       status: string;
     }> = [];
 
-    for (let weekNum = 1; weekNum <= cycleWeeks; weekNum++) {
-      const weekOffset = (weekNum - 1) * 7;
-      for (const day of choreDays) {
-        const offset = DAY_TO_OFFSET[day];
-        if (offset === undefined) continue;
-        const signoffDateStr = addCalendarDays(
-          cycleStartDate,
-          weekOffset + offset
-        );
+    const choreDaySet = new Set(choreDays);
+    const cycleEndDate = row.rotation?.cycle_end_date ?? null;
+    let offset = 0;
+    // Iterate actual calendar days up to the chore's span or the
+    // rotation's end (a daily/monthly auto-cycle's real boundary).
+    while (cycleEndDate || offset < cycleWeeks * 7) {
+      const signoffDateStr = addCalendarDays(cycleStartDate, offset);
+      if (cycleEndDate && signoffDateStr > cycleEndDate) break;
+      if (choreDaySet.has(weekdayName(signoffDateStr))) {
         // Never create signoffs for past days — see the comment in
         // assignRotationChore. Today is fair game.
-        if (signoffDateStr < todayStr) continue;
-        if (existingDates.has(signoffDateStr)) continue;
-        signoffs.push({
-          rotation_assignment_id: row.id,
-          sign_off_date: signoffDateStr,
-          day_of_week: day,
-          week_number: weekNum,
-          status: "pending",
-        });
+        if (signoffDateStr >= todayStr && !existingDates.has(signoffDateStr)) {
+          signoffs.push({
+            rotation_assignment_id: row.id,
+            sign_off_date: signoffDateStr,
+            day_of_week: weekdayName(signoffDateStr),
+            week_number: Math.floor(offset / 7) + 1,
+            status: "pending",
+          });
+        }
       }
+      offset++;
+      if (offset > 400) break;
     }
 
     if (signoffs.length > 0) {

@@ -33,6 +33,7 @@ export async function updateWorkspaceSettings(
     require_commitment: boolean;
     enable_payments: boolean;
     auto_cycle_chores: boolean;
+    auto_cycle_frequency?: "daily" | "weekly" | "biweekly" | "monthly";
     auto_demerit_missed_chores: boolean;
     auto_demerit_missed_meetings: boolean;
     auto_demerit_missed_curfew: boolean;
@@ -50,8 +51,9 @@ export async function updateWorkspaceSettings(
       id: string;
       label?: string;
       house_ids?: string[];
-      frequency?: "daily" | "weekly";
+      frequency?: "daily" | "weekly" | "biweekly" | "monthly";
       day_of_week?: number;
+      day_of_month?: number;
       enabled?: boolean;
       last_sent_on?: string;
     }[];
@@ -73,6 +75,9 @@ export async function updateWorkspaceSettings(
       require_commitment: settings.require_commitment,
       enable_payments: settings.enable_payments,
       auto_cycle_chores: settings.auto_cycle_chores,
+      ...(settings.auto_cycle_frequency !== undefined
+        ? { auto_cycle_frequency: settings.auto_cycle_frequency }
+        : {}),
       auto_demerit_missed_chores: settings.auto_demerit_missed_chores,
       auto_demerit_missed_meetings: settings.auto_demerit_missed_meetings,
       auto_demerit_missed_curfew: settings.auto_demerit_missed_curfew,

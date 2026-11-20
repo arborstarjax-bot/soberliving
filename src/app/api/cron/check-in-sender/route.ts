@@ -17,6 +17,7 @@ interface Schedule {
   house_ids?: string[];
   frequency?: string;
   day_of_week?: number;
+  day_of_month?: number;
   enabled?: boolean;
   last_sent_on?: string;
 }
@@ -53,7 +54,20 @@ export async function GET(request: NextRequest) {
       if (!sched.enabled) continue;
       if (sched.last_sent_on === today) continue;
       const freq = sched.frequency ?? "weekly";
+      const daysSinceLast = sched.last_sent_on
+        ? (Date.parse(today) - Date.parse(sched.last_sent_on)) / 86400000
+        : Infinity;
       if (freq === "weekly" && (sched.day_of_week ?? 1) !== weekday)
+        continue;
+      if (
+        freq === "biweekly" &&
+        ((sched.day_of_week ?? 1) !== weekday || daysSinceLast < 14)
+      )
+        continue;
+      if (
+        freq === "monthly" &&
+        ((sched.day_of_month ?? 1) !== et.getDate() || daysSinceLast < 27)
+      )
         continue;
       const houseIds = (sched.house_ids ?? []).filter(Boolean);
       if (houseIds.length === 0) continue;

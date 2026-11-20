@@ -51,6 +51,7 @@ export interface WorkspaceSettings {
   require_commitment: boolean;
   enable_payments: boolean;
   auto_cycle_chores: boolean;
+  auto_cycle_frequency: "daily" | "weekly" | "biweekly" | "monthly";
   auto_demerit_missed_chores: boolean;
   auto_demerit_missed_meetings: boolean;
   auto_demerit_missed_curfew: boolean;
@@ -72,8 +73,9 @@ export interface WorkspaceSettings {
     id: string;
     label?: string;
     house_ids?: string[];
-    frequency?: "daily" | "weekly";
+    frequency?: "daily" | "weekly" | "biweekly" | "monthly";
     day_of_week?: number;
+    day_of_month?: number;
     enabled?: boolean;
     last_sent_on?: string;
   }[];

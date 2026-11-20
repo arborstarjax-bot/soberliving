@@ -52,8 +52,9 @@ export function OnboardingSection({
     id: string;
     label?: string;
     house_ids?: string[];
-    frequency?: "daily" | "weekly";
+    frequency?: "daily" | "weekly" | "biweekly" | "monthly";
     day_of_week?: number;
+    day_of_month?: number;
     enabled?: boolean;
     last_sent_on?: string;
   };
@@ -71,6 +72,9 @@ export function OnboardingSection({
   );
   const [autoCycleChores, setAutoCycleChores] = useState(
     settings?.auto_cycle_chores ?? false
+  );
+  const [autoCycleFrequency, setAutoCycleFrequency] = useState(
+    settings?.auto_cycle_frequency ?? "weekly"
   );
   const [autoDemerit, setAutoDemerit] = useState(
     settings?.auto_demerit_missed_chores ?? false
@@ -132,6 +136,7 @@ export function OnboardingSection({
         require_commitment: requireCommitment,
         enable_payments: enablePayments,
         auto_cycle_chores: autoCycleChores,
+        auto_cycle_frequency: autoCycleFrequency,
         auto_demerit_missed_chores: autoDemerit,
         auto_demerit_missed_meetings: autoDemeritMeetings,
         auto_demerit_missed_curfew: autoDemeritCurfew,
@@ -255,6 +260,32 @@ export function OnboardingSection({
             onCheckedChange={setAutoCycleChores}
           />
         </div>
+        {autoCycleChores && (
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="auto-cycle-frequency">Auto-Cycle Frequency</Label>
+              <p className="text-sm text-muted-foreground">
+                How often a new rotation starts — each auto-created cycle lasts
+                this long (monthly = every 4 weeks).
+              </p>
+            </div>
+            <select
+              id="auto-cycle-frequency"
+              value={autoCycleFrequency}
+              onChange={(e) =>
+                setAutoCycleFrequency(
+                  e.target.value as "daily" | "weekly" | "biweekly" | "monthly"
+                )
+              }
+              className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+            >
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="biweekly">Every 2 weeks</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
+        )}
 
         <div className="flex items-center justify-between gap-4">
           <div className="space-y-1">
@@ -574,7 +605,14 @@ export function OnboardingSection({
                   setSchedules((prev) =>
                     prev.map((x, j) =>
                       j === i
-                        ? { ...x, frequency: e.target.value as "daily" | "weekly" }
+                        ? {
+                            ...x,
+                            frequency: e.target.value as
+                              | "daily"
+                              | "weekly"
+                              | "biweekly"
+                              | "monthly",
+                          }
                         : x
                     )
                   )
@@ -583,8 +621,10 @@ export function OnboardingSection({
               >
                 <option value="daily">Daily</option>
                 <option value="weekly">Weekly</option>
+                <option value="biweekly">Every 2 weeks</option>
+                <option value="monthly">Monthly</option>
               </select>
-              {sch.frequency !== "daily" && (
+              {(sch.frequency === "weekly" || sch.frequency === "biweekly") && (
                 <select
                   value={sch.day_of_week ?? 1}
                   onChange={(e) =>
@@ -598,6 +638,23 @@ export function OnboardingSection({
                 >
                   {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d, di) => (
                     <option key={di} value={di}>{d}</option>
+                  ))}
+                </select>
+              )}
+              {sch.frequency === "monthly" && (
+                <select
+                  value={sch.day_of_month ?? 1}
+                  onChange={(e) =>
+                    setSchedules((prev) =>
+                      prev.map((x, j) =>
+                        j === i ? { ...x, day_of_month: Number(e.target.value) } : x
+                      )
+                    )
+                  }
+                  className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+                >
+                  {Array.from({ length: 28 }, (_, d) => (
+                    <option key={d + 1} value={d + 1}>{`Day ${d + 1}`}</option>
                   ))}
                 </select>
               )}

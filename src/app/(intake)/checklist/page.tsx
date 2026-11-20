@@ -11,7 +11,6 @@ export default async function IntakeChecklistPage() {
     : null;
   if (!ws) redirect("/dashboard");
 
-  const steps = (ws.intake_steps ?? []).filter((s) => s.label?.trim());
   const rules = (ws.rules_text ?? "")
     .split("\n")
     .map((r) => r.trim())
@@ -26,13 +25,12 @@ export default async function IntakeChecklistPage() {
     .eq("requires_intake_ack", true);
 
   // Nothing configured → straight to rules
-  if (!steps.length && !rules.length && !(ackDocs ?? []).length) {
-    redirect("/rules");
+  if (!rules.length && !(ackDocs ?? []).length) {
+    redirect("/dashboard");
   }
 
   return (
     <ChecklistView
-      steps={steps}
       rules={ws.require_rule_checkoff ? rules : []}
       rulesDocId={ws.rules_document_id}
       ackDocs={ackDocs ?? []}
