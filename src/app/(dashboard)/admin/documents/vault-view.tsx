@@ -83,6 +83,10 @@ export function VaultView({ docs }: { docs: VaultDoc[] }) {
               <Label htmlFor="file">File</Label>
               <Input id="file" name="file" type="file" required />
             </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="requires_ack" />
+              Require intake acknowledgment
+            </label>
             <Button type="submit" disabled={pending}>
               {pending ? "Uploading…" : "Upload"}
             </Button>
@@ -112,7 +116,15 @@ export function VaultView({ docs }: { docs: VaultDoc[] }) {
               )}
               {docs.map((d) => (
                 <TableRow key={d.id}>
-                  <TableCell className="font-medium">{d.name}</TableCell>
+                  <TableCell className="font-medium">
+                    {d.name}
+                    {(d as { requires_intake_ack?: boolean })
+                      .requires_intake_ack && (
+                      <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
+                        intake ack
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     {d.file_size
                       ? `${Math.round(d.file_size / 1024)} KB`

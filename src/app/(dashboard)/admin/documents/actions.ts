@@ -37,6 +37,7 @@ export async function uploadVaultDocument(
     document_type: "vault",
     storage_path: path,
     file_size: file.size,
+    requires_intake_ack: formData.get("requires_ack") === "on",
   });
   if (insErr) return { error: insErr.message };
 

@@ -12,7 +12,7 @@ export default async function AdminDocumentsPage() {
   const admin = createAdminClient();
   const { data: docs } = await admin
     .from("documents")
-    .select("id, name, storage_path, file_size, created_at")
+    .select("id, name, storage_path, file_size, created_at, requires_intake_ack")
     .eq("workspace_id", user.workspace_id)
     .eq("document_type", "vault")
     .order("created_at", { ascending: false })

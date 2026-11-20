@@ -41,6 +41,11 @@ export async function updateWorkspaceSettings(
     enabled_modules: string[];
     pass_approver: "manager" | "admin" | "both";
     resident_modules?: string[];
+    intake_mode?: "auto" | "requires_signoff";
+    intake_steps?: { id: string; label: string; required?: boolean }[];
+    rules_text?: string | null;
+    rules_document_id?: string | null;
+    require_rule_checkoff?: boolean;
     reminder_settings?: Record<
       string,
       { enabled?: boolean; timing?: "day_of" | "day_before" }
@@ -68,6 +73,21 @@ export async function updateWorkspaceSettings(
       pass_approver: settings.pass_approver,
       ...(settings.resident_modules !== undefined
         ? { resident_modules: settings.resident_modules }
+        : {}),
+      ...(settings.intake_mode !== undefined
+        ? { intake_mode: settings.intake_mode }
+        : {}),
+      ...(settings.intake_steps !== undefined
+        ? { intake_steps: settings.intake_steps }
+        : {}),
+      ...(settings.rules_text !== undefined
+        ? { rules_text: settings.rules_text }
+        : {}),
+      ...(settings.rules_document_id !== undefined
+        ? { rules_document_id: settings.rules_document_id }
+        : {}),
+      ...(settings.require_rule_checkoff !== undefined
+        ? { require_rule_checkoff: settings.require_rule_checkoff }
         : {}),
       ...(settings.reminder_settings !== undefined
         ? { reminder_settings: settings.reminder_settings }

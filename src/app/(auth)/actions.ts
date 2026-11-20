@@ -210,14 +210,23 @@ export async function signup(
   }
 
   if (isJoinFlow && workspace) {
-    // Join workspace with PENDING status — admin must approve
+    // Join mode: "auto" grants immediate access; "requires_signoff"
+    // parks the member until an admin approves (previous behavior).
+    const { data: wsSettings } = await adminClient
+      .from("workspace_settings")
+      .select("intake_mode")
+      .eq("workspace_id", workspace.id)
+      .maybeSingle();
+    const joinStatus =
+      wsSettings?.intake_mode === "auto" ? "active" : "pending";
+
     const { error: memberError } = await adminClient
       .from("workspace_members")
       .insert({
         workspace_id: workspace.id,
         user_id: data.user.id,
         role: "resident",
-        status: "pending",
+        status: joinStatus,
       });
 
     if (memberError) {

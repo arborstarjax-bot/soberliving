@@ -63,6 +63,11 @@ export interface WorkspaceSettings {
     { enabled?: boolean; timing?: "day_of" | "day_before" }
   >;
   resident_modules: string[] | null;
+  intake_mode: "auto" | "requires_signoff";
+  intake_steps: { id: string; label: string; required?: boolean }[];
+  rules_text: string | null;
+  rules_document_id: string | null;
+  require_rule_checkoff: boolean;
   created_at: string;
   updated_at: string;
 }
