@@ -55,6 +55,7 @@ export interface WorkspaceSettings {
   require_chore_photo: boolean;
   require_meeting_photo: boolean;
   enabled_modules: string[];
+  pass_approver: "manager" | "admin" | "both";
   created_at: string;
   updated_at: string;
 }

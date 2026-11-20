@@ -6,6 +6,8 @@ import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { formatDateOnly } from "@/lib/timezone";
 import type { SessionUser } from "@/lib/types";
 import { LeaveReviewActions } from "./leave-review-actions";
+import Link from "next/link";
+import { Printer } from "lucide-react";
 
 // Shapes returned by the PostgREST join on leave_requests. TS can't
 // parse the `.select()` string, so we narrow once here instead of
@@ -87,8 +89,10 @@ function statusVariant(
  */
 export async function LeaveRequestsTabsSection({
   user,
+  passApprover = "both",
 }: {
   user: SessionUser;
+  passApprover?: "manager" | "admin" | "both";
 }) {
   const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
@@ -226,35 +230,52 @@ export async function LeaveRequestsTabsSection({
                           lr.rejection_step === "cover"
                         }
                       />
-                      <span className="text-muted-foreground">→</span>
-                      <StepIndicator
-                        label="Manager"
-                        done={!!lr.house_manager_approved_at}
-                        active={lr.status === "pending_manager"}
-                        rejected={
-                          lr.status === "rejected" &&
-                          lr.rejection_step === "manager"
-                        }
-                      />
-                      <span className="text-muted-foreground">→</span>
-                      <StepIndicator
-                        label="Admin"
-                        done={!!lr.admin_approved_at}
-                        active={lr.status === "pending_admin"}
-                        rejected={
-                          lr.status === "rejected" &&
-                          lr.rejection_step === "admin"
-                        }
-                      />
+                      {passApprover !== "admin" && (
+                        <>
+                          <span className="text-muted-foreground">→</span>
+                          <StepIndicator
+                            label="Manager"
+                            done={!!lr.house_manager_approved_at}
+                            active={lr.status === "pending_manager"}
+                            rejected={
+                              lr.status === "rejected" &&
+                              lr.rejection_step === "manager"
+                            }
+                          />
+                        </>
+                      )}
+                      {passApprover !== "manager" && (
+                        <>
+                          <span className="text-muted-foreground">→</span>
+                          <StepIndicator
+                            label="Admin"
+                            done={!!lr.admin_approved_at}
+                            active={lr.status === "pending_admin"}
+                            rejected={
+                              lr.status === "rejected" &&
+                              lr.rejection_step === "admin"
+                            }
+                          />
+                        </>
+                      )}
                     </div>
 
-                    <LeaveReviewActions
-                      requestId={lr.id}
-                      status={lr.status}
-                      userRole={user.role}
-                      userId={user.id}
-                      coveringResidentUserId={coverResident?.user_id}
-                    />
+                    <div className="flex items-center gap-3">
+                      <LeaveReviewActions
+                        requestId={lr.id}
+                        status={lr.status}
+                        userRole={user.role}
+                        userId={user.id}
+                        coveringResidentUserId={coverResident?.user_id}
+                      />
+                      <Link
+                        href={`/passes/${lr.id}/print`}
+                        target="_blank"
+                        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        <Printer className="h-3 w-3" /> Print pass
+                      </Link>
+                    </div>
                   </CardContent>
                 </Card>
               );
@@ -282,12 +303,21 @@ export async function LeaveRequestsTabsSection({
                         {formatDateOnly(lr.expected_return_date)}
                       </p>
                     </div>
-                    <LeaveReviewActions
-                      requestId={lr.id}
-                      status={lr.status}
-                      userRole={user.role}
-                      userId={user.id}
-                    />
+                    <div className="flex items-center gap-3">
+                      <Link
+                        href={`/passes/${lr.id}/print`}
+                        target="_blank"
+                        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        <Printer className="h-3 w-3" /> Print
+                      </Link>
+                      <LeaveReviewActions
+                        requestId={lr.id}
+                        status={lr.status}
+                        userRole={user.role}
+                        userId={user.id}
+                      />
+                    </div>
                   </CardContent>
                 </Card>
               );

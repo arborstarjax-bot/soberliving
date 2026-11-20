@@ -135,7 +135,39 @@ export default async function DashboardLayout({
   if (isResident) {
     return (
       <div className="flex flex-col lg:flex-row h-dvh overflow-hidden">
-        {/* Desktop: sidebar. Mobile: bottom nav replaces it. */}
+        {/* Desktop: sidebar. Mobile: bottom nav replaces it. Hidden
+            when printing (e.g. a pass printout). */}
+        <div className="contents print:hidden">
+          <Sidebar
+            role={user.role}
+            userName={user.full_name}
+            workspaceName={workspaceName}
+            hasNoLeaveRestriction={hasNoLeaveRestriction}
+            enablePayments={paymentsEnabled}
+            enabledModules={wsSettings?.enabled_modules}
+            notificationBadge={notificationBadge}
+            bulletinBadge={bulletinBadge}
+          />
+        </div>
+        <main className="flex-1 overflow-y-auto overflow-x-hidden min-w-0">
+          <div className="animate-page-enter container mx-auto p-4 lg:p-6 max-w-2xl lg:max-w-7xl pt-[max(1rem,env(safe-area-inset-top))] pb-[max(5rem,calc(4rem+env(safe-area-inset-bottom)))] lg:pb-[max(1.5rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
+            {children}
+          </div>
+        </main>
+        <div className="contents print:hidden">
+          <ResidentBottomNav
+            hasNoLeaveRestriction={hasNoLeaveRestriction}
+            enabledModules={wsSettings?.enabled_modules}
+            bulletinBadge={bulletinBadge}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col lg:flex-row h-dvh overflow-hidden">
+      <div className="contents print:hidden">
         <Sidebar
           role={user.role}
           userName={user.full_name}
@@ -146,32 +178,7 @@ export default async function DashboardLayout({
           notificationBadge={notificationBadge}
           bulletinBadge={bulletinBadge}
         />
-        <main className="flex-1 overflow-y-auto overflow-x-hidden min-w-0">
-          <div className="animate-page-enter container mx-auto p-4 lg:p-6 max-w-2xl lg:max-w-7xl pt-[max(1rem,env(safe-area-inset-top))] pb-[max(5rem,calc(4rem+env(safe-area-inset-bottom)))] lg:pb-[max(1.5rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]">
-            {children}
-          </div>
-        </main>
-        <ResidentBottomNav
-          hasNoLeaveRestriction={hasNoLeaveRestriction}
-          enabledModules={wsSettings?.enabled_modules}
-          bulletinBadge={bulletinBadge}
-        />
       </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col lg:flex-row h-dvh overflow-hidden">
-      <Sidebar
-        role={user.role}
-        userName={user.full_name}
-        workspaceName={workspaceName}
-        hasNoLeaveRestriction={hasNoLeaveRestriction}
-        enablePayments={paymentsEnabled}
-        enabledModules={wsSettings?.enabled_modules}
-        notificationBadge={notificationBadge}
-        bulletinBadge={bulletinBadge}
-      />
       <main className="flex-1 overflow-y-auto overflow-x-hidden min-w-0">
         <div className="animate-page-enter container mx-auto p-4 lg:p-6 max-w-7xl pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] lg:pt-[max(1.5rem,env(safe-area-inset-top))] lg:pb-[max(1.5rem,env(safe-area-inset-bottom))]">
           {children}

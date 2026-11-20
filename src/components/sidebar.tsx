@@ -20,6 +20,7 @@ import {
   Folder,
   DollarSign,
   Building2,
+  Ticket,
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { InstallAppButton } from "@/components/pwa/install-app-button";
@@ -79,6 +80,17 @@ const NAV_ITEMS: NavItem[] = [
     label: "Attendance",
     href: "/attendance",
     icon: CalendarClock,
+    roles: ["admin", "manager", "resident"],
+    group: "Operations",
+    module: "attendance",
+  },
+  {
+    // Passes hub — pending/approved/past overnight passes with a
+    // printable pass per request. Residents see their own; staff see
+    // every pass for their houses.
+    label: "Passes",
+    href: "/passes",
+    icon: Ticket,
     roles: ["admin", "manager", "resident"],
     group: "Operations",
     module: "attendance",
@@ -169,7 +181,7 @@ export function Sidebar({
 
   const filteredItems = NAV_ITEMS.filter((item) => {
     if (!item.roles.includes(role)) return false;
-    if (item.href === "/attendance" && hasNoLeaveRestriction && role === "resident") return false;
+    if ((item.href === "/attendance" || item.href === "/passes") && hasNoLeaveRestriction && role === "resident") return false;
     if (item.href === "/payments" && !enablePayments) return false;
     if (item.module && enabledModules && !enabledModules.includes(item.module)) return false;
     return true;

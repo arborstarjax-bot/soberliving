@@ -8,8 +8,30 @@ import { logActivity } from "@/lib/activity";
 import { sendNotification, sendNotificationToHouseManagers, sendNotificationToAdmins, notifyHouseStaff } from "@/lib/notifications";
 import { z } from "zod";
 import { getHouseToday } from "@/lib/timezone";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const DATETIME_LOCAL_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/;
+
+// Who gives final approval on a pass for the house's workspace.
+// Defaults to 'both' (manager → admin) when settings are missing.
+async function getPassApprover(
+  db: Pick<SupabaseClient, "from">,
+  houseId: string
+): Promise<"manager" | "admin" | "both"> {
+  const { data: house } = await db
+    .from("houses")
+    .select("workspace_id")
+    .eq("id", houseId)
+    .maybeSingle();
+  if (!house?.workspace_id) return "both";
+  const { data: ws } = await db
+    .from("workspace_settings")
+    .select("pass_approver")
+    .eq("workspace_id", house.workspace_id)
+    .maybeSingle();
+  const v = ws?.pass_approver;
+  return v === "manager" || v === "admin" ? v : "both";
+}
 
 // Shapes returned by PostgREST joins. The select string is untyped for TS,
 // so we narrow the joined rows here to avoid sprinkling `as unknown as`
@@ -251,10 +273,16 @@ export async function approveCoverRequest(requestId: string) {
     return { error: "Not authorized for this house" };
   }
 
+  // Workspace decides who reviews after the cover: 'both' and 'manager'
+  // route to a house manager; 'admin' skips straight to an admin.
+  const passApprover = await getPassApprover(adminClient, houseId);
+  const nextStatus =
+    passApprover === "admin" ? "pending_admin" : "pending_manager";
+
   const { error } = await adminClient
     .from("leave_requests")
     .update({
-      status: "pending_manager",
+      status: nextStatus,
       cover_approved_at: new Date().toISOString(),
       cover_approved_by: user.id,
       updated_at: new Date().toISOString(),
@@ -273,15 +301,26 @@ export async function approveCoverRequest(requestId: string) {
     description: `Cover approved by ${user.full_name} for ${resident?.full_name}'s leave request`,
   });
 
-  // Notify house managers
-  await sendNotificationToHouseManagers(houseId, {
-    type: "manager_approval",
-    title: "Leave Request Needs Approval",
-    message: `${resident?.full_name}'s leave request has been approved by the covering resident. Please review.`,
-    actionUrl: "/leave-requests",
-    entityType: "leave_request",
-    entityId: requestId,
-  });
+  // Notify whoever reviews next
+  if (nextStatus === "pending_admin") {
+    await sendNotificationToAdmins({
+      type: "admin_approval",
+      title: "Leave Request Needs Approval",
+      message: `${resident?.full_name}'s leave request has been approved by the covering resident. Please review.`,
+      actionUrl: "/leave-requests",
+      entityType: "leave_request",
+      entityId: requestId,
+    });
+  } else {
+    await sendNotificationToHouseManagers(houseId, {
+      type: "manager_approval",
+      title: "Leave Request Needs Approval",
+      message: `${resident?.full_name}'s leave request has been approved by the covering resident. Please review.`,
+      actionUrl: "/leave-requests",
+      entityType: "leave_request",
+      entityId: requestId,
+    });
+  }
 
   revalidatePath("/leave-requests");
   return {};
@@ -378,13 +417,22 @@ export async function approveManagerRequest(requestId: string) {
     return { error: "Not authorized for this house" };
   }
 
+  // When the workspace lets managers give the final approval, this
+  // completes the pass instead of routing it on to an admin.
+  const passApprover = await getPassApprover(supabase, houseId);
+  const managerFinal = passApprover === "manager";
+  const nowIso = new Date().toISOString();
+
   const { error } = await supabase
     .from("leave_requests")
     .update({
-      status: "pending_admin",
-      house_manager_approved_at: new Date().toISOString(),
+      status: managerFinal ? "approved" : "pending_admin",
+      house_manager_approved_at: nowIso,
       house_manager_approved_by: user.id,
-      updated_at: new Date().toISOString(),
+      ...(managerFinal
+        ? { reviewed_by: user.id, reviewed_at: nowIso }
+        : {}),
+      updated_at: nowIso,
     })
     .eq("id", requestId);
 
@@ -397,18 +445,37 @@ export async function approveManagerRequest(requestId: string) {
     eventType: "leave_manager_approved",
     entityType: "leave_request",
     entityId: requestId,
-    description: `Leave request approved by manager ${user.full_name} for ${resident?.full_name}`,
+    description: `Leave request approved by manager ${user.full_name} for ${resident?.full_name}` + (managerFinal ? " (final approval)" : ""),
   });
 
-  // Notify admins
-  await sendNotificationToAdmins({
-    type: "admin_approval",
-    title: "Leave Request Final Approval",
-    message: `${resident?.full_name}'s leave request has been approved by the house manager. Final approval needed.`,
-    actionUrl: "/leave-requests",
-    entityType: "leave_request",
-    entityId: requestId,
-  });
+  if (managerFinal) {
+    const { data: residentUser } = await supabase
+      .from("residents")
+      .select("user_id")
+      .eq("id", request.resident_id)
+      .maybeSingle();
+    if (residentUser?.user_id) {
+      await sendNotification({
+        userId: residentUser.user_id,
+        type: "leave_approved",
+        title: "Leave Request Approved!",
+        message: "Your leave request has been approved by the house manager.",
+        actionUrl: "/leave-requests",
+        entityType: "leave_request",
+        entityId: requestId,
+      });
+    }
+  } else {
+    // Notify admins
+    await sendNotificationToAdmins({
+      type: "admin_approval",
+      title: "Leave Request Final Approval",
+      message: `${resident?.full_name}'s leave request has been approved by the house manager. Final approval needed.`,
+      actionUrl: "/leave-requests",
+      entityType: "leave_request",
+      entityId: requestId,
+    });
+  }
 
   revalidatePath("/leave-requests");
   return {};

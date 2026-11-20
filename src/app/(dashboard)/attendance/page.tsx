@@ -96,7 +96,10 @@ export default async function AttendancePage({ searchParams }: PageProps) {
       {/* Overnight Requests tab */}
       {activeTab === "overnight" && (
         <Suspense fallback={<ListSkeleton rows={5} rowClassName="h-28 w-full" />}>
-          <LeaveRequestsTabsSection user={user} />
+          <LeaveRequestsTabsSection
+            user={user}
+            passApprover={wsSettings?.pass_approver ?? "both"}
+          />
         </Suspense>
       )}
     </div>

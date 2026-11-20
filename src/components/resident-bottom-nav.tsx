@@ -15,7 +15,7 @@ import {
   LogOut,
   X,
 } from "lucide-react";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { usePrefetchRoutes } from "@/lib/use-prefetch-routes";
 
 interface BottomNavItem {
@@ -34,6 +34,7 @@ const PRIMARY_ITEMS: BottomNavItem[] = [
 ];
 
 const MORE_ITEMS: BottomNavItem[] = [
+  { label: "Passes", href: "/passes", icon: CalendarClock, module: "attendance" },
   { label: "My Documents", href: "/my-documents", icon: Folder, module: "documents" },
   { label: "Report", href: "/report", icon: Flag },
 ];
@@ -71,9 +72,8 @@ export function ResidentBottomNav({
 
   const moreIsActive = moreItems.some((item) => isActive(item.href));
 
-  const allRoutes = useMemo(
-    () => [...primaryItems, ...moreItems].map((item) => item.href),
-    [primaryItems]
+  const allRoutes = [...primaryItems, ...moreItems].map(
+    (item) => item.href
   );
   usePrefetchRoutes(allRoutes);
 
