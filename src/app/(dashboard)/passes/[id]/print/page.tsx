@@ -78,28 +78,31 @@ export default async function PrintPassPage({
   const returning = pass.returning_datetime ?? pass.expected_return_date;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 print:space-y-4">
+    <div className="mx-auto max-w-2xl space-y-4 print:space-y-4">
       <div className="flex items-center justify-between print:hidden">
         <p className="text-sm text-muted-foreground">
-          Print preview — use your browser or the button.
+          Screenshot or print this pass.
         </p>
         <PrintButton />
       </div>
 
-      <div className="rounded-lg border-2 border-black p-8 space-y-6 print:border-black">
+      {/* Compact single-screen layout — everything a phone screenshot needs. */}
+      <div className="rounded-lg border-2 border-black p-4 sm:p-6 space-y-4 sm:space-y-5 print:border-black">
         <div className="text-center space-y-1">
-          <p className="text-xs uppercase tracking-widest text-muted-foreground">
+          <p className="text-[10px] uppercase tracking-widest text-muted-foreground">
             {house?.name ?? "Residence"}
           </p>
-          <h1 className="text-3xl font-bold tracking-tight">OVERNIGHT PASS</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
+            OVERNIGHT PASS
+          </h1>
           <p
-            className={`inline-block mt-2 rounded border-2 px-4 py-1 text-sm font-bold tracking-widest ${banner.cls}`}
+            className={`inline-block mt-1 rounded border-2 px-3 py-0.5 text-xs sm:text-sm font-bold tracking-widest ${banner.cls}`}
           >
             {banner.label}
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-sm">
+        <div className="grid grid-cols-2 gap-x-4 sm:gap-x-8 gap-y-3 text-sm">
           <Field label="Resident" value={pass.resident.full_name} />
           <Field label="Covering Resident" value={pass.covering_resident?.full_name ?? "—"} />
           <Field label="Leaving" value={leaving ? formatDateOnly(leaving.slice(0, 10)) + (pass.leaving_datetime ? " " + leaving.slice(11, 16) : "") : "—"} />
@@ -116,7 +119,7 @@ export default async function PrintPassPage({
           </p>
         )}
 
-        <div className="grid grid-cols-3 gap-6 pt-6 text-xs">
+        <div className="grid grid-cols-3 gap-3 sm:gap-6 pt-4 text-[10px] sm:text-xs">
           <SignatureLine
             label="Covering Resident"
             signed={!!pass.cover_approved_at}
@@ -134,7 +137,7 @@ export default async function PrintPassPage({
           />
         </div>
 
-        <p className="text-center text-[10px] text-muted-foreground">
+        <p className="text-center text-[9px] sm:text-[10px] text-muted-foreground">
           Pass #{pass.id.slice(0, 8)} · Issued{" "}
           {pass.created_at ? formatDateOnly(pass.created_at.slice(0, 10)) : ""}
         </p>
@@ -164,7 +167,7 @@ function SignatureLine({
   at: string | null;
 }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="border-b border-black" />
       <p className="font-medium">{label}</p>
       <p className="text-muted-foreground">

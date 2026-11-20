@@ -16,6 +16,7 @@ const TYPE_LABELS: Record<string, string> = {
   house_commitment: "House Commitment",
   payment_receipt: "Payment Receipts",
   check_in: "Check-In Documents",
+  intake_document: "Uploaded Documents",
   other: "Other Documents",
 };
 
@@ -24,6 +25,7 @@ const TYPE_ORDER = [
   "house_commitment",
   "payment_receipt",
   "check_in",
+  "intake_document",
 ];
 
 interface DocRow {

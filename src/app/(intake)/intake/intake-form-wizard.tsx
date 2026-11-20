@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, useCallback } from "react";
-import { useRouter } from "next/navigation";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SignaturePad } from "@/components/signature-pad";
 import { Loader2 } from "lucide-react";
 import { saveIntakeProgress, submitIntakeForm } from "../actions";
+import { IntakeDocumentsStep } from "../intake-documents-step";
 import { generateIntakePdf } from "./generate-pdf";
 import {
   getAllPolicies,
@@ -44,7 +45,7 @@ export function IntakeFormWizard({
   initialData,
   initialSignatures,
 }: IntakeFormWizardProps) {
-  const router = useRouter();
+
   const [page, setPage] = useState(1);
   const [formData, setFormData] = useState<Record<string, string>>(
     initialData ?? { full_name: userName, email: userEmail }
@@ -53,6 +54,7 @@ export function IntakeFormWizard({
     initialSignatures ?? {}
   );
   const [error, setError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
   const [isSaving, startSaving] = useTransition();
   const [isSubmitting, startSubmitting] = useTransition();
 
@@ -112,7 +114,9 @@ export function IntakeFormWizard({
         if (result?.error) {
           setError(result.error);
         } else {
-          router.push("/rules");
+          // Vault step — let the resident attach documents before
+          // moving on to rules acknowledgement.
+          setSubmitted(true);
         }
       } catch (err) {
         setError(
@@ -123,6 +127,10 @@ export function IntakeFormWizard({
   }
 
   const isLastPage = page === TOTAL_PAGES;
+
+  if (submitted) {
+    return <IntakeDocumentsStep continueHref="/rules" />;
+  }
 
   return (
     <div className="space-y-6">

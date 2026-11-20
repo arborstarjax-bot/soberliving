@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { submitQuickSignup } from "@/app/(intake)/actions";
+import { IntakeDocumentsStep } from "../intake-documents-step";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,12 @@ export function QuickSignupForm() {
   const [state, action, pending] = useActionState(submitQuickSignup, undefined);
 
   const today = new Date().toISOString().split("T")[0];
+
+  // Signup succeeded — offer the document vault before the resident
+  // moves on to rules / the dashboard.
+  if (state && !state.error) {
+    return <IntakeDocumentsStep continueHref="/dashboard" />;
+  }
 
   return (
     <Card>

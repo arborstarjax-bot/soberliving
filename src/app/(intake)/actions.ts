@@ -231,6 +231,52 @@ export async function submitQuickSignup(
   return {};
 }
 
+// --- Intake document vault ---
+
+const INTAKE_DOC_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+
+/**
+ * Upload any file a resident wants attached to their record — IDs,
+ * prescriptions, court papers, etc. Stored in the shared `documents`
+ * bucket under the user's own folder and recorded with
+ * document_type "intake_document" so it lands in their vault (My
+ * Documents → Other) and on their staff-facing profile.
+ */
+export async function uploadIntakeDocument(formData: FormData) {
+  const user = await requireAuth();
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "Choose a file to upload" };
+  }
+  if (file.size > INTAKE_DOC_MAX_BYTES) {
+    return { error: "File must be under 10 MB" };
+  }
+
+  const label =
+    ((formData.get("label") as string) ?? "").trim() || file.name;
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const storagePath = `${user.id}/intake-${Date.now()}-${safeName}`;
+
+  const adminClient = createAdminClient();
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const { error: uploadError } = await adminClient.storage
+    .from("documents")
+    .upload(storagePath, buffer, { contentType: file.type || undefined });
+
+  if (uploadError) return { error: uploadError.message };
+
+  const { error: docError } = await adminClient.from("documents").insert({
+    user_id: user.id,
+    name: label,
+    document_type: "intake_document",
+    storage_path: storagePath,
+    file_size: file.size,
+  });
+  if (docError) return { error: docError.message };
+
+  return {};
+}
+
 export async function getDocumentUrl(storagePath: string) {
   const user = await requireAuth();
   const adminClient = createAdminClient();
