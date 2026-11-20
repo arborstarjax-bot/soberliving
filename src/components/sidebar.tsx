@@ -4,8 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/lib/types";
-import {
-  LayoutDashboard,
+import {LayoutDashboard,
   Home,
   Users,
   ClipboardCheck,
@@ -21,7 +20,7 @@ import {
   DollarSign,
   Building2,
   Ticket,
-} from "lucide-react";
+  CalendarCheck,} from "lucide-react";
 import { useState, useMemo } from "react";
 import { InstallAppButton } from "@/components/pwa/install-app-button";
 import { usePrefetchRoutes } from "@/lib/use-prefetch-routes";
@@ -116,6 +115,16 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["resident"],
     group: "Community",
     module: "documents",
+  },
+  {
+    // Meetings hub — residents log outside meetings with a
+    // facilitator signature; staff see the weekly roll-up.
+    label: "Meetings",
+    href: "/meetings",
+    icon: CalendarCheck,
+    roles: ["admin", "manager", "resident"],
+    group: "Operations",
+    module: "meetings",
   },
   {
     label: "Community Services",
