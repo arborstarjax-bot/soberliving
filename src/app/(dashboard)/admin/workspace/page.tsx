@@ -85,6 +85,7 @@ export default async function WorkspaceSettingsPage() {
           <OnboardingSection
             workspaceId={workspace.id}
             settings={settings}
+            houses={houses ?? []}
           />
         </TabsContent>
 

@@ -42,10 +42,24 @@ function Toggle({
 export function OnboardingSection({
   workspaceId,
   settings,
+  houses = [],
 }: {
   workspaceId: string;
   settings: WorkspaceSettings | null;
+  houses?: { id: string; name: string }[];
 }) {
+  type CheckInSchedule = {
+    id: string;
+    label?: string;
+    house_ids?: string[];
+    frequency?: "daily" | "weekly";
+    day_of_week?: number;
+    enabled?: boolean;
+    last_sent_on?: string;
+  };
+  const [schedules, setSchedules] = useState<CheckInSchedule[]>(
+    settings?.check_in_schedules ?? []
+  );
   const [requireApp, setRequireApp] = useState(
     settings?.require_application ?? true
   );
@@ -129,6 +143,7 @@ export function OnboardingSection({
         intake_steps: intakeSteps,
         rules_text: rulesText || null,
         require_rule_checkoff: requireRuleCheckoff,
+        check_in_schedules: schedules,
         resident_modules: residentModules,
         reminder_settings: reminders,
       });
@@ -524,6 +539,138 @@ export function OnboardingSection({
         </div>
 
         <div className="flex items-center gap-3">
+          <Button onClick={handleSave} disabled={pending}>
+            {pending ? "Saving..." : "Save Changes"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle>Check-In Schedules</CardTitle>
+        <CardDescription>
+          Automatically send check-ins to houses on a cadence
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {schedules.map((sch, i) => (
+          <div key={sch.id} className="space-y-2 rounded-md border p-3">
+            <div className="flex items-center gap-2">
+              <Input
+                value={sch.label ?? ""}
+                placeholder="Weekly check-in"
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                  setSchedules((prev) =>
+                    prev.map((x, j) =>
+                      j === i ? { ...x, label: e.target.value } : x
+                    )
+                  )
+                }
+              />
+              <select
+                value={sch.frequency ?? "weekly"}
+                onChange={(e) =>
+                  setSchedules((prev) =>
+                    prev.map((x, j) =>
+                      j === i
+                        ? { ...x, frequency: e.target.value as "daily" | "weekly" }
+                        : x
+                    )
+                  )
+                }
+                className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+              </select>
+              {sch.frequency !== "daily" && (
+                <select
+                  value={sch.day_of_week ?? 1}
+                  onChange={(e) =>
+                    setSchedules((prev) =>
+                      prev.map((x, j) =>
+                        j === i ? { ...x, day_of_week: Number(e.target.value) } : x
+                      )
+                    )
+                  }
+                  className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+                >
+                  {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d, di) => (
+                    <option key={di} value={di}>{d}</option>
+                  ))}
+                </select>
+              )}
+              <Toggle
+                id={`sched-${sch.id}`}
+                checked={sch.enabled !== false}
+                onCheckedChange={(v) =>
+                  setSchedules((prev) =>
+                    prev.map((x, j) => (j === i ? { ...x, enabled: v } : x))
+                  )
+                }
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() =>
+                  setSchedules((prev) => prev.filter((_, j) => j !== i))
+                }
+              >
+                Remove
+              </Button>
+            </div>
+            <div className="flex flex-wrap gap-3 text-sm">
+              {houses.map((h) => (
+                <label key={h.id} className="flex items-center gap-1">
+                  <input
+                    type="checkbox"
+                    checked={(sch.house_ids ?? []).includes(h.id)}
+                    onChange={(e) =>
+                      setSchedules((prev) =>
+                        prev.map((x, j) =>
+                          j === i
+                            ? {
+                                ...x,
+                                house_ids: e.target.checked
+                                  ? [...(x.house_ids ?? []), h.id]
+                                  : (x.house_ids ?? []).filter(
+                                      (id) => id !== h.id
+                                    ),
+                              }
+                            : x
+                        )
+                      )
+                    }
+                  />
+                  {h.name}
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
+        <div className="flex items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              setSchedules((prev) => [
+                ...prev,
+                {
+                  id: `sched-${Date.now()}`,
+                  label: "",
+                  house_ids: [],
+                  frequency: "weekly",
+                  day_of_week: 1,
+                  enabled: true,
+                },
+              ])
+            }
+          >
+            Add Schedule
+          </Button>
           <Button onClick={handleSave} disabled={pending}>
             {pending ? "Saving..." : "Save Changes"}
           </Button>
