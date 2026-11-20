@@ -6,18 +6,41 @@ import { SignaturePad } from "@/components/signature-pad";
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { submitRulesAcknowledgment } from "./actions";
-import { RULES_SLIDES } from "./rules-content";
+import type { RulesSlide } from "./rules-content";
 
-export function RulesPresentation() {
+export function RulesPresentation({
+  slides,
+  requireCheckoff = false,
+}: {
+  slides: RulesSlide[];
+  requireCheckoff?: boolean;
+}) {
   const router = useRouter();
   const [current, setCurrent] = useState(0);
   const [signature, setSignature] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
   const [isSubmitting, startSubmitting] = useTransition();
 
-  const total = RULES_SLIDES.length + 1; // +1 for signature slide
+  const total = slides.length + 1; // +1 for signature slide
   const isLastSlide = current === total - 1;
-  const isRulesSlide = current < RULES_SLIDES.length;
+  const isRulesSlide = current < slides.length;
+
+  const currentItems = isRulesSlide ? slides[current].items ?? [] : [];
+  const allChecked = currentItems.every((_, i) =>
+    checked.has(`${current}:${i}`)
+  );
+  const nextDisabled = requireCheckoff && currentItems.length > 0 && !allChecked;
+
+  function toggleItem(i: number) {
+    const key = `${current}:${i}`;
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   const next = useCallback(() => {
     if (current < total - 1) setCurrent((c) => c + 1);
@@ -56,7 +79,14 @@ export function RulesPresentation() {
       {/* Slide content */}
       <div className="flex-1 overflow-y-auto px-5 py-6">
         {isRulesSlide ? (
-          <SlideContent slide={RULES_SLIDES[current]} />
+          <SlideContent
+            slide={slides[current]}
+            requireCheckoff={requireCheckoff}
+            checkedItems={currentItems.map((_, i) =>
+              checked.has(`${current}:${i}`)
+            )}
+            onToggleItem={toggleItem}
+          />
         ) : (
           <SignatureSlide
             signature={signature}
@@ -97,7 +127,8 @@ export function RulesPresentation() {
         ) : (
           <button
             onClick={next}
-            className="px-4 py-2 text-sm font-semibold rounded-full bg-gradient-to-r from-[#e94560] to-[#d63851] text-white"
+            disabled={nextDisabled}
+            className="px-4 py-2 text-sm font-semibold rounded-full bg-gradient-to-r from-[#e94560] to-[#d63851] text-white disabled:opacity-40"
           >
             Next →
           </button>
@@ -118,7 +149,17 @@ interface SlideData {
   note?: string;
 }
 
-function SlideContent({ slide }: { slide: SlideData }) {
+function SlideContent({
+  slide,
+  requireCheckoff = false,
+  checkedItems = [],
+  onToggleItem,
+}: {
+  slide: SlideData;
+  requireCheckoff?: boolean;
+  checkedItems?: boolean[];
+  onToggleItem?: (i: number) => void;
+}) {
   const borderColor =
     slide.titleColor === "green"
       ? "border-green-400"
@@ -140,6 +181,14 @@ function SlideContent({ slide }: { slide: SlideData }) {
         <div className="space-y-3">
           {slide.items.map((item, i) => (
             <div key={i} className="flex gap-3">
+              {requireCheckoff && (
+                <input
+                  type="checkbox"
+                  checked={checkedItems[i] ?? false}
+                  onChange={() => onToggleItem?.(i)}
+                  className="mt-0.5 h-4 w-4 flex-shrink-0 accent-[#e94560]"
+                />
+              )}
               {item.num !== undefined && (
                 <span
                   className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[0.65rem] font-bold ${
