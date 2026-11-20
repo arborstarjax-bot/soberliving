@@ -21,7 +21,10 @@ export async function generateRulesAcknowledgmentPdf(
   opts: { slides?: RulesSlide[]; houseName?: string } = {}
 ): Promise<Buffer> {
   const slides = opts.slides ?? RULES_SLIDES;
-  const houseName = opts.houseName ?? "JSL Sober Living Residences";
+  // Standard fonts only encode WinAnsi (≤ U+00FF); a non-WinAnsi
+  // character would throw at draw time and block signing.
+  const toWinAnsi = (s: string) => s.replace(/[^ -ÿ]/g, "?");
+  const houseName = toWinAnsi(opts.houseName ?? "JSL Sober Living Residences");
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.TimesRoman);
   const boldFont = await pdf.embedFont(StandardFonts.TimesRomanBold);
@@ -65,7 +68,10 @@ export async function generateRulesAcknowledgmentPdf(
       .replaceAll("&gt;", ">")
       .replaceAll("&quot;", '"')
       .replaceAll("&#39;", "'")
-      .replaceAll("&amp;", "&");
+      .replaceAll("&amp;", "&")
+      // Standard fonts only encode WinAnsi (≤ U+00FF); replace anything
+      // else so a checkmark or emoji can't throw and block signing.
+      .replace(/[^ -ÿ]/g, "?");
     for (const rawLine of clean.split("\n")) {
       if (!rawLine) { lines.push(""); continue; }
       const words = rawLine.split(" ");
@@ -95,7 +101,7 @@ export async function generateRulesAcknowledgmentPdf(
 
   function drawSectionHeading(text: string) {
     ensureSpace(SECTION_SIZE + 8);
-    currentPage.drawText(text, { x: MARGIN, y, size: SECTION_SIZE, font: boldFont, color: rgb(0, 0, 0) });
+    currentPage.drawText(text.replace(/[^ -ÿ]/g, "?"), { x: MARGIN, y, size: SECTION_SIZE, font: boldFont, color: rgb(0, 0, 0) });
     y -= SECTION_SIZE + 6;
   }
 
