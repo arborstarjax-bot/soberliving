@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getWorkspaceSettings } from "@/lib/workspace";
-import { isModuleEnabled } from "@/lib/modules";
+import { isModuleVisibleToRole } from "@/lib/modules";
 
 import { BulletinFeedSection } from "./bulletin-feed-section";
 import { NewPostSection } from "./new-post-section";
@@ -20,7 +20,7 @@ interface BulletinPageProps {
 export default async function BulletinPage({ searchParams }: BulletinPageProps) {
   const user = await requireAuth();
   const wsSettings = user.workspace_id ? await getWorkspaceSettings(user.workspace_id) : null;
-  if (!isModuleEnabled(wsSettings, "bulletin")) redirect("/dashboard");
+  if (!isModuleVisibleToRole(wsSettings, "bulletin", user.role)) redirect("/dashboard");
   const params = await searchParams;
 
   // Resolve the visible-house scope for the feed. Residents need a

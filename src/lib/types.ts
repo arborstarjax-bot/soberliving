@@ -52,10 +52,17 @@ export interface WorkspaceSettings {
   enable_payments: boolean;
   auto_cycle_chores: boolean;
   auto_demerit_missed_chores: boolean;
+  auto_demerit_missed_meetings: boolean;
+  auto_demerit_missed_curfew: boolean;
   require_chore_photo: boolean;
   require_meeting_photo: boolean;
   enabled_modules: string[];
   pass_approver: "manager" | "admin" | "both";
+  reminder_settings: Record<
+    string,
+    { enabled?: boolean; timing?: "day_of" | "day_before" }
+  >;
+  resident_modules: string[] | null;
   created_at: string;
   updated_at: string;
 }

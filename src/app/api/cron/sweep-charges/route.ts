@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sweepOpenChargesForActiveCommitments } from "@/lib/payments/charges";
+import { createAdminClient } from "@/lib/supabase/server";
+import { sendWebPush } from "@/lib/push";
 
 // Daily cron that opens any missing rent charges for every active
 // commitment. Replaces the former "lazy cron" that ran on every
@@ -45,8 +47,71 @@ export async function GET(request: NextRequest) {
   try {
     // No house filter — cron operates across every active commitment.
     await sweepOpenChargesForActiveCommitments(null);
+
+    // Rent reminders: push residents with rent due today or tomorrow,
+    // per each workspace's "rent" reminder toggle + timing.
+    let remindersSent = 0;
+    const admin = createAdminClient();
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const tomorrowIso = new Date(Date.now() + 86400000)
+      .toISOString()
+      .slice(0, 10);
+
+    const { data: dues } = await admin
+      .from("payment_charges")
+      .select(
+        "id, resident_id, due_date, amount, residents!inner(user_id, house_id, houses!inner(workspace_id))"
+      )
+      .eq("charge_type", "rent")
+      .eq("status", "open")
+      .in("due_date", [todayIso, tomorrowIso]);
+
+    const { data: wsRows } = await admin
+      .from("workspace_settings")
+      .select("workspace_id, reminder_settings");
+    const reminderByWs = new Map<
+      string,
+      Record<string, { enabled?: boolean; timing?: string }>
+    >();
+    for (const w of wsRows ?? []) {
+      reminderByWs.set(
+        w.workspace_id as string,
+        (w.reminder_settings as Record<
+          string,
+          { enabled?: boolean; timing?: string }
+        >) ?? {}
+      );
+    }
+
+    for (const charge of dues ?? []) {
+      const resident = charge.residents as unknown as {
+        user_id: string | null;
+        house_id: string;
+        houses: { workspace_id: string | null };
+      };
+      const wsId = resident.houses?.workspace_id ?? null;
+      const cfg = wsId ? reminderByWs.get(wsId) : undefined;
+      if (cfg?.rent?.enabled === false) continue;
+      const timing = cfg?.rent?.timing === "day_before"
+        ? "day_before"
+        : "day_of";
+      const wantDate = timing === "day_before" ? tomorrowIso : todayIso;
+      if (charge.due_date !== wantDate) continue;
+      if (!resident.user_id) continue;
+
+      await sendWebPush(resident.user_id, "rent_reminder", {
+        title: "Rent Due",
+        body: `Rent of $${Number(charge.amount).toFixed(2)} is due ${
+          charge.due_date === todayIso ? "today" : "tomorrow"
+        } (${charge.due_date}).`,
+        url: "/payments",
+      });
+      remindersSent++;
+    }
+
     return NextResponse.json({
       ok: true,
+      remindersSent,
       durationMs: Date.now() - startedAt,
     });
   } catch (e) {

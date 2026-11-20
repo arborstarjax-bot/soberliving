@@ -3,7 +3,7 @@ import { requireAuth } from "@/lib/auth";
 import { ListSkeleton } from "@/components/ui/skeleton";
 import { redirect } from "next/navigation";
 import { getWorkspaceSettings } from "@/lib/workspace";
-import { isModuleEnabled } from "@/lib/modules";
+import { isModuleVisibleToRole } from "@/lib/modules";
 
 import { AttendanceTabs } from "./attendance-tabs";
 import { CurrentlyOutSection } from "../sign-out-sheet/currently-out-section";
@@ -27,7 +27,7 @@ interface PageProps {
 export default async function AttendancePage({ searchParams }: PageProps) {
   const user = await requireAuth();
   const wsSettings = user.workspace_id ? await getWorkspaceSettings(user.workspace_id) : null;
-  if (!isModuleEnabled(wsSettings, "attendance")) redirect("/dashboard");
+  if (!isModuleVisibleToRole(wsSettings, "attendance", user.role)) redirect("/dashboard");
   const isStaff = user.role === "admin" || user.role === "manager";
 
   const sp = await searchParams;

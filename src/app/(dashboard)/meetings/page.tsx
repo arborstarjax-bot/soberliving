@@ -2,7 +2,7 @@ import { requireAuth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getWorkspaceSettings } from "@/lib/workspace";
-import { isModuleEnabled } from "@/lib/modules";
+import { isModuleVisibleToRole } from "@/lib/modules";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { MeetingsView } from "./meetings-view";
 import { LogMeetingForm } from "./log-meeting-form";
@@ -31,7 +31,7 @@ export default async function MeetingsPage() {
   const wsSettings = user.workspace_id
     ? await getWorkspaceSettings(user.workspace_id)
     : null;
-  if (!isModuleEnabled(wsSettings, "meetings")) redirect("/dashboard");
+  if (!isModuleVisibleToRole(wsSettings, "meetings", user.role)) redirect("/dashboard");
 
   const isStaff = user.role === "admin" || user.role === "manager";
   const supabase = await createClient();

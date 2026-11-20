@@ -167,6 +167,7 @@ interface SidebarProps {
   hasNoLeaveRestriction?: boolean;
   enablePayments?: boolean;
   enabledModules?: string[];
+  residentModules?: string[] | null;
   // Badges are passed as React nodes (not numbers) so the server
   // can stream them into the sidebar behind `<Suspense>` — the
   // sidebar paints immediately and the badges fill in on their own.
@@ -182,6 +183,7 @@ export function Sidebar({
   hasNoLeaveRestriction,
   enablePayments = true,
   enabledModules,
+  residentModules,
   notificationBadge = null,
   bulletinBadge = null,
 }: SidebarProps) {
@@ -193,6 +195,13 @@ export function Sidebar({
     if ((item.href === "/attendance" || item.href === "/passes") && hasNoLeaveRestriction && role === "resident") return false;
     if (item.href === "/payments" && !enablePayments) return false;
     if (item.module && enabledModules && !enabledModules.includes(item.module)) return false;
+    if (
+      item.module &&
+      role === "resident" &&
+      residentModules &&
+      !residentModules.includes(item.module)
+    )
+      return false;
     return true;
   });
 
