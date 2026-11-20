@@ -247,12 +247,18 @@ export async function openRentChargesForCommitment(
     .eq("resident_id", commitment.resident_id)
     .eq("commitment_id", commitment.id)
     .eq("charge_type", "rent");
-  const existingDates: Date[] = (existing ?? []).map((r) =>
-    parseIsoDate(
-      ((r as { period_start: string | null }).period_start ??
-        (r as { due_date: string }).due_date) as string
+  const existingDates: Date[] = (existing ?? [])
+    .map((r) =>
+      parseIsoDate(
+        ((r as { period_start: string | null }).period_start ??
+          (r as { due_date: string }).due_date) as string
+      )
     )
-  );
+    // Anchors before this commitment's billing start belong to a
+    // superseded schedule (or debt kept after an anchor move). They
+    // must not gate nextDueDate or the requested first cycle gets
+    // skipped.
+    .filter((d) => d.getTime() >= start.getTime());
 
   const rows: Array<{
     resident_id: string;
@@ -458,12 +464,18 @@ export async function materializeNextRentCharge(commitmentId: string): Promise<{
     .eq("resident_id", commitment.resident_id)
     .eq("commitment_id", commitment.id)
     .eq("charge_type", "rent");
-  const existingDates: Date[] = (existing ?? []).map((r) =>
-    parseIsoDate(
-      ((r as { period_start: string | null }).period_start ??
-        (r as { due_date: string }).due_date) as string
+  const existingDates: Date[] = (existing ?? [])
+    .map((r) =>
+      parseIsoDate(
+        ((r as { period_start: string | null }).period_start ??
+          (r as { due_date: string }).due_date) as string
+      )
     )
-  );
+    // Anchors before this commitment's billing start belong to a
+    // superseded schedule (or debt kept after an anchor move). They
+    // must not gate nextDueDate or the requested first cycle gets
+    // skipped.
+    .filter((d) => d.getTime() >= start.getTime());
 
   const anchor = nextDueDate(start, existingDates, frequency);
   const dueDateObj = computeRentDueDate(anchor);

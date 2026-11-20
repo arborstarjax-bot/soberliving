@@ -1034,16 +1034,34 @@ export async function updateRentTerms(
     .eq("id", commitmentId);
   if (error) return { error: error.message };
 
-  // Rebuild the open rent schedule under the new terms. Clearing
-  // every OPEN rent row (not just future ones) keeps an earlier
-  // same-month anchor from skipping the requested cycle; the opener
-  // re-creates every charge due ≤ today at the new terms.
-  await admin
+  // Rebuild the open rent schedule under the new terms. Only
+  // future-dated OPEN rows are deleted — charges already due stay
+  // on the books as owed debt. Deleting those would erase unpaid
+  // rent and could unlink a payment mid-flight.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const { data: futureOpen } = await admin
     .from("payment_charges")
-    .delete()
+    .select("id")
     .eq("commitment_id", commitmentId)
     .eq("charge_type", "rent")
-    .eq("status", "open");
+    .eq("status", "open")
+    .gt("due_date", todayIso);
+  const futureIds = (futureOpen ?? []).map((c) => c.id as string);
+  if (futureIds.length > 0) {
+    // Keep any row a payment already references — deleting it would
+    // unlink the receipt and leave the credit applied to nothing.
+    const { data: linked } = await admin
+      .from("payments")
+      .select("charge_id")
+      .in("charge_id", futureIds);
+    const linkedIds = new Set(
+      (linked ?? []).map((p) => p.charge_id as string)
+    );
+    const deletable = futureIds.filter((id) => !linkedIds.has(id));
+    if (deletable.length > 0) {
+      await admin.from("payment_charges").delete().in("id", deletable);
+    }
+  }
   await openRentChargesForCommitment(commitmentId);
 
   // Keep an open admin-fee charge in sync with the new value:
@@ -1062,6 +1080,29 @@ export async function updateRentTerms(
       .eq("commitment_id", commitmentId)
       .eq("charge_type", "admin_fee")
       .in("status", ["open", "partial"]);
+    // Close out fees already covered by payments so a reduced fee
+    // doesn't linger on the outstanding list with a zero balance.
+    await admin
+      .from("payment_charges")
+      .update({ status: "paid" })
+      .eq("commitment_id", commitmentId)
+      .eq("charge_type", "admin_fee")
+      .in("status", ["open", "partial"])
+      .lte("amount", 0);
+    const { data: feeCharges } = await admin
+      .from("payment_charges")
+      .select("id, amount, paid_amount")
+      .eq("commitment_id", commitmentId)
+      .eq("charge_type", "admin_fee")
+      .in("status", ["open", "partial"]);
+    for (const c of feeCharges ?? []) {
+      if (Number(c.paid_amount) >= Number(c.amount)) {
+        await admin
+          .from("payment_charges")
+          .update({ status: "paid" })
+          .eq("id", c.id);
+      }
+    }
   }
 
   const { data: resident } = await admin
