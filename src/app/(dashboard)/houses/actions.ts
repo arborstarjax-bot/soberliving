@@ -34,10 +34,14 @@ export async function createHouse(
     return { error: parsed.error.issues[0].message };
   }
 
-  const supabase = await createClient();
-  const { data, error } = await supabase
+  const adminClient = createAdminClient();
+  const { data, error } = await adminClient
     .from("houses")
-    .insert({ ...parsed.data, capacity: 0 })
+    .insert({
+      ...parsed.data,
+      capacity: 0,
+      workspace_id: user.workspace_id,
+    })
     .select("id")
     .single();
 
