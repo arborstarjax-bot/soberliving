@@ -96,6 +96,43 @@ export async function createLeaveRequest(
     return { error: "You cannot select yourself as the covering resident" };
   }
 
+  // The covering resident must be free of their own chore duties in the
+  // house's current rotation — they can't cover someone else's chores
+  // while doing theirs. Only enforced when an eligible (chore-free)
+  // resident exists, matching the picker; if everyone is busy we still
+  // accept the request rather than blocking leave entirely.
+  const { data: currentRotation } = await supabase
+    .from("chore_rotations")
+    .select("id")
+    .eq("house_id", resident.house_id)
+    .eq("is_current", true)
+    .maybeSingle();
+
+  if (currentRotation) {
+    const { data: houseResidents } = await supabase
+      .from("residents")
+      .select("id")
+      .eq("house_id", resident.house_id)
+      .eq("status", "active")
+      .neq("id", parsed.data.resident_id);
+    const { data: rotationAssignments } = await supabase
+      .from("chore_rotation_assignments")
+      .select("resident_id")
+      .eq("rotation_id", currentRotation.id);
+    const busyIds = new Set(
+      (rotationAssignments ?? []).map((a) => a.resident_id)
+    );
+    const hasEligibleCover = (houseResidents ?? []).some(
+      (r) => !busyIds.has(r.id)
+    );
+    if (hasEligibleCover && busyIds.has(parsed.data.covering_resident_id)) {
+      return {
+        error:
+          "That resident already has chore assignments this rotation — pick a resident who is free to cover",
+      };
+    }
+  }
+
   // Authorization
   if (user.role === "resident") {
     // Residents can only create requests for themselves
