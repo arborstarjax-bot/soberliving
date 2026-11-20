@@ -50,6 +50,10 @@ export interface WorkspaceSettings {
   require_application: boolean;
   require_commitment: boolean;
   enable_payments: boolean;
+  auto_cycle_chores: boolean;
+  auto_demerit_missed_chores: boolean;
+  require_chore_photo: boolean;
+  require_meeting_photo: boolean;
   created_at: string;
   updated_at: string;
 }

@@ -45,14 +45,22 @@ export async function markSignoffComplete(signoffId: string, photoUrl?: string) 
   const assignment = signoff.rotation_assignment;
   const houseId = assignment?.rotation?.house_id ?? "";
 
-  // Look up house timezone for accurate date checks
-  const supabaseForTz = await createClient();
-  const { data: houseRow } = await supabaseForTz
+  // Look up house timezone + workspace photo policy
+  const { data: houseRow } = await supabase
     .from("houses")
-    .select("timezone")
+    .select("timezone, workspace_id")
     .eq("id", houseId)
     .maybeSingle();
   const tz = houseRow?.timezone ?? DEFAULT_TIMEZONE;
+  let workspaceRequiresPhoto = false;
+  if (houseRow?.workspace_id) {
+    const { data: ws } = await supabase
+      .from("workspace_settings")
+      .select("require_chore_photo")
+      .eq("workspace_id", houseRow.workspace_id)
+      .maybeSingle();
+    workspaceRequiresPhoto = ws?.require_chore_photo ?? false;
+  }
   const todayLocal = getHouseToday(tz);
   const yesterdayLocal = getHouseYesterday(tz);
 
@@ -74,8 +82,8 @@ export async function markSignoffComplete(signoffId: string, photoUrl?: string) 
       return { error: "You can only sign off on today's chore" };
     }
 
-    // Check if force_photo is enabled
-    if (residentRecord.force_photo && !photoUrl) {
+    // Photo is required if forced per-resident or workspace-wide
+    if ((residentRecord.force_photo || workspaceRequiresPhoto) && !photoUrl) {
       return { error: "Photo is required — please upload a photo before signing off" };
     }
   } else {
@@ -340,7 +348,25 @@ export async function redoSignoff(signoffId: string, photoUrl?: string) {
     return { error: "Not authorized" };
   }
 
-  if (residentRecord.force_photo && !photoUrl) {
+  const redoHouseId = assignment?.rotation?.house_id ?? "";
+  let redoWorkspaceRequiresPhoto = false;
+  if (redoHouseId) {
+    const { data: redoHouseRow } = await supabase
+      .from("houses")
+      .select("workspace_id")
+      .eq("id", redoHouseId)
+      .maybeSingle();
+    if (redoHouseRow?.workspace_id) {
+      const { data: ws } = await supabase
+        .from("workspace_settings")
+        .select("require_chore_photo")
+        .eq("workspace_id", redoHouseRow.workspace_id)
+        .maybeSingle();
+      redoWorkspaceRequiresPhoto = ws?.require_chore_photo ?? false;
+    }
+  }
+
+  if ((residentRecord.force_photo || redoWorkspaceRequiresPhoto) && !photoUrl) {
     return { error: "Photo is required — please upload a photo before signing off" };
   }
 

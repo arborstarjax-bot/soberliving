@@ -86,9 +86,9 @@ export function StartRotationDialog({ houses, defaultHouseId, hasPreviousRotatio
                 className="mt-0.5 h-4 w-4 rounded border-input"
               />
               <span>
-                <span className="font-medium">Rotate residents from previous cycle</span>
+                <span className="font-medium">Auto-assign chores fairly</span>
                 <span className="block text-xs text-muted-foreground">
-                  Carry forward assignments and shift everyone down one chore (respecting room restrictions).
+                  Re-deal all active chores evenly across the house&apos;s residents — who gets an extra chore or sits out rotates each cycle (respecting exclusions).
                 </span>
               </span>
             </label>
