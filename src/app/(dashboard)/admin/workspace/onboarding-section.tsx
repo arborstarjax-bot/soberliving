@@ -129,31 +129,46 @@ export function OnboardingSection({
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
 
-  function handleSave() {
+  type Field = keyof ReturnType<typeof buildPayload>;
+
+  function buildPayload() {
+    return {
+      require_application: requireApp,
+      require_commitment: requireCommitment,
+      enable_payments: enablePayments,
+      auto_cycle_chores: autoCycleChores,
+      auto_cycle_frequency: autoCycleFrequency,
+      auto_demerit_missed_chores: autoDemerit,
+      auto_demerit_missed_meetings: autoDemeritMeetings,
+      auto_demerit_missed_curfew: autoDemeritCurfew,
+      require_chore_photo: requireChorePhoto,
+      require_meeting_photo: requireMeetingPhoto,
+      enabled_modules: enabledModules,
+      pass_approver: passApprover,
+      intake_mode: intakeMode,
+      intake_steps: intakeSteps,
+      rules_text: rulesText || null,
+      require_rule_checkoff: requireRuleCheckoff,
+      check_in_schedules: schedules,
+      resident_modules: residentModules,
+      reminder_settings: reminders,
+    };
+  }
+
+  // Each section's Save button writes only its own columns, so a save in
+  // one area can't fail on another area's columns the database lacks.
+  function handleSave(fields: Field[]) {
+    const all = buildPayload();
+    const payload: Record<string, unknown> = {};
+    for (const f of fields) payload[f] = all[f];
+    // Only write the frequency column when auto-cycle is on — older
+    // databases may not have the column yet, and it is unused otherwise.
+    if (!autoCycleChores) delete payload.auto_cycle_frequency;
     startTransition(async () => {
-      const result = await updateWorkspaceSettings(workspaceId, {
-        require_application: requireApp,
-        require_commitment: requireCommitment,
-        enable_payments: enablePayments,
-        auto_cycle_chores: autoCycleChores,
-        // Only write the frequency column when auto-cycle is on — older
-        // databases may not have the column yet, and it is unused otherwise.
-        ...(autoCycleChores ? { auto_cycle_frequency: autoCycleFrequency } : {}),
-        auto_demerit_missed_chores: autoDemerit,
-        auto_demerit_missed_meetings: autoDemeritMeetings,
-        auto_demerit_missed_curfew: autoDemeritCurfew,
-        require_chore_photo: requireChorePhoto,
-        require_meeting_photo: requireMeetingPhoto,
-        enabled_modules: enabledModules,
-        pass_approver: passApprover,
-        intake_mode: intakeMode,
-        intake_steps: intakeSteps,
-        rules_text: rulesText || null,
-        require_rule_checkoff: requireRuleCheckoff,
-        check_in_schedules: schedules,
-        resident_modules: residentModules,
-        reminder_settings: reminders,
-      });
+      const result = await updateWorkspaceSettings(
+        workspaceId,
+        payload as Parameters<typeof updateWorkspaceSettings>[1]
+      );
       if (result.error) {
         setMessage(result.error);
       } else {
@@ -225,7 +240,7 @@ export function OnboardingSection({
         </div>
 
         <div className="flex items-center gap-3">
-          <Button onClick={handleSave} disabled={pending}>
+          <Button onClick={() => handleSave(["require_application", "require_commitment", "enable_payments"])} disabled={pending}>
             {pending ? "Saving..." : "Save Changes"}
           </Button>
           {message && (
@@ -370,7 +385,7 @@ export function OnboardingSection({
         </div>
 
         <div className="flex items-center gap-3">
-          <Button onClick={handleSave} disabled={pending}>
+          <Button onClick={() => handleSave(["auto_cycle_chores", "auto_cycle_frequency", "auto_demerit_missed_chores", "auto_demerit_missed_meetings", "auto_demerit_missed_curfew", "require_chore_photo", "require_meeting_photo"])} disabled={pending}>
             {pending ? "Saving..." : "Save Changes"}
           </Button>
         </div>
@@ -435,7 +450,7 @@ export function OnboardingSection({
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button onClick={handleSave} disabled={pending}>
+          <Button onClick={() => handleSave(["pass_approver"])} disabled={pending}>
             {pending ? "Saving..." : "Save Changes"}
           </Button>
         </div>
@@ -572,7 +587,7 @@ export function OnboardingSection({
         </div>
 
         <div className="flex items-center gap-3">
-          <Button onClick={handleSave} disabled={pending}>
+          <Button onClick={() => handleSave(["intake_mode", "intake_steps", "rules_text", "require_rule_checkoff"])} disabled={pending}>
             {pending ? "Saving..." : "Save Changes"}
           </Button>
         </div>
@@ -730,7 +745,7 @@ export function OnboardingSection({
           >
             Add Schedule
           </Button>
-          <Button onClick={handleSave} disabled={pending}>
+          <Button onClick={() => handleSave(["check_in_schedules"])} disabled={pending}>
             {pending ? "Saving..." : "Save Changes"}
           </Button>
         </div>
@@ -768,7 +783,7 @@ export function OnboardingSection({
           </div>
         ))}
         <div className="flex items-center gap-3">
-          <Button onClick={handleSave} disabled={pending}>
+          <Button onClick={() => handleSave(["resident_modules"])} disabled={pending}>
             {pending ? "Saving..." : "Save Changes"}
           </Button>
         </div>
@@ -837,7 +852,7 @@ export function OnboardingSection({
           );
         })}
         <div className="flex items-center gap-3">
-          <Button onClick={handleSave} disabled={pending}>
+          <Button onClick={() => handleSave(["reminder_settings"])} disabled={pending}>
             {pending ? "Saving..." : "Save Changes"}
           </Button>
         </div>
@@ -873,7 +888,7 @@ export function OnboardingSection({
           to Home for everyone in this workspace.
         </p>
         <div className="flex items-center gap-3">
-          <Button onClick={handleSave} disabled={pending}>
+          <Button onClick={() => handleSave(["enabled_modules"])} disabled={pending}>
             {pending ? "Saving..." : "Save Changes"}
           </Button>
         </div>

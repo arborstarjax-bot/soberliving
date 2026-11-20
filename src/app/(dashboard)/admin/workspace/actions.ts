@@ -29,18 +29,21 @@ export async function updateWorkspaceName(workspaceId: string, name: string) {
 export async function updateWorkspaceSettings(
   workspaceId: string,
   settings: {
-    require_application: boolean;
-    require_commitment: boolean;
-    enable_payments: boolean;
-    auto_cycle_chores: boolean;
+    // Every field is optional: each settings section saves only its own
+    // columns, so a section can be saved on databases that lack newer
+    // columns used by other sections.
+    require_application?: boolean;
+    require_commitment?: boolean;
+    enable_payments?: boolean;
+    auto_cycle_chores?: boolean;
     auto_cycle_frequency?: "daily" | "weekly" | "biweekly" | "monthly";
-    auto_demerit_missed_chores: boolean;
-    auto_demerit_missed_meetings: boolean;
-    auto_demerit_missed_curfew: boolean;
-    require_chore_photo: boolean;
-    require_meeting_photo: boolean;
-    enabled_modules: string[];
-    pass_approver: "manager" | "admin" | "both";
+    auto_demerit_missed_chores?: boolean;
+    auto_demerit_missed_meetings?: boolean;
+    auto_demerit_missed_curfew?: boolean;
+    require_chore_photo?: boolean;
+    require_meeting_photo?: boolean;
+    enabled_modules?: string[];
+    pass_approver?: "manager" | "admin" | "both";
     resident_modules?: string[];
     intake_mode?: "auto" | "requires_signoff";
     intake_steps?: { id: string; label: string; required?: boolean }[];
@@ -71,20 +74,45 @@ export async function updateWorkspaceSettings(
   const { error } = await admin
     .from("workspace_settings")
     .update({
-      require_application: settings.require_application,
-      require_commitment: settings.require_commitment,
-      enable_payments: settings.enable_payments,
-      auto_cycle_chores: settings.auto_cycle_chores,
+      ...(settings.require_application !== undefined
+        ? { require_application: settings.require_application }
+        : {}),
+      ...(settings.require_commitment !== undefined
+        ? { require_commitment: settings.require_commitment }
+        : {}),
+      ...(settings.enable_payments !== undefined
+        ? { enable_payments: settings.enable_payments }
+        : {}),
+      ...(settings.auto_cycle_chores !== undefined
+        ? { auto_cycle_chores: settings.auto_cycle_chores }
+        : {}),
       ...(settings.auto_cycle_frequency !== undefined
         ? { auto_cycle_frequency: settings.auto_cycle_frequency }
         : {}),
-      auto_demerit_missed_chores: settings.auto_demerit_missed_chores,
-      auto_demerit_missed_meetings: settings.auto_demerit_missed_meetings,
-      auto_demerit_missed_curfew: settings.auto_demerit_missed_curfew,
-      require_chore_photo: settings.require_chore_photo,
-      require_meeting_photo: settings.require_meeting_photo,
-      enabled_modules: settings.enabled_modules,
-      pass_approver: settings.pass_approver,
+      ...(settings.auto_demerit_missed_chores !== undefined
+        ? { auto_demerit_missed_chores: settings.auto_demerit_missed_chores }
+        : {}),
+      ...(settings.auto_demerit_missed_meetings !== undefined
+        ? {
+            auto_demerit_missed_meetings:
+              settings.auto_demerit_missed_meetings,
+          }
+        : {}),
+      ...(settings.auto_demerit_missed_curfew !== undefined
+        ? { auto_demerit_missed_curfew: settings.auto_demerit_missed_curfew }
+        : {}),
+      ...(settings.require_chore_photo !== undefined
+        ? { require_chore_photo: settings.require_chore_photo }
+        : {}),
+      ...(settings.require_meeting_photo !== undefined
+        ? { require_meeting_photo: settings.require_meeting_photo }
+        : {}),
+      ...(settings.enabled_modules !== undefined
+        ? { enabled_modules: settings.enabled_modules }
+        : {}),
+      ...(settings.pass_approver !== undefined
+        ? { pass_approver: settings.pass_approver }
+        : {}),
       ...(settings.resident_modules !== undefined
         ? { resident_modules: settings.resident_modules }
         : {}),
