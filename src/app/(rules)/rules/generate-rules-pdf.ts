@@ -1,5 +1,5 @@
 import { PDFDocument, PDFFont, PDFPage, rgb, StandardFonts } from "pdf-lib";
-import { RULES_SLIDES } from "./rules-content";
+import { RULES_SLIDES, type RulesSlide } from "./rules-content";
 
 const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
@@ -17,8 +17,11 @@ const BORDER_INSET = 28;
  */
 export async function generateRulesAcknowledgmentPdf(
   residentName: string,
-  signatureDataUrl: string
+  signatureDataUrl: string,
+  opts: { slides?: RulesSlide[]; houseName?: string } = {}
 ): Promise<Buffer> {
+  const slides = opts.slides ?? RULES_SLIDES;
+  const houseName = opts.houseName ?? "JSL Sober Living Residences";
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.TimesRoman);
   const boldFont = await pdf.embedFont(StandardFonts.TimesRomanBold);
@@ -54,8 +57,15 @@ export async function generateRulesAcknowledgmentPdf(
 
   function wrapText(text: string, f: PDFFont, size: number, maxWidth: number): string[] {
     const lines: string[] = [];
-    // Strip HTML tags for PDF
-    const clean = text.replace(/<[^>]+>/g, "");
+    // Strip HTML tags for PDF, then decode escaped entities that
+    // buildRulesSlides produced for dynamic text.
+    const clean = text
+      .replace(/<[^>]+>/g, "")
+      .replaceAll("&lt;", "<")
+      .replaceAll("&gt;", ">")
+      .replaceAll("&quot;", '"')
+      .replaceAll("&#39;", "'")
+      .replaceAll("&amp;", "&");
     for (const rawLine of clean.split("\n")) {
       if (!rawLine) { lines.push(""); continue; }
       const words = rawLine.split(" ");
@@ -127,13 +137,13 @@ export async function generateRulesAcknowledgmentPdf(
   }
 
   // ─── Title page ───
-  drawCenteredTitle("JSL Sober Living Residences");
+  drawCenteredTitle(houseName);
   y -= 10;
   drawCenteredTitle("House Rules & Consequences");
   y -= 20;
 
   // ─── Render all slides content ───
-  for (const slide of RULES_SLIDES) {
+  for (const slide of slides) {
     // Skip the title slide (first one, already handled)
     if (slide.title === "House Rules & Consequences") continue;
 

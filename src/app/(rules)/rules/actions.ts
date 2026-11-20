@@ -5,6 +5,12 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { generateRulesAcknowledgmentPdf } from "./generate-rules-pdf";
+import { buildRulesSlides } from "./rules-content";
+import {
+  getWorkspaceForUser,
+  getWorkspace,
+  getWorkspaceSettings,
+} from "@/lib/workspace";
 
 export async function submitRulesAcknowledgment(signatureDataUrl: string) {
   const user = await requireAuth();
@@ -14,10 +20,23 @@ export async function submitRulesAcknowledgment(signatureDataUrl: string) {
     return { error: "Signature is required" };
   }
 
+  // Rebuild the same deck the resident saw so the signed acknowledgment
+  // records the workspace's actual rules (custom sheet or named deck).
+  const membership = await getWorkspaceForUser(user.id);
+  const [workspace, settings] = membership
+    ? await Promise.all([
+        getWorkspace(membership.workspace_id),
+        getWorkspaceSettings(membership.workspace_id),
+      ])
+    : [null, null];
+  const houseName = workspace?.name ?? "the house";
+  const slides = buildRulesSlides(houseName, settings?.rules_text);
+
   // Generate full PDF with all rules content + resident signature
   const pdfBuffer = await generateRulesAcknowledgmentPdf(
     user.full_name,
-    signatureDataUrl
+    signatureDataUrl,
+    { slides, houseName }
   );
 
   // Upload PDF to Supabase Storage
