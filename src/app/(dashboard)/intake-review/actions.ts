@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { requireAuth, requireRole } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
@@ -488,43 +489,48 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     }
   }
 
-  await logActivity({
-    actorId: currentUser.id,
-    eventType: "intake_review_completed",
-    entityType: "user",
-    entityId: data.userId,
-    description: `${currentUser.full_name} completed intake review for ${targetUser.full_name} — assigned to ${house?.name || "house"}${data.moveInPayment ? ` (move-in payment: $${(data.moveInPayment.adminAmount + data.moveInPayment.rentAmount).toFixed(2)})` : ""}`,
-  });
-
-  // Notify the applicant that their application was approved. When
-  // commitment is required, direct them to sign it; otherwise welcome
-  // them straight to the dashboard.
+  // Logging and notifications don't change the outcome for the admin —
+  // run them after the response so approval returns quickly.
   const houseName = house?.name ?? "your assigned house";
-  await sendNotification({
-    userId: data.userId,
-    type: "intake_approved",
-    title: "Application Approved",
-    message:
-      commitmentStatus === "active"
-        ? `Your application was approved. Welcome to ${houseName}!`
-        : `Your application was approved. Please sign your house commitment to finalize your move-in at ${houseName}.`,
-    actionUrl: commitmentStatus === "active" ? "/dashboard" : "/sign-commitment",
-    entityType: "user",
-    entityId: data.userId,
-  });
-
-  await notifyHouseStaff(
-    data.houseId,
-    {
-      type: "intake_approved",
-      title: "Intake Application Approved",
-      message: `${currentUser.full_name} approved ${targetUser.full_name}'s application for ${house?.name ?? "this house"}.`,
-      actionUrl: "/intake-review?tab=approved",
+  after(async () => {
+    await logActivity({
+      actorId: currentUser.id,
+      eventType: "intake_review_completed",
       entityType: "user",
       entityId: data.userId,
-    },
-    { excludeUserId: currentUser.id }
-  );
+      description: `${currentUser.full_name} completed intake review for ${targetUser.full_name} — assigned to ${house?.name || "house"}${data.moveInPayment ? ` (move-in payment: $${(data.moveInPayment.adminAmount + data.moveInPayment.rentAmount).toFixed(2)})` : ""}`,
+    });
+
+    // Notify the applicant that their application was approved. When
+    // commitment is required, direct them to sign it; otherwise welcome
+    // them straight to the dashboard.
+    await sendNotification({
+      userId: data.userId,
+      type: "intake_approved",
+      title: "Application Approved",
+      message:
+        commitmentStatus === "active"
+          ? `Your application was approved. Welcome to ${houseName}!`
+          : `Your application was approved. Please sign your house commitment to finalize your move-in at ${houseName}.`,
+      actionUrl:
+        commitmentStatus === "active" ? "/dashboard" : "/sign-commitment",
+      entityType: "user",
+      entityId: data.userId,
+    });
+
+    await notifyHouseStaff(
+      data.houseId,
+      {
+        type: "intake_approved",
+        title: "Intake Application Approved",
+        message: `${currentUser.full_name} approved ${targetUser.full_name}'s application for ${house?.name ?? "this house"}.`,
+        actionUrl: "/intake-review?tab=approved",
+        entityType: "user",
+        entityId: data.userId,
+      },
+      { excludeUserId: currentUser.id }
+    );
+  });
 
   // Auto-approve workspace membership when admin completes intake review.
   // The resident was "pending" in workspace_members — completing intake

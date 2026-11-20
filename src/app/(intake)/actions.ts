@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
@@ -99,28 +100,31 @@ export async function submitIntakeForm(
     })
     .eq("id", user.id);
 
-  await logActivity({
-    actorId: user.id,
-    eventType: "intake_completed",
-    entityType: "user",
-    entityId: user.id,
-    description: `${fullName} completed the intake packet`,
-  });
+  // Logging + staff notification don't affect the applicant — run them
+  // after the response so the submit returns quickly.
+  after(async () => {
+    await logActivity({
+      actorId: user.id,
+      eventType: "intake_completed",
+      entityType: "user",
+      entityId: user.id,
+      description: `${fullName} completed the intake packet`,
+    });
 
-  // Notify staff that a new intake application is waiting for review.
-  // Admins always see it; managers only see it if the applicant has
-  // already been tied to one of their houses (e.g. via admin invite).
-  // Self-signup applicants have no house yet, so only admins get pinged.
-  const { data: userRow } = await adminClient
-    .from("users")
-    .select("pending_house_id")
-    .eq("id", user.id)
-    .single();
-  const pendingHouseId =
-    (userRow as { pending_house_id?: string | null } | null)?.pending_house_id ??
-    null;
+    // Notify staff that a new intake application is waiting for review.
+    // Admins always see it; managers only see it if the applicant has
+    // already been tied to one of their houses (e.g. via admin invite).
+    // Self-signup applicants have no house yet, so only admins get pinged.
+    const { data: userRow } = await adminClient
+      .from("users")
+      .select("pending_house_id")
+      .eq("id", user.id)
+      .single();
+    const pendingHouseId =
+      (userRow as { pending_house_id?: string | null } | null)
+        ?.pending_house_id ?? null;
 
-  await notifyHouseStaff(
+    await notifyHouseStaff(
     pendingHouseId,
     {
       type: "intake_submitted",
@@ -132,6 +136,7 @@ export async function submitIntakeForm(
     },
     { workspaceId: user.workspace_id }
   );
+  });
 
   revalidatePath("/dashboard");
   revalidatePath("/intake-review");
@@ -202,26 +207,28 @@ export async function submitQuickSignup(
     { onConflict: "user_id" }
   );
 
-  await logActivity({
-    actorId: user.id,
-    eventType: "intake_completed",
-    entityType: "user",
-    entityId: user.id,
-    description: `${fullName} completed quick signup`,
-  });
-
-  await notifyHouseStaff(
-    null,
-    {
-      type: "intake_submitted",
-      title: "New Resident Signup",
-      message: `${fullName} completed quick signup and is ready for housing assignment.`,
-      actionUrl: "/intake-review",
+  after(async () => {
+    await logActivity({
+      actorId: user.id,
+      eventType: "intake_completed",
       entityType: "user",
       entityId: user.id,
-    },
-    { workspaceId: user.workspace_id }
-  );
+      description: `${fullName} completed quick signup`,
+    });
+
+    await notifyHouseStaff(
+      null,
+      {
+        type: "intake_submitted",
+        title: "New Resident Signup",
+        message: `${fullName} completed quick signup and is ready for housing assignment.`,
+        actionUrl: "/intake-review",
+        entityType: "user",
+        entityId: user.id,
+      },
+      { workspaceId: user.workspace_id }
+    );
+  });
 
   revalidatePath("/dashboard");
   revalidatePath("/intake-review");
