@@ -8,6 +8,7 @@ import { requireAuth, requireRole } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { DEFAULT_TIMEZONE, getHouseToday } from "@/lib/timezone";
+import { getHouseTimezone } from "@/lib/workspace";
 import {
   createHouseSchema,
   updateHouseSchema,
@@ -342,7 +343,7 @@ export async function deleteRoom(
     const bedIds = roomBeds.map((b) => b.id);
     await supabase
       .from("bed_assignments")
-      .update({ end_date: getHouseToday() })
+      .update({ end_date: getHouseToday(await getHouseTimezone(room.house_id)) })
       .in("bed_id", bedIds)
       .is("end_date", null);
     await supabase
@@ -459,7 +460,7 @@ export async function deleteBed(
   // End any active bed assignment for this bed
   await supabase
     .from("bed_assignments")
-    .update({ end_date: getHouseToday() })
+    .update({ end_date: getHouseToday(await getHouseTimezone(houseId)) })
     .eq("bed_id", bedId)
     .is("end_date", null);
 

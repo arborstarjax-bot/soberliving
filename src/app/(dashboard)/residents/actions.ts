@@ -14,6 +14,7 @@ import {
 } from "@/lib/validations";
 import { sendNotification } from "@/lib/notifications";
 import { getHouseToday } from "@/lib/timezone";
+import { getHouseTimezone } from "@/lib/workspace";
 import { sendReinstateEmail, sendApplicationEmail } from "@/lib/email";
 import { getAppOrigin } from "@/lib/app-url";
 
@@ -179,7 +180,7 @@ export async function dischargeResident(
     return { error: "Not authorized" };
   }
 
-  const dischargeDate = getHouseToday();
+  const dischargeDate = getHouseToday(await getHouseTimezone(resident.house_id));
   const nowIso = new Date().toISOString();
 
   // Grab the linked auth user_id up front so we can clear their
@@ -458,7 +459,7 @@ export async function deleteResident(residentId: string) {
   // End all active bed assignments
   await supabase
     .from("bed_assignments")
-    .update({ end_date: getHouseToday() })
+    .update({ end_date: getHouseToday(await getHouseTimezone(resident.house_id)) })
     .eq("resident_id", residentId)
     .is("end_date", null);
 
@@ -660,7 +661,7 @@ export async function transferResident(
     }
   }
 
-  const today = getHouseToday();
+  const today = getHouseToday(await getHouseTimezone(targetHouseId));
   const nowIso = new Date().toISOString();
 
   // 1. Vacate active bed assignment(s) in the old house.
@@ -917,7 +918,7 @@ export async function assignBed(
     .insert({
       resident_id: residentId,
       bed_id: bedId,
-      start_date: getHouseToday(),
+      start_date: getHouseToday(await getHouseTimezone(houseId)),
       assigned_by: user.id,
     })
     .select("id")
@@ -1019,7 +1020,7 @@ export async function changeResidentBed(
     }
   }
 
-  const today = getHouseToday();
+  const today = getHouseToday(await getHouseTimezone(houseId));
 
   const { data: resident } = await supabase
     .from("residents")
@@ -1147,7 +1148,7 @@ export async function vacateBed(assignmentId: string) {
 
   const { error } = await supabase
     .from("bed_assignments")
-    .update({ end_date: getHouseToday() })
+    .update({ end_date: getHouseToday(await getHouseTimezone(houseId)) })
     .eq("id", assignmentId);
 
   if (error) return { error: error.message };
@@ -1256,7 +1257,7 @@ export async function reinstateResident(
 
   // Flip the resident back to active in the new house
   const nowIso = new Date().toISOString();
-  const today = getHouseToday();
+  const today = getHouseToday(await getHouseTimezone(houseId));
   const { error: updateError } = await supabase
     .from("residents")
     .update({

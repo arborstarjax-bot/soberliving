@@ -2,6 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 import { createAdminClient } from "@/lib/supabase/server";
+import { DEFAULT_TIMEZONE } from "@/lib/timezone";
 import type {
   Workspace,
   WorkspaceSettings,
@@ -33,6 +34,22 @@ export const getWorkspace = cache(
       .eq("id", workspaceId)
       .single();
     return data as Workspace | null;
+  }
+);
+
+/** The house's configured timezone (falls back to the app default). */
+export const getHouseTimezone = cache(
+  async (houseId: string): Promise<string> => {
+    const admin = createAdminClient();
+    const { data } = await admin
+      .from("houses")
+      .select("timezone")
+      .eq("id", houseId)
+      .maybeSingle();
+    return (
+      (data as { timezone?: string | null } | null)?.timezone ??
+      DEFAULT_TIMEZONE
+    );
   }
 );
 

@@ -19,7 +19,7 @@ import {
 import { generateReceiptPdf } from "@/lib/payments/receipt-pdf";
 import { z } from "zod";
 import { getHouseToday } from "@/lib/timezone";
-import { getWorkspace, getWorkspaceSettings } from "@/lib/workspace";
+import { getHouseTimezone, getWorkspace, getWorkspaceSettings } from "@/lib/workspace";
 
 // Receipt PDF uses the workspace name for branding. Fetched dynamically
 // via getWorkspace() below. This constant is the fallback.
@@ -192,7 +192,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
   // occupancy grid's "Mark Not Available" button instead.
   await adminClient
     .from("bed_assignments")
-    .update({ end_date: getHouseToday() })
+    .update({ end_date: getHouseToday(await getHouseTimezone(data.houseId)) })
     .eq("resident_id", residentId)
     .is("end_date", null);
 

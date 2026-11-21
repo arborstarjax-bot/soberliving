@@ -8,6 +8,7 @@ import { logActivity } from "@/lib/activity";
 import { sendNotification, sendNotificationToHouseManagers, sendNotificationToAdmins, notifyHouseStaff } from "@/lib/notifications";
 import { z } from "zod";
 import { getHouseToday } from "@/lib/timezone";
+import { getHouseTimezone } from "@/lib/workspace";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const DATETIME_LOCAL_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/;
@@ -758,7 +759,7 @@ export async function markLeaveReturned(requestId: string) {
     .from("leave_requests")
     .update({
       status: "returned",
-      actual_return_date: getHouseToday(),
+      actual_return_date: getHouseToday(await getHouseTimezone(houseId)),
       updated_at: new Date().toISOString(),
     })
     .eq("id", requestId);

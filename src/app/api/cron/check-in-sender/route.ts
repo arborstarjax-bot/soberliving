@@ -35,18 +35,20 @@ export async function GET(request: NextRequest) {
   }
 
   const admin = createAdminClient();
-  const today = getHouseToday();
-  const et = new Date(
-    new Date().toLocaleString("en-US", { timeZone: "America/New_York" })
-  );
-  const weekday = et.getDay();
-
   const { data: settingsRows } = await admin
     .from("workspace_settings")
-    .select("workspace_id, check_in_schedules");
+    .select("workspace_id, check_in_schedules, timezone");
 
   let sent = 0;
   for (const row of settingsRows ?? []) {
+    // Each workspace's "today" and weekday come from its own timezone.
+    const wsTz =
+      (row.timezone as string | null) ?? "America/New_York";
+    const today = getHouseToday(wsTz);
+    const wsNow = new Date(
+      new Date().toLocaleString("en-US", { timeZone: wsTz })
+    );
+    const weekday = wsNow.getDay();
     const schedules = (row.check_in_schedules as Schedule[] | null) ?? [];
     let changed = false;
 
@@ -66,7 +68,7 @@ export async function GET(request: NextRequest) {
         continue;
       if (
         freq === "monthly" &&
-        ((sched.day_of_month ?? 1) !== et.getDate() || daysSinceLast < 27)
+        ((sched.day_of_month ?? 1) !== wsNow.getDate() || daysSinceLast < 27)
       )
         continue;
       const houseIds = (sched.house_ids ?? []).filter(Boolean);
