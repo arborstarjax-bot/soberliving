@@ -40,6 +40,9 @@ interface Props {
     }>;
   }>;
   userResidentId?: string | null;
+  // Set when the viewing resident is out on approved leave and their
+  // own chores are covered by a housemate — shown as read-only.
+  coveredByName?: string | null;
   forcePhoto?: boolean;
   houseTimezone?: string | null;
 }
@@ -79,7 +82,7 @@ function getTodayDate(timezone?: string): string {
   return getHouseToday();
 }
 
-export function ResidentChoreView({ rotations, userResidentId, forcePhoto, houseTimezone }: Props) {
+export function ResidentChoreView({ rotations, userResidentId, forcePhoto, houseTimezone, coveredByName }: Props) {
   if (rotations.length === 0) {
     return (
       <Card>
@@ -115,6 +118,11 @@ export function ResidentChoreView({ rotations, userResidentId, forcePhoto, house
                     {assignment.coveringFor && (
                       <Badge variant="secondary" className="mt-1">
                         Covering for {assignment.coveringFor}
+                      </Badge>
+                    )}
+                    {!assignment.coveringFor && coveredByName && (
+                      <Badge variant="outline" className="mt-1">
+                        Covered by {coveredByName} while you're out
                       </Badge>
                     )}
                     <p className="text-sm text-muted-foreground">
@@ -198,7 +206,8 @@ export function ResidentChoreView({ rotations, userResidentId, forcePhoto, house
                             const canCheckOff =
                               signoff &&
                               signoff.status === "pending" &&
-                              isToday;
+                              isToday &&
+                              !(coveredByName && !assignment.coveringFor);
                             const canRedo =
                               signoff &&
                               signoff.status === "rejected";

@@ -267,6 +267,10 @@ export async function ChoresBodySection({
         userResidentId={userResidentId}
         forcePhoto={userForcePhoto}
         houseTimezone={userHouseTimezone}
+        coveredByName={
+          activeCovers.find((c) => c.residentId === userResidentId)
+            ?.covererName ?? null
+        }
       />
     );
   }
