@@ -62,11 +62,11 @@ export default async function ChoresPage({ searchParams }: ChoresPageProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold">Chores</h1>
           <p className="text-muted-foreground">
-            Chore rotation · Current week view
+            Rotation · current week
           </p>
         </div>
         {isStaff && (
@@ -135,7 +135,7 @@ async function StaffActions({
   }
 
   return (
-    <div className="flex gap-2">
+    <div className="flex shrink-0 gap-2">
       <CreateChoreDialog
         houses={houses}
         rooms={rooms}

@@ -138,7 +138,7 @@ export function NotificationList({
 
       {/* URL-driven tab strip — same visual pattern as the Activity Log
           tabs so the app feels consistent across paginated list pages. */}
-      <div className="flex flex-wrap items-center gap-1 rounded-lg border border-border/50 bg-muted/30 p-1">
+      <div className="flex flex-nowrap items-center gap-1 overflow-x-auto rounded-lg border border-border/50 bg-muted/30 p-1 sm:flex-wrap">
         {NOTIFICATION_CATEGORIES.map((cat) => {
           const isActive = cat === activeTab;
           return (
