@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
@@ -79,7 +80,10 @@ export async function markSignoffComplete(signoffId: string, photoUrl?: string) 
     if (residentRecord.id !== assignment?.resident_id) {
       // A covering resident may complete the assignee's signoff while an
       // approved leave places them on cover duty for that date.
-      const { data: cover } = await supabase
+      // Admin client: RLS on leave_requests only exposes the row to
+      // staff and the requester, so the coverer's own lookup would
+      // always come back empty.
+      const { data: cover } = await createAdminClient()
         .from("leave_requests")
         .select("id")
         .eq("resident_id", assignment?.resident_id ?? "")
@@ -358,8 +362,22 @@ export async function redoSignoff(signoffId: string, photoUrl?: string) {
     .eq("status", "active")
     .maybeSingle();
 
-  if (!residentRecord || residentRecord.id !== assignment?.resident_id) {
+  if (!residentRecord) {
     return { error: "Not authorized" };
+  }
+  if (residentRecord.id !== assignment?.resident_id) {
+    // Same cover rule as markSignoffComplete: the resident covering
+    // the assignee's leave may redo a rejected covered signoff.
+    const { data: cover } = await createAdminClient()
+      .from("leave_requests")
+      .select("id")
+      .eq("resident_id", assignment?.resident_id ?? "")
+      .eq("covering_resident_id", residentRecord.id)
+      .eq("status", "approved")
+      .lte("departure_date", signoff.sign_off_date ?? "")
+      .gte("expected_return_date", signoff.sign_off_date ?? "")
+      .maybeSingle();
+    if (!cover) return { error: "Not authorized" };
   }
 
   const redoHouseId = assignment?.rotation?.house_id ?? "";

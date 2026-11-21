@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ClipboardCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { getCachedActiveHouses } from "@/lib/cached-dropdowns";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { getHouseToday } from "@/lib/timezone";
@@ -111,7 +112,9 @@ export async function ChoresBodySection({
   // Approved leaves whose window covers today — the covering resident
   // stands in for the assignee on the chore board until they return.
   const todayStr = getHouseToday();
-  const coversQuery = supabase
+  // Admin client: the coverer isn't the requester, so RLS would hide
+  // the leave row from them and their covered chores would never show.
+  const coversQuery = createAdminClient()
     .from("leave_requests")
     .select(
       "resident_id, covering_resident_id, resident:residents!leave_requests_resident_id_fkey(full_name), covering_resident:residents!leave_requests_covering_resident_id_fkey(full_name)"

@@ -2,6 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { formatDateOnly } from "@/lib/timezone";
 import type { SessionUser } from "@/lib/types";
@@ -108,7 +109,13 @@ export async function LeaveRequestsTabsSection({
     userResidentId = myResident?.id;
   }
 
-  let query = supabase
+  // Residents use the admin client scoped to their own + covered
+  // rows: the select policy only exposes requests they filed, which
+  // would hide leaves they're covering from their Pending tab.
+  const requestsDb =
+    user.role === "resident" ? createAdminClient() : supabase;
+
+  let query = requestsDb
     .from("leave_requests")
     .select(
       "*, resident:residents!leave_requests_resident_id_fkey(id, full_name, house_id, user_id), covering_resident:residents!leave_requests_covering_resident_id_fkey(id, full_name, user_id)"
@@ -121,6 +128,8 @@ export async function LeaveRequestsTabsSection({
       query = query.or(
         `resident_id.eq.${userResidentId},covering_resident_id.eq.${userResidentId}`
       );
+    } else {
+      query = query.eq("resident_id", "00000000-0000-0000-0000-000000000000");
     }
   }
 
