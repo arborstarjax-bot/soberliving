@@ -93,6 +93,7 @@ export default async function proxy(req: NextRequest) {
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/cron") ||
+    pathname === "/api/health" ||
     pathname.includes(".")
   ) {
     return NextResponse.next();
