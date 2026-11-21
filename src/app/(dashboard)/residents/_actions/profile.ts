@@ -46,7 +46,6 @@ export async function createResident(
   }
 
   if (
-    user.role !== "admin" &&
     !canAccessHouse(user, parsed.data.house_id)
   ) {
     return err("Not authorized for this house");
@@ -91,7 +90,6 @@ export async function updateResident(residentId: string, formData: FormData) {
 
   if (!resident) return err("Resident not found");
   if (
-    user.role !== "admin" &&
     !canAccessHouse(user, resident.house_id)
   ) {
     return err("Not authorized");
@@ -159,7 +157,7 @@ export async function updateResidentForcePhoto(
     .maybeSingle();
 
   if (!resident) return err("Resident not found");
-  if (user.role !== "admin" && !canAccessHouse(user, resident.house_id)) {
+  if (!canAccessHouse(user, resident.house_id)) {
     return err("Not authorized");
   }
 
@@ -210,7 +208,6 @@ export async function createNote(
 
   if (!resident) return err("Resident not found");
   if (
-    user.role !== "admin" &&
     !canAccessHouse(user, resident.house_id)
   ) {
     return err("Not authorized");

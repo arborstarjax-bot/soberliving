@@ -106,7 +106,7 @@ export async function markSignoffComplete(signoffId: string, photoUrl?: string) 
     }
   } else {
     // Staff must have access to the house
-    if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+    if (!canAccessHouse(user, houseId)) {
       return { error: "Not authorized" };
     }
   }
@@ -165,7 +165,7 @@ export async function reviewSignoff(
   if (signoffData) {
     const ra = signoffData.rotation_assignment;
     const houseId = ra?.rotation?.house_id ?? "";
-    if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+    if (!canAccessHouse(user, houseId)) {
       return { error: "Not authorized" };
     }
   }
@@ -259,7 +259,7 @@ export async function overrideSignoffStatus(
 
   const ra = signoff.rotation_assignment;
   const houseId = ra?.chore?.house_id ?? "";
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (!canAccessHouse(user, houseId)) {
     return { error: "Not authorized" };
   }
 

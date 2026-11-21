@@ -107,9 +107,9 @@ describe("permissions", () => {
     expect(canAccessHouse(admin, "h3")).toBe(false);
   });
 
-  it("admin without workspace accesses everything", () => {
+  it("admin without workspace accesses nothing (fail closed)", () => {
     const admin = baseUser({ role: "admin", workspace_id: null });
-    expect(canAccessHouse(admin, "anywhere")).toBe(true);
+    expect(canAccessHouse(admin, "anywhere")).toBe(false);
   });
 
   it("manager accesses only assigned houses", () => {
@@ -126,7 +126,7 @@ describe("permissions", () => {
 
   it("house filters per role", () => {
     expect(getAccessibleHouseFilter(baseUser({ role: "admin" }))).toEqual(["h1", "h2"]);
-    expect(getAccessibleHouseFilter(baseUser({ role: "admin", workspace_id: null }))).toBeNull();
+    expect(getAccessibleHouseFilter(baseUser({ role: "admin", workspace_id: null }))).toEqual([]);
     expect(getAccessibleHouseFilter(baseUser({ role: "manager" }))).toEqual(["h2"]);
   });
 

@@ -27,7 +27,7 @@ export async function createDemerit(
 
   if (!parsed.success) return err(parsed.error.issues[0].message);
 
-  if (user.role !== "admin" && !canAccessHouse(user, parsed.data.house_id)) {
+  if (!canAccessHouse(user, parsed.data.house_id)) {
     return err("Not authorized");
   }
 
@@ -127,7 +127,7 @@ export async function editDemerit(
     .maybeSingle();
 
   if (!demerit) return err("Demerit not found");
-  if (user.role !== "admin" && !canAccessHouse(user, demerit.house_id)) {
+  if (!canAccessHouse(user, demerit.house_id)) {
     return err("Not authorized");
   }
 
@@ -161,7 +161,7 @@ export async function deleteDemerit(demeritId: string) {
     .single();
 
   if (!demerit) return err("Demerit not found");
-  if (user.role !== "admin" && !canAccessHouse(user, demerit.house_id)) {
+  if (!canAccessHouse(user, demerit.house_id)) {
     return err("Not authorized");
   }
 
@@ -204,7 +204,7 @@ export async function markDemeritWorkedOff(
     .single();
 
   if (!demerit) return err("Demerit not found");
-  if (user.role !== "admin" && !canAccessHouse(user, demerit.house_id)) {
+  if (!canAccessHouse(user, demerit.house_id)) {
     return err("Not authorized");
   }
 
@@ -250,7 +250,7 @@ export async function markDemeritWorkedOff(
 export async function generateMissedChoreDemerits(houseId?: string) {
   const user = await requireAuth();
   if (user.role === "resident") return err("Not authorized");
-  if (houseId && user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (houseId && !canAccessHouse(user, houseId)) {
     return err("Not authorized");
   }
 
@@ -263,7 +263,7 @@ export async function generateMissedChoreDemerits(houseId?: string) {
       .eq("is_active", true);
     let totalCount = 0;
     for (const house of allHouses ?? []) {
-      if (user.role !== "admin" && !canAccessHouse(user, house.id)) continue;
+      if (!canAccessHouse(user, house.id)) continue;
       const result = await generateMissedChoreDemerits(house.id);
       if ("count" in result) totalCount += (result.count ?? 0);
     }

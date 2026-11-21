@@ -26,7 +26,7 @@ export async function addSupplyItem(formData: FormData) {
   if (user.role !== "admin" && user.role !== "manager") {
     return { error: "Not authorized" };
   }
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (!canAccessHouse(user, houseId)) {
     return { error: "Not authorized" };
   }
 
@@ -66,7 +66,7 @@ export async function toggleSupplyStock(itemId: string) {
     .single();
 
   if (!item) return { error: "Item not found" };
-  if (user.role !== "admin" && !canAccessHouse(user, item.house_id)) {
+  if (!canAccessHouse(user, item.house_id)) {
     return { error: "Not authorized" };
   }
 
@@ -106,7 +106,7 @@ export async function deleteSupplyItem(itemId: string) {
     .single();
 
   if (!item) return { error: "Item not found" };
-  if (user.role !== "admin" && !canAccessHouse(user, item.house_id)) {
+  if (!canAccessHouse(user, item.house_id)) {
     return { error: "Not authorized" };
   }
 

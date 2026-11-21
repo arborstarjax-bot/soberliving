@@ -5,6 +5,7 @@ import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { getWorkspaceSettings } from "@/lib/workspace";
+import { canAccessHouse } from "@/lib/permissions";
 import { err, okVoid, type ActionResult } from "@/lib/action-result";
 
 const MEETING_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
@@ -105,6 +106,17 @@ export async function deleteMeeting(
   if (!meetingId) return err("Missing meeting");
 
   const admin = createAdminClient();
+  const { data: meeting } = await admin
+    .from("meetings")
+    .select("id, house_id")
+    .eq("id", meetingId)
+    .maybeSingle();
+  if (!meeting) return err("Meeting not found");
+  const houseId = (meeting.house_id as string | null) ?? "";
+  if (!canAccessHouse(user, houseId)) {
+    return err("Not authorized");
+  }
+
   const { error } = await admin
     .from("meetings")
     .delete()

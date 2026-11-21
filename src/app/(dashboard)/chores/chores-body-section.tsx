@@ -114,15 +114,18 @@ export async function ChoresBodySection({
   const todayStr = getHouseToday();
   // Admin client: the coverer isn't the requester, so RLS would hide
   // the leave row from them and their covered chores would never show.
-  const coversQuery = createAdminClient()
+  let coversQuery = createAdminClient()
     .from("leave_requests")
     .select(
-      "resident_id, covering_resident_id, resident:residents!leave_requests_resident_id_fkey(full_name), covering_resident:residents!leave_requests_covering_resident_id_fkey(full_name)"
+      "resident_id, covering_resident_id, resident:residents!leave_requests_resident_id_fkey!inner(full_name, house_id), covering_resident:residents!leave_requests_covering_resident_id_fkey(full_name)"
     )
     .eq("status", "approved")
     .not("covering_resident_id", "is", null)
     .lte("departure_date", todayStr)
     .gte("expected_return_date", todayStr);
+  if (houseFilter) {
+    coversQuery = coversQuery.in("resident.house_id", houseFilter);
+  }
 
   const [
     allHouses,

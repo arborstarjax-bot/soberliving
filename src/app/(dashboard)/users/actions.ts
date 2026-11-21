@@ -5,6 +5,10 @@ import { revalidatePath } from "next/cache";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { requireAuth, requireRole } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
+import { isUserInWorkspace } from "@/lib/workspace";
+import type { UserRole } from "@/lib/types";
+
+const VALID_ROLES: UserRole[] = ["admin", "manager", "resident"];
 import { logActivity } from "@/lib/activity";
 import { createUserSchema, assignManagerSchema, updateUserProfileSchema } from "@/lib/validations";
 import { sendInviteEmail } from "@/lib/email";
@@ -25,8 +29,9 @@ export async function createUser(
   });
   const houseId = (formData.get("house_id") as string) || null;
 
-  // Managers can only assign residents to houses they manage
-  if (houseId && user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  // Staff can only assign residents to houses in their own workspace
+  // (admins) or houses they manage (managers).
+  if (houseId && !canAccessHouse(user, houseId)) {
     return err("Not authorized for this house");
   }
 
@@ -56,9 +61,15 @@ export async function createUser(
     .eq("id", authUserId)
     .maybeSingle();
 
-  if (!existingUser) {
-    // Create user record
-    const { error: userError } = await supabase.from("users").insert({
+  if (existingUser) {
+    // Re-invite only makes sense inside the caller's own workspace.
+    if (!(await isUserInWorkspace(user, authUserId))) {
+      return err("A user with this email already exists");
+    }
+  } else {
+    // Create user record (service client — the invite is a staff action,
+    // not the new user writing their own row)
+    const { error: userError } = await adminClient.from("users").insert({
       id: authUserId,
       email: parsed.data.email,
       full_name: parsed.data.full_name || parsed.data.email.split("@")[0],
@@ -72,12 +83,30 @@ export async function createUser(
     if (userError) return err(userError.message);
 
     // Default role is resident
-    const { error: roleError } = await supabase.from("user_roles").insert({
+    const { error: roleError } = await adminClient.from("user_roles").insert({
       user_id: authUserId,
       role: "resident",
     });
 
     if (roleError) return err(roleError.message);
+
+    // Workspace membership is the role/workspace trust anchor.
+    if (user.workspace_id) {
+      await adminClient.from("workspace_members").upsert(
+        {
+          workspace_id: user.workspace_id,
+          user_id: authUserId,
+          role: "resident",
+          status: "active",
+          invited_by: user.id,
+        },
+        { onConflict: "workspace_id,user_id" }
+      );
+      await adminClient
+        .from("users")
+        .update({ workspace_id: user.workspace_id })
+        .eq("id", authUserId);
+    }
   }
 
   await logActivity({
@@ -154,6 +183,11 @@ export async function resendInviteLink(
     return err("User not found");
   }
 
+  // Only mint invite links for users inside the caller's workspace.
+  if (!(await isUserInWorkspace(user, userId))) {
+    return err("User not found");
+  }
+
   const baseUrl = await getAppOrigin();
   const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
     type: "invite",
@@ -206,16 +240,29 @@ export async function resendInviteLink(
 
 export async function changeUserRole(userId: string, newRole: string) {
   const user = await requireRole("admin");
-  const supabase = await createClient();
+  if (!VALID_ROLES.includes(newRole as UserRole)) {
+    return err("Invalid role");
+  }
+  if (!(await isUserInWorkspace(user, userId))) {
+    return err("User not found");
+  }
+  const adminClient = createAdminClient();
 
-  // Upsert role record
-  const { error } = await supabase
+  // Upsert role record (user_roles is legacy; workspace_members.role is
+  // the authoritative source — keep both in sync)
+  const { error } = await adminClient
     .from("user_roles")
     .upsert({ user_id: userId, role: newRole }, { onConflict: "user_id" });
 
   if (error) return err(error.message);
 
-  const { data: targetUser } = await supabase
+  await adminClient
+    .from("workspace_members")
+    .update({ role: newRole })
+    .eq("workspace_id", user.workspace_id)
+    .eq("user_id", userId);
+
+  const { data: targetUser } = await adminClient
     .from("users")
     .select("full_name")
     .eq("id", userId)
@@ -248,10 +295,20 @@ export async function assignManagerToHouses(
 
   if (!parsed.success) return err(parsed.error.issues[0].message);
 
-  const supabase = await createClient();
+  // The manager and every target house must live in the caller's workspace.
+  if (!(await isUserInWorkspace(user, userId))) {
+    return err("User not found");
+  }
+  for (const houseId of houseIds) {
+    if (!canAccessHouse(user, houseId)) {
+      return err("Not authorized for this house");
+    }
+  }
+
+  const adminClient = createAdminClient();
 
   // Remove existing assignments
-  await supabase
+  await adminClient
     .from("manager_house_assignments")
     .update({ unassigned_at: new Date().toISOString() })
     .eq("user_id", userId)
@@ -264,14 +321,14 @@ export async function assignManagerToHouses(
   }));
 
   if (assignments.length > 0) {
-    const { error } = await supabase
+    const { error } = await adminClient
       .from("manager_house_assignments")
       .insert(assignments);
 
     if (error) return err(error.message);
   }
 
-  const { data: targetUser } = await supabase
+  const { data: targetUser } = await adminClient
     .from("users")
     .select("full_name")
     .eq("id", userId)
@@ -297,6 +354,9 @@ export async function updateUserProfile(
   const userId = formData.get("user_id") as string;
 
   if (!userId) return err("User ID is required");
+  if (!(await isUserInWorkspace(user, userId))) {
+    return err("User not found");
+  }
 
   const parsed = updateUserProfileSchema.safeParse({
     full_name: formData.get("full_name") || undefined,
@@ -306,14 +366,14 @@ export async function updateUserProfile(
 
   if (!parsed.success) return err(parsed.error.issues[0].message);
 
-  const supabase = await createClient();
+  const adminClient = createAdminClient();
 
   // Update user record
   const updateFields: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (parsed.data.full_name) updateFields.full_name = parsed.data.full_name;
   if (parsed.data.phone !== undefined) updateFields.phone = parsed.data.phone ?? null;
 
-  const { error: userError } = await supabase
+  const { error: userError } = await adminClient
     .from("users")
     .update(updateFields)
     .eq("id", userId);
@@ -322,11 +382,20 @@ export async function updateUserProfile(
 
   // Update role if provided
   if (parsed.data.role) {
-    const { error: roleError } = await supabase
+    if (!VALID_ROLES.includes(parsed.data.role as UserRole)) {
+      return err("Invalid role");
+    }
+    const { error: roleError } = await adminClient
       .from("user_roles")
       .upsert({ user_id: userId, role: parsed.data.role }, { onConflict: "user_id" });
 
     if (roleError) return err(roleError.message);
+
+    await adminClient
+      .from("workspace_members")
+      .update({ role: parsed.data.role })
+      .eq("workspace_id", user.workspace_id)
+      .eq("user_id", userId);
   }
 
   await logActivity({
@@ -345,17 +414,20 @@ export async function updateUserProfile(
 export async function deactivateUser(userId: string) {
   const user = await requireRole("admin");
   if (userId === user.id) return err("Cannot deactivate yourself");
+  if (!(await isUserInWorkspace(user, userId))) {
+    return err("User not found");
+  }
 
-  const supabase = await createClient();
+  const adminClient = createAdminClient();
 
-  const { error } = await supabase
+  const { error } = await adminClient
     .from("users")
     .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq("id", userId);
 
   if (error) return err(error.message);
 
-  const { data: targetUser } = await supabase
+  const { data: targetUser } = await adminClient
     .from("users")
     .select("full_name")
     .eq("id", userId)

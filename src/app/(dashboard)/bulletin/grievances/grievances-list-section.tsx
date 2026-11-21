@@ -49,9 +49,10 @@ export async function GrievancesListSection({ user }: { user: SessionUser }) {
   // boundary for anonymous grievances (which have no user_id/house_id).
   // Admins see every grievance in their workspace; managers are further
   // narrowed to their assigned houses.
-  if (user.workspace_id) {
-    query = query.eq("workspace_id", user.workspace_id);
+  if (!user.workspace_id) {
+    return <div className="text-sm text-muted-foreground">No grievances found.</div>;
   }
+  query = query.eq("workspace_id", user.workspace_id);
   if (user.role === "manager") {
     query = query.in("house_id", user.assigned_house_ids);
   }

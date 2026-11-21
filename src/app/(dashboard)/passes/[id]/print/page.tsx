@@ -62,7 +62,7 @@ export default async function PrintPassPage({
   const residentUserId = pass.resident.user_id;
   const coverUserId = pass.covering_resident?.user_id;
   const isStaff =
-    user.role === "admin" || canAccessHouse(user, pass.resident.house_id);
+    user.role !== "resident" && canAccessHouse(user, pass.resident.house_id);
   const isInvolvedResident =
     user.id === residentUserId || user.id === coverUserId;
   if (!isStaff && !isInvolvedResident) redirect("/passes");

@@ -7,6 +7,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { notifyHouseStaff } from "@/lib/notifications";
+import { isUserInWorkspace } from "@/lib/workspace";
 
 export async function saveIntakeProgress(formData: Record<string, unknown>, signatures: Record<string, string>) {
   const user = await requireAuth();
@@ -298,7 +299,11 @@ export async function getDocumentUrl(storagePath: string) {
 
   if (!doc) return err("Document not found");
 
-  if (doc.user_id !== user.id && user.role !== "admin" && user.role !== "manager") {
+  if (
+    doc.user_id !== user.id &&
+    (user.role === "resident" ||
+      !(await isUserInWorkspace(user, doc.user_id)))
+  ) {
     return err("Not authorized");
   }
 

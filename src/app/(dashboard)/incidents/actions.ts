@@ -25,7 +25,7 @@ export async function createIncident(
 
   if (!parsed.success) return err(parsed.error.issues[0].message);
 
-  if (user.role !== "admin" && !canAccessHouse(user, parsed.data.house_id)) {
+  if (!canAccessHouse(user, parsed.data.house_id)) {
     return err("Not authorized");
   }
 

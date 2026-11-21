@@ -29,8 +29,8 @@ async function canSeeBulletinHouse(
   // null-house "post to everyone" posts, which are only global within
   // a single workspace.
   if (
-    user.workspace_id &&
-    postWorkspaceId &&
+    !postWorkspaceId ||
+    !user.workspace_id ||
     postWorkspaceId !== user.workspace_id
   ) {
     return false;
@@ -184,7 +184,7 @@ export async function deleteBulletinPost(postId: string) {
   if (!post) return err("Post not found");
   // Workspace boundary: never let a user act on another workspace's post.
   const postWorkspaceId = (post.workspace_id as string | null) ?? null;
-  if (user.workspace_id && postWorkspaceId && postWorkspaceId !== user.workspace_id) {
+  if (!postWorkspaceId || postWorkspaceId !== user.workspace_id) {
     return err("Not authorized");
   }
   const isAuthor = post.author_id === user.id;
@@ -231,7 +231,7 @@ export async function togglePinPost(postId: string) {
 
   // Workspace boundary: never pin/unpin another workspace's post.
   const postWorkspaceId = (post.workspace_id as string | null) ?? null;
-  if (user.workspace_id && postWorkspaceId && postWorkspaceId !== user.workspace_id) {
+  if (!postWorkspaceId || postWorkspaceId !== user.workspace_id) {
     return err("Not authorized");
   }
 
@@ -370,7 +370,7 @@ export async function deleteComment(commentId: string) {
     } | null) ?? null;
   // Workspace boundary: never delete a comment on another workspace's post.
   const postWorkspaceId = postRow?.workspace_id ?? null;
-  if (user.workspace_id && postWorkspaceId && postWorkspaceId !== user.workspace_id) {
+  if (!postWorkspaceId || postWorkspaceId !== user.workspace_id) {
     return err("Not authorized");
   }
   const isAuthor = comment.user_id === user.id;

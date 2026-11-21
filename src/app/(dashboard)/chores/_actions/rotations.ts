@@ -39,7 +39,7 @@ export async function createRotation(
 
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
-  if (user.role !== "admin" && !canAccessHouse(user, parsed.data.house_id)) {
+  if (!canAccessHouse(user, parsed.data.house_id)) {
     return { error: "Not authorized" };
   }
 
@@ -83,7 +83,7 @@ export async function assignRotationChore(
     .maybeSingle();
 
   if (!rotation) return { error: "Rotation not found" };
-  if (user.role !== "admin" && !canAccessHouse(user, rotation.house_id)) {
+  if (!canAccessHouse(user, rotation.house_id)) {
     return { error: "Not authorized" };
   }
 
@@ -324,7 +324,7 @@ export async function unassignRotationChore(assignmentId: string) {
   if (!assignment) return { error: "Assignment not found" };
 
   const houseId = assignment.rotation?.house_id ?? "";
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (!canAccessHouse(user, houseId)) {
     return { error: "Not authorized" };
   }
 
@@ -372,7 +372,7 @@ export async function rotateSchedule(rotationId: string) {
     .maybeSingle();
 
   if (!rotation) return { error: "Rotation not found" };
-  if (user.role !== "admin" && !canAccessHouse(user, rotation.house_id)) {
+  if (!canAccessHouse(user, rotation.house_id)) {
     return { error: "Not authorized" };
   }
 

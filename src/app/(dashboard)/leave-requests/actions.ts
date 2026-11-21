@@ -191,7 +191,7 @@ export async function createLeaveRequest(
     if (!myResident || myResident.id !== parsed.data.resident_id) {
       return err("Not authorized");
     }
-  } else if (user.role !== "admin" && !canAccessHouse(user, resident.house_id)) {
+  } else if (!canAccessHouse(user, resident.house_id)) {
     return err("Not authorized");
   }
 
@@ -315,7 +315,7 @@ export async function approveCoverRequest(requestId: string) {
   if (user.role === "resident" && coverResident?.user_id !== user.id) {
     return err("Only the covering resident can approve this");
   }
-  if (user.role !== "resident" && user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (user.role !== "resident" && !canAccessHouse(user, houseId)) {
     return err("Not authorized for this house");
   }
 
@@ -397,7 +397,7 @@ export async function denyCoverRequest(requestId: string, note?: string) {
   if (user.role === "resident" && coverResident?.user_id !== user.id) {
     return err("Only the covering resident can deny this");
   }
-  if (user.role !== "resident" && user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (user.role !== "resident" && !canAccessHouse(user, houseId)) {
     return err("Not authorized for this house");
   }
 
@@ -459,7 +459,7 @@ export async function approveManagerRequest(requestId: string) {
   const resident = request.resident;
   const houseId = resident?.house_id ?? "";
 
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (!canAccessHouse(user, houseId)) {
     return err("Not authorized for this house");
   }
 
@@ -546,7 +546,7 @@ export async function denyManagerRequest(requestId: string, note?: string) {
   const resident = request.resident;
   const houseId = resident?.house_id ?? "";
 
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (!canAccessHouse(user, houseId)) {
     return err("Not authorized for this house");
   }
 
@@ -604,6 +604,9 @@ export async function approveAdminRequest(requestId: string) {
 
   const request = rawRequest as unknown as LeaveRequestRow | null;
   if (!request) return err("Request not found");
+  if (!canAccessHouse(user, request.resident?.house_id ?? "")) {
+    return err("Not authorized");
+  }
   // Admin trumps manager: allow final approval at either the manager or
   // admin stage. If the admin is short-circuiting the manager step, we
   // still stamp the manager_approved_at fields to the admin so the
@@ -679,6 +682,9 @@ export async function denyAdminRequest(requestId: string, note?: string) {
 
   const request = rawRequest as unknown as LeaveRequestRow | null;
   if (!request) return err("Request not found");
+  if (!canAccessHouse(user, request.resident?.house_id ?? "")) {
+    return err("Not authorized");
+  }
   // Mirror the admin-trumps-manager approval path: admins can deny at
   // either the manager or admin stage.
   if (request.status !== "pending_admin" && request.status !== "pending_manager") {
@@ -747,7 +753,7 @@ export async function markLeaveReturned(requestId: string) {
 
   const resident = request.resident;
   const houseId = resident?.house_id ?? "";
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (!canAccessHouse(user, houseId)) {
     return err("Not authorized");
   }
 

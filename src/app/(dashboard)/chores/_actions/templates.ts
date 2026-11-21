@@ -24,7 +24,7 @@ export async function createChore(
 
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
-  if (user.role !== "admin" && !canAccessHouse(user, parsed.data.house_id)) {
+  if (!canAccessHouse(user, parsed.data.house_id)) {
     return { error: "Not authorized" };
   }
 
@@ -125,7 +125,7 @@ export async function updateChore(
     .maybeSingle();
 
   if (!chore) return { error: "Chore not found" };
-  if (user.role !== "admin" && !canAccessHouse(user, chore.house_id)) {
+  if (!canAccessHouse(user, chore.house_id)) {
     return { error: "Not authorized" };
   }
 
@@ -167,7 +167,7 @@ export async function archiveChore(choreId: string) {
     .maybeSingle();
 
   if (!chore) return { error: "Chore not found" };
-  if (user.role !== "admin" && !canAccessHouse(user, chore.house_id)) {
+  if (!canAccessHouse(user, chore.house_id)) {
     return { error: "Not authorized" };
   }
 
@@ -214,7 +214,7 @@ export async function addChoreTask(
     .maybeSingle();
 
   if (!chore) return { error: "Chore not found" };
-  if (user.role !== "admin" && !canAccessHouse(user, chore.house_id)) {
+  if (!canAccessHouse(user, chore.house_id)) {
     return { error: "Not authorized" };
   }
 
@@ -257,7 +257,7 @@ export async function updateChoreTask(taskId: string, description: string) {
     | { house_id: string }
     | null;
   const houseId = choreRel?.house_id ?? "";
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (!canAccessHouse(user, houseId)) {
     return { error: "Not authorized" };
   }
 
@@ -298,7 +298,7 @@ export async function setChoreRoomExclusions(
     .maybeSingle();
 
   if (!chore) return { error: "Chore not found" };
-  if (user.role !== "admin" && !canAccessHouse(user, chore.house_id)) {
+  if (!canAccessHouse(user, chore.house_id)) {
     return { error: "Not authorized" };
   }
 
@@ -381,7 +381,7 @@ export async function removeChoreTask(taskId: string) {
     | { house_id: string }
     | null;
   const houseId = choreRel?.house_id ?? "";
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (!canAccessHouse(user, houseId)) {
     return { error: "Not authorized" };
   }
 
@@ -410,7 +410,7 @@ export async function updateChoreSchedule(choreId: string, scheduledDays: string
     .maybeSingle();
 
   if (!chore) return { error: "Chore not found" };
-  if (user.role !== "admin" && !canAccessHouse(user, chore.house_id)) {
+  if (!canAccessHouse(user, chore.house_id)) {
     return { error: "Not authorized" };
   }
 

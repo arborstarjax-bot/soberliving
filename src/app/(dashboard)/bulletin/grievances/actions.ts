@@ -27,16 +27,20 @@ async function authorizeGrievanceAccess(grievanceId: string) {
   const admin = createAdminClient();
   const { data: row } = await admin
     .from("grievances")
-    .select("id, house_id")
+    .select("id, house_id, workspace_id")
     .eq("id", grievanceId)
     .maybeSingle();
   if (!row) return err("Grievance not found");
 
-  if (user.role === "manager") {
-    const houseId = (row.house_id as string | null) ?? null;
-    if (!houseId || !canAccessHouse(user, houseId)) {
-      return err("Not authorized");
-    }
+  const houseId = (row.house_id as string | null) ?? null;
+  // House-scoped grievances check the house; anonymous rows (house_id
+  // NULL) fall back to the grievance's stamped workspace.
+  const allowed = houseId
+    ? canAccessHouse(user, houseId)
+    : user.role === "admin" &&
+      row.workspace_id === user.workspace_id;
+  if (!allowed) {
+    return err("Not authorized");
   }
   return ok({ user, admin });
 }

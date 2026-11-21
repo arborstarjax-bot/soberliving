@@ -41,7 +41,7 @@ export async function submitSafetyAssessment(
   if (user.role !== "admin" && user.role !== "manager") {
     return err("Not authorized");
   }
-  if (user.role !== "admin" && !canAccessHouse(user, input.houseId)) {
+  if (!canAccessHouse(user, input.houseId)) {
     return err("Not authorized for this house");
   }
 

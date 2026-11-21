@@ -36,8 +36,7 @@ async function authorizeHouseForUser(houseId: string): Promise<
   const user = await requireAuth();
   const admin = createAdminClient();
 
-  if (user.role === "admin") return { ok: true };
-  if (user.role === "manager") {
+  if (user.role === "admin" || user.role === "manager") {
     return canAccessHouse(user, houseId)
       ? { ok: true }
       : { ok: false, reason: "Not assigned to this house" };
@@ -227,13 +226,12 @@ export async function deleteRideShare(postId: string): Promise<{ error?: string 
   if (!post) return { error: "Ride share not found" };
 
   const isAuthor = post.author_id === user.id;
-  const isAdmin = user.role === "admin";
-  const isManagerForHouse =
-    user.role === "manager" &&
+  const isStaffForHouse =
+    (user.role === "admin" || user.role === "manager") &&
     typeof post.house_id === "string" &&
     canAccessHouse(user, post.house_id);
 
-  if (!isAuthor && !isAdmin && !isManagerForHouse) {
+  if (!isAuthor && !isStaffForHouse) {
     return { error: "Not authorized" };
   }
 
@@ -278,8 +276,7 @@ async function userCanSeeRide(
   const houseId = post.house_id as string | null;
   if (!houseId) return { ok: false };
 
-  if (user.role === "admin") return { ok: true };
-  if (user.role === "manager") {
+  if (user.role === "admin" || user.role === "manager") {
     return canAccessHouse(user, houseId) ? { ok: true } : { ok: false };
   }
 

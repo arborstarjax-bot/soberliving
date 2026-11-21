@@ -4,6 +4,7 @@ import { cache } from "react";
 import { createAdminClient } from "@/lib/supabase/server";
 import { DEFAULT_TIMEZONE } from "@/lib/timezone";
 import type {
+  SessionUser,
   Workspace,
   WorkspaceSettings,
   WorkspacePaymentConfig,
@@ -153,4 +154,65 @@ export function generateSlug(name: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 48);
+}
+
+// ---- Tenant-boundary helpers for server actions ----
+// All lookups go through the service-role client so RLS never has to
+// be trusted, and every check fails closed when the caller has no
+// workspace.
+
+/** The workspace a user belongs to, from the service-maintained column. */
+export async function getUserWorkspaceId(
+  userId: string
+): Promise<string | null> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("users")
+    .select("workspace_id")
+    .eq("id", userId)
+    .maybeSingle();
+  return (data?.workspace_id as string | null) ?? null;
+}
+
+/** True only when targetUserId is a member of the caller's workspace. */
+export async function isUserInWorkspace(
+  user: SessionUser,
+  targetUserId: string
+): Promise<boolean> {
+  if (!user.workspace_id) return false;
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("workspace_members")
+    .select("id")
+    .eq("workspace_id", user.workspace_id)
+    .eq("user_id", targetUserId)
+    .limit(1)
+    .maybeSingle();
+  return !!data;
+}
+
+/** The workspace that owns a house, or null. */
+export async function getHouseWorkspaceId(
+  houseId: string
+): Promise<string | null> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("houses")
+    .select("workspace_id")
+    .eq("id", houseId)
+    .maybeSingle();
+  return (data?.workspace_id as string | null) ?? null;
+}
+
+/** The house a residents row belongs to, or null. */
+export async function getResidentHouseId(
+  residentId: string
+): Promise<string | null> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("residents")
+    .select("house_id")
+    .eq("id", residentId)
+    .maybeSingle();
+  return (data?.house_id as string | null) ?? null;
 }

@@ -20,7 +20,13 @@ import {
 import { generateReceiptPdf } from "@/lib/payments/receipt-pdf";
 import { z } from "zod";
 import { getHouseToday } from "@/lib/timezone";
-import { getHouseTimezone, getWorkspace, getWorkspaceSettings } from "@/lib/workspace";
+import {
+  getHouseTimezone,
+  getWorkspace,
+  getWorkspaceSettings,
+  isUserInWorkspace,
+} from "@/lib/workspace";
+import { canAccessHouse } from "@/lib/permissions";
 
 // Receipt PDF uses the workspace name for branding. Fetched dynamically
 // via getWorkspace() below. This constant is the fallback.
@@ -119,6 +125,25 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
 
   if (!targetUser) return err("User not found");
   if (!targetUser.intake_completed) return err("User has not completed intake form");
+
+  // Tenant boundary: the applicant must belong to the caller's
+  // workspace and the target house/bed must be inside it.
+  if (!(await isUserInWorkspace(currentUser, data.userId))) {
+    return err("User not found");
+  }
+  if (!canAccessHouse(currentUser, data.houseId)) {
+    return err("Not authorized for this house");
+  }
+  const { data: bedRoom } = await adminClient
+    .from("beds")
+    .select("room_id, rooms!inner(house_id)")
+    .eq("id", data.bedId)
+    .maybeSingle();
+  const bedHouseId = (bedRoom as { rooms?: { house_id?: string } | null } | null)
+    ?.rooms?.house_id;
+  if (!bedHouseId || !canAccessHouse(currentUser, bedHouseId)) {
+    return err("Not authorized for this bed");
+  }
 
   // Get intake form data to populate resident profile
   const { data: intakeForm } = await adminClient
@@ -564,6 +589,9 @@ export async function markIntakeComplete(userId: string) {
     .maybeSingle();
 
   if (!targetUser) return err("User not found");
+  if (!(await isUserInWorkspace(currentUser, userId))) {
+    return err("User not found");
+  }
 
   // Mark commitment as active (resident signed). We select the row
   // back so we can seed the initial charges — without this call the
@@ -656,6 +684,10 @@ export async function updatePendingCommitment(
   }
   const data = parsed.data;
 
+  if (!(await isUserInWorkspace(currentUser, data.userId))) {
+    return err("User not found");
+  }
+
   // Find the pending commitment. Only one can exist per user (enforced
   // by uq_house_commitments_one_pending_per_user). Guard against the
   // zero-row case so we give a clear message instead of a cryptic
@@ -721,6 +753,10 @@ export async function resendPendingCommitmentNotification(userId: string) {
   const currentUser = await requireRole("admin");
   const adminClient = createAdminClient();
 
+  if (!(await isUserInWorkspace(currentUser, userId))) {
+    return err("User not found");
+  }
+
   const { data: pending } = await adminClient
     .from("house_commitments")
     .select("id, resident_id")
@@ -772,6 +808,9 @@ export async function denyIntakeApplication(userId: string, reason: string) {
     .maybeSingle();
 
   if (!targetUser) return err("User not found");
+  if (!(await isUserInWorkspace(currentUser, userId))) {
+    return err("User not found");
+  }
   if ((targetUser as { account_status?: string }).account_status === "rejected") {
     return err("Application is already denied");
   }
@@ -818,6 +857,9 @@ export async function reopenIntakeApplication(userId: string) {
     .maybeSingle();
 
   if (!targetUser) return err("User not found");
+  if (!(await isUserInWorkspace(currentUser, userId))) {
+    return err("User not found");
+  }
   if ((targetUser as { account_status?: string }).account_status !== "rejected") {
     return err("Application is not in the denied state");
   }
@@ -887,7 +929,7 @@ const staffSignoffSchema = z.object({
 export async function submitStaffSignoff(
   input: z.infer<typeof staffSignoffSchema>
 ) {
-  await requireRole("admin");
+  const currentUser = await requireRole("admin");
   const adminClient = createAdminClient();
 
   const parsed = staffSignoffSchema.safeParse(input);
@@ -895,6 +937,10 @@ export async function submitStaffSignoff(
     return err(parsed.error.issues[0].message);
   }
   const { userId, signature, printedName, date, pdfBase64 } = parsed.data;
+
+  if (!(await isUserInWorkspace(currentUser, userId))) {
+    return err("User not found");
+  }
 
   const { data: intakeRow, error: intakeErr } = await adminClient
     .from("intake_forms")
@@ -986,9 +1032,8 @@ export async function submitStaffSignoff(
     });
   }
 
-  const actor = await requireAuth();
   await logActivity({
-    actorId: actor.id,
+    actorId: currentUser.id,
     eventType: "intake_staff_signoff",
     entityType: "user",
     entityId: userId,
@@ -1019,8 +1064,12 @@ export async function getRoomsForHouse(
   // a special NEXT_REDIRECT error that the framework intercepts.
   // It MUST propagate — a generic try/catch around it would
   // silently swallow the redirect. So it stays outside the try.
-  await requireRole("admin");
+  const currentUser = await requireRole("admin");
   const adminClient = createAdminClient();
+
+  if (!canAccessHouse(currentUser, houseId)) {
+    return err("Not authorized for this house");
+  }
 
   // Wrap the DB work in try/catch so any runtime error (missing
   // SUPABASE_SERVICE_ROLE_KEY, network failure, unexpected throw)
@@ -1093,6 +1142,9 @@ export async function setStaffIntakeCheckoff(
 ) {
   const user = await requireAuth();
   if (user.role === "resident" || !user.workspace_id) {
+    return err("Not authorized");
+  }
+  if (!(await isUserInWorkspace(user, residentUserId))) {
     return err("Not authorized");
   }
   const admin = createAdminClient();

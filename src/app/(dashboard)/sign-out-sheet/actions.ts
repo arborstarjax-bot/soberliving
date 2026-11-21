@@ -76,7 +76,7 @@ export async function signOutResident(
   // Authorization
   if (user.role === "resident") {
     if (resident.user_id !== user.id) return err("Not authorized");
-  } else if (user.role !== "admin" && !canAccessHouse(user, resident.house_id)) {
+  } else if (!canAccessHouse(user, resident.house_id)) {
     return err("Not authorized");
   }
 
@@ -188,7 +188,7 @@ export async function signInResident(
     if (parsed.data.discipline && parsed.data.discipline !== "none") {
       return err("Residents cannot issue discipline");
     }
-  } else if (user.role !== "admin" && !canAccessHouse(user, row.house_id)) {
+  } else if (!canAccessHouse(user, row.house_id)) {
     return err("Not authorized");
   }
 

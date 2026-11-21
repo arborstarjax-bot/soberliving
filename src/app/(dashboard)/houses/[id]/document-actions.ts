@@ -32,7 +32,7 @@ export async function uploadHouseDocument(formData: FormData) {
   if (file.size > MAX_BYTES) {
     return { error: `File must be ≤ ${MAX_BYTES / (1024 * 1024)} MB` };
   }
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (!canAccessHouse(user, houseId)) {
     return { error: "Not authorized" };
   }
 
@@ -94,7 +94,7 @@ export async function getHouseDocumentUrl(documentId: string) {
     .single();
 
   if (!doc) return { error: "Document not found" };
-  if (user.role !== "admin" && !canAccessHouse(user, doc.house_id)) {
+  if (!canAccessHouse(user, doc.house_id)) {
     return { error: "Not authorized" };
   }
 
@@ -121,7 +121,7 @@ export async function deleteHouseDocument(documentId: string) {
     .single();
 
   if (!doc) return { error: "Document not found" };
-  if (user.role !== "admin" && !canAccessHouse(user, doc.house_id)) {
+  if (!canAccessHouse(user, doc.house_id)) {
     return { error: "Not authorized" };
   }
 
