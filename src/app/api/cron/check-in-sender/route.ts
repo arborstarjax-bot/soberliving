@@ -71,7 +71,16 @@ export async function GET(request: NextRequest) {
         ((sched.day_of_month ?? 1) !== wsNow.getDate() || daysSinceLast < 27)
       )
         continue;
-      const houseIds = (sched.house_ids ?? []).filter(Boolean);
+      // Only send to houses that actually belong to this workspace —
+      // schedule house_ids are stored data, not proof of tenancy.
+      const candidateIds = (sched.house_ids ?? []).filter(Boolean);
+      if (candidateIds.length === 0) continue;
+      const { data: ownHouses } = await admin
+        .from("houses")
+        .select("id")
+        .eq("workspace_id", row.workspace_id)
+        .in("id", candidateIds);
+      const houseIds = (ownHouses ?? []).map((h) => h.id as string);
       if (houseIds.length === 0) continue;
 
       const { data: batch } = await admin

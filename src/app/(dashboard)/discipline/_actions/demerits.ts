@@ -37,7 +37,9 @@ export async function createDemerit(
     .from("residents")
     .select("full_name")
     .eq("id", parsed.data.resident_id)
-    .single();
+    .eq("house_id", parsed.data.house_id)
+    .maybeSingle();
+  if (!resident) return err("Resident not found in this house");
 
   const notes = formData.get("notes") as string | null;
   const photoUrl = formData.get("photo_url") as string | null;
@@ -461,14 +463,36 @@ export async function generateMissedChoreDemerits(houseId?: string) {
 
 // --- Restrictions ---
 
+const ALLOWED_PHOTO_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+]);
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+
 export async function uploadDemeritPhoto(formData: FormData): Promise<ActionResult<{ url?: string }>> {
   const user = await requireAuth();
-  const supabase = await createClient();
+  if (user.role !== "admin" && user.role !== "manager") {
+    return err("Not authorized");
+  }
+
+  const houseId = formData.get("house_id") as string | null;
+  if (!houseId || !canAccessHouse(user, houseId)) {
+    return err("Not authorized");
+  }
 
   const file = formData.get("file") as File;
   if (!file) return err("No file provided");
+  if (file.size > MAX_PHOTO_BYTES) return err("File is too large");
+  if (file.type && !ALLOWED_PHOTO_TYPES.has(file.type)) {
+    return err("Only image files are allowed");
+  }
 
-  const ext = file.name.split(".").pop();
+  const supabase = await createClient();
+
+  const rawExt = (file.name.split(".").pop() ?? "").toLowerCase();
+  const ext = /^[a-z0-9]{1,8}$/.test(rawExt) ? rawExt : "jpg";
   const path = `demerits/${user.id}/${Date.now()}.${ext}`;
 
   const { error } = await supabase.storage

@@ -78,7 +78,7 @@ export default async function AcknowledgePage({ params }: PageProps) {
   const { data: blocker, error: blockerErr } = await admin
     .from("blockers")
     .select(
-      "id, title, body, attachment_paths, save_to_docs, require_signature, target_type, target_house_ids, target_user_ids, archived_at, created_at, created_by"
+      "id, title, body, attachment_paths, save_to_docs, require_signature, target_type, target_house_ids, target_user_ids, archived_at, created_at, created_by, workspace_id"
     )
     .eq("id", id)
     .maybeSingle();
@@ -105,6 +105,16 @@ export default async function AcknowledgePage({ params }: PageProps) {
         message="This message was archived or removed before you got to it."
       />
     );
+  }
+
+  // Tenant boundary: the blocker must live in the viewer's own
+  // workspace. Fail closed — no proven workspace match, no access.
+  const blockerWorkspaceId = (blocker.workspace_id as string | null) ?? null;
+  if (
+    blockerWorkspaceId &&
+    (!user.workspace_id || blockerWorkspaceId !== user.workspace_id)
+  ) {
+    notFound();
   }
 
   // Staff can visit this URL for audit/preview purposes but don't

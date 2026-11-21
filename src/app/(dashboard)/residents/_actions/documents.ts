@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
+import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 
 /**
@@ -49,10 +50,30 @@ export async function deleteDocument(documentId: string) {
         .maybeSingle()
     : { data: null };
 
+  // Cross-tenant guard: the document must belong to a resident in a
+  // house the admin can access, or (when no resident row exists) to a
+  // user who is an active member of the admin's workspace.
+  const adminClient = createAdminClient();
+  if (resident) {
+    if (!canAccessHouse(user, resident.house_id)) {
+      return { error: "Not authorized" };
+    }
+  } else {
+    const { data: member } = doc.user_id
+      ? await adminClient
+          .from("workspace_members")
+          .select("id")
+          .eq("user_id", doc.user_id)
+          .eq("workspace_id", user.workspace_id ?? "")
+          .eq("status", "active")
+          .maybeSingle()
+      : { data: null };
+    if (!member) return { error: "Not authorized" };
+  }
+
   // Storage object delete via service-role client — the user-scoped
   // client can't unconditionally delete bucket objects.
   if (doc.storage_path) {
-    const adminClient = createAdminClient();
     const { error: storageError } = await adminClient.storage
       .from("documents")
       .remove([doc.storage_path]);

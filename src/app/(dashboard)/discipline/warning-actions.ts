@@ -33,7 +33,9 @@ export async function createWarning(
     .from("residents")
     .select("full_name, user_id")
     .eq("id", parsed.data.resident_id)
-    .single();
+    .eq("house_id", parsed.data.house_id)
+    .maybeSingle();
+  if (!resident) return { error: "Resident not found in this house" };
 
   const notes = (formData.get("notes") as string | null) || null;
   const photoUrl = (formData.get("photo_url") as string | null) || null;

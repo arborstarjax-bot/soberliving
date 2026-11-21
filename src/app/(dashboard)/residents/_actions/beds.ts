@@ -42,6 +42,24 @@ export async function assignBed(
 
   const supabase = await createClient();
 
+  // Bind every caller-supplied id to the authorized house: the
+  // resident must live in houseId and the bed must belong to it.
+  const { data: residentRow } = await supabase
+    .from("residents")
+    .select("id")
+    .eq("id", residentId)
+    .eq("house_id", houseId)
+    .maybeSingle();
+  if (!residentRow) return err("Resident not found in this house");
+
+  const { data: bedRow } = await supabase
+    .from("beds")
+    .select("id, room:rooms!inner(house_id)")
+    .eq("id", bedId)
+    .eq("room.house_id", houseId)
+    .maybeSingle();
+  if (!bedRow) return err("Bed not found in this house");
+
   // Check bed is not already occupied. Final race-proofing comes from
   // the partial unique index on bed_assignments(bed_id) WHERE end_date
   // IS NULL; this SELECT is just for the friendly pre-flight error.
@@ -155,6 +173,25 @@ export async function changeResidentBed(
   }
 
   const supabase = await createClient();
+
+  // Bind caller-supplied ids to the authorized house.
+  const { data: residentRow } = await supabase
+    .from("residents")
+    .select("id")
+    .eq("id", residentId)
+    .eq("house_id", houseId)
+    .maybeSingle();
+  if (!residentRow) return err("Resident not found in this house");
+
+  if (bedId) {
+    const { data: bedRow } = await supabase
+      .from("beds")
+      .select("id, room:rooms!inner(house_id)")
+      .eq("id", bedId)
+      .eq("room.house_id", houseId)
+      .maybeSingle();
+    if (!bedRow) return err("Bed not found in this house");
+  }
 
   // If a target bed is specified, make sure it's free first so we don't
   // vacate the resident and then fail to reassign.
