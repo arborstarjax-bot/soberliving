@@ -83,7 +83,15 @@ export default async function IntakeReviewPage({
         .from("house_commitments")
         .select(
           "user_id, status, commitment_start_date, house_id, payment_frequency, rent_amount, admin_fee, commitment_term, notes, parent_commitment_id"
-        ),
+        )
+        // Only live commitments count as "already approved" — a
+        // discharged/reinstated resident keeps their old cancelled row
+        // for history but must re-enter the pending queue.
+        .in("status", [
+          "active",
+          "pending_staff_signature",
+          "pending_resident_signature",
+        ]),
       housesQuery,
     ]);
 
