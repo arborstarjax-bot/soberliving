@@ -1,0 +1,6 @@
+{
+  "name": "server-only",
+  "version": "0.0.1",
+  "description": "Test stub for the Next.js server-only marker package.",
+  "main": "index.js"
+}
