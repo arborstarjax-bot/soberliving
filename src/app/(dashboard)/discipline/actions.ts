@@ -7,6 +7,7 @@ import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { createDemeritSchema, editDemeritSchema } from "@/lib/validations";
 import { getHouseToday, getHouseYesterday, isoDateInTz, DEFAULT_TIMEZONE } from "@/lib/timezone";
+import { getHouseTimezone, getWorkspaceSettings } from "@/lib/workspace";
 import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 
 export async function createDemerit(
@@ -562,7 +563,7 @@ export async function createRestriction(
       restriction_type: restrictionType || "custom",
       description,
       notes: notes || null,
-      start_date: startDate || getHouseToday(),
+      start_date: startDate || getHouseToday(await getHouseTimezone(houseId)),
       end_date: endDate || null,
       is_house_commitment: isHouseCommitment,
       created_by: user.id,
@@ -745,7 +746,7 @@ export async function updateRestriction(
       restriction_type: restrictionType,
       description,
       notes: notes || null,
-      start_date: startDate || getHouseToday(),
+      start_date: startDate || getHouseToday(await getHouseTimezone(existing.house_id)),
       end_date: endDate || null,
       updated_at: new Date().toISOString(),
     })
@@ -777,7 +778,12 @@ export async function expireRestrictions() {
   const user = await requireAuth();
   if (user.role === "resident") return { count: 0 };
   const supabase = await createClient();
-  const today = getHouseToday();
+  // Restrictions may span several houses; the workspace timezone is the
+  // shared frame for "today" here.
+  const wsTz = user.workspace_id
+    ? (await getWorkspaceSettings(user.workspace_id))?.timezone
+    : null;
+  const today = getHouseToday(wsTz ?? DEFAULT_TIMEZONE);
 
   const { data: expired } = await supabase
     .from("restrictions")
