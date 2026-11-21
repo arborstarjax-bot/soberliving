@@ -13,12 +13,14 @@ import {
 } from "@/components/ui/dialog";
 import { Pencil } from "lucide-react";
 import { updateHouse } from "./actions";
+import { TIMEZONE_OPTIONS } from "@/lib/timezone";
 
 interface EditHouseDialogProps {
   houseId: string;
   currentName: string;
   currentAddress?: string | null;
   currentPhone?: string | null;
+  currentTimezone?: string | null;
 }
 
 export function EditHouseDialog({
@@ -26,6 +28,7 @@ export function EditHouseDialog({
   currentName,
   currentAddress,
   currentPhone,
+  currentTimezone,
 }: EditHouseDialogProps) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +80,21 @@ export function EditHouseDialog({
               name="phone"
               defaultValue={currentPhone ?? ""}
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-house-timezone">Timezone</Label>
+            <select
+              id="edit-house-timezone"
+              name="timezone"
+              defaultValue={currentTimezone ?? "America/New_York"}
+              className="h-9 w-full rounded-md border border-input bg-transparent px-2 text-sm"
+            >
+              {TIMEZONE_OPTIONS.map((tz) => (
+                <option key={tz} value={tz}>
+                  {tz.replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <Button type="submit" className="w-full" disabled={isPending}>

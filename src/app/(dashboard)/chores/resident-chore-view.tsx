@@ -36,10 +36,15 @@ interface Props {
         status: string;
         sign_off_date: string;
       }>;
+      coveringFor?: string | null;
     }>;
   }>;
   userResidentId?: string | null;
+  // Set when the viewing resident is out on approved leave and their
+  // own chores are covered by a housemate — shown as read-only.
+  coveredByName?: string | null;
   forcePhoto?: boolean;
+  houseTimezone?: string | null;
 }
 
 function getCurrentWeekNumber(cycleStartDate: string): number {
@@ -77,7 +82,7 @@ function getTodayDate(timezone?: string): string {
   return getHouseToday();
 }
 
-export function ResidentChoreView({ rotations, userResidentId, forcePhoto }: Props) {
+export function ResidentChoreView({ rotations, userResidentId, forcePhoto, houseTimezone, coveredByName }: Props) {
   if (rotations.length === 0) {
     return (
       <Card>
@@ -90,8 +95,8 @@ export function ResidentChoreView({ rotations, userResidentId, forcePhoto }: Pro
     );
   }
 
-  const todayDay = getTodayDayOfWeek();
-  const todayDate = getTodayDate();
+  const todayDay = getTodayDayOfWeek(houseTimezone ?? undefined);
+  const todayDate = getTodayDate(houseTimezone ?? undefined);
 
   return (
     <div className="space-y-6">
@@ -110,6 +115,16 @@ export function ResidentChoreView({ rotations, userResidentId, forcePhoto }: Pro
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle>{assignment.chore.name}</CardTitle>
+                    {assignment.coveringFor && (
+                      <Badge variant="secondary" className="mt-1">
+                        Covering for {assignment.coveringFor}
+                      </Badge>
+                    )}
+                    {!assignment.coveringFor && coveredByName && (
+                      <Badge variant="outline" className="mt-1">
+                        Covered by {coveredByName} while you&apos;re out
+                      </Badge>
+                    )}
                     <p className="text-sm text-muted-foreground">
                       {formatDateOnly(rotation.cycle_start_date)}{" "}
                       —{" "}
@@ -191,7 +206,8 @@ export function ResidentChoreView({ rotations, userResidentId, forcePhoto }: Pro
                             const canCheckOff =
                               signoff &&
                               signoff.status === "pending" &&
-                              isToday;
+                              isToday &&
+                              !(coveredByName && !assignment.coveringFor);
                             const canRedo =
                               signoff &&
                               signoff.status === "rejected";

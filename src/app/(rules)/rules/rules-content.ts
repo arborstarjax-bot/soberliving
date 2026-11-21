@@ -283,3 +283,63 @@ export const RULES_SLIDES: RulesSlide[] = [
     note: "Review the Demerit Policy for Rule Violation Consequences. On the next screen, please sign to acknowledge you have read and understood all house rules.",
   },
 ];
+
+function escapeHtml(s: string): string {
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+/**
+ * Builds the rules deck for a workspace. When the workspace defines its
+ * own rules sheet (`rules_text`, one rule per line) those rules are
+ * chunked into slides; otherwise the default deck is used with the
+ * workspace name substituted for the legacy house name. Dynamic strings
+ * (workspace name, custom rule lines) are HTML-escaped — slide text is
+ * rendered via dangerouslySetInnerHTML.
+ */
+export function buildRulesSlides(
+  houseName: string,
+  rulesText: string | null | undefined
+): RulesSlide[] {
+  const safeName = escapeHtml(houseName || "the house");
+  const text = rulesText?.trim();
+  if (text) {
+    const lines = text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const slides: RulesSlide[] = [
+      {
+        title: "House Rules",
+        note: `${safeName} — Please read each rule carefully. You will be asked to sign an acknowledgment at the end.`,
+      },
+    ];
+    const CHUNK = 6;
+    for (let i = 0; i < lines.length; i += CHUNK) {
+      const part = lines.slice(i, i + CHUNK);
+      slides.push({
+        title:
+          lines.length > CHUNK
+            ? `House Rules (${i + 1}–${i + part.length})`
+            : "House Rules",
+        items: part.map((t, j) => ({ num: i + j + 1, text: escapeHtml(t) })),
+      });
+    }
+    return slides;
+  }
+  const sub = (s: string) =>
+    s
+      .replaceAll("JSL Sober Living Residences", safeName)
+      .replaceAll("JSL", safeName);
+  return RULES_SLIDES.map((sl) => ({
+    ...sl,
+    note: sl.note ? sub(sl.note) : undefined,
+    warning: sl.warning ? sub(sl.warning) : undefined,
+    items: sl.items?.map((it) => ({ ...it, text: sub(it.text) })),
+    bullets: sl.bullets?.map(sub),
+  }));
+}

@@ -1,4 +1,5 @@
 "use server";
+import { err, okVoid } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -6,21 +7,6 @@ import { requireAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { openAllChargesForCommitment } from "@/lib/payments/charges";
 
-export async function getCommitmentForResident() {
-  const user = await requireAuth();
-  const adminClient = createAdminClient();
-
-  const { data: commitment } = await adminClient
-    .from("house_commitments")
-    .select("*, houses(name, address)")
-    .eq("user_id", user.id)
-    .eq("status", "pending_resident_signature")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  return commitment;
-}
 
 export async function signCommitment(
   commitmentId: string,
@@ -44,7 +30,7 @@ export async function signCommitment(
     .single();
 
   if (!commitment) {
-    return { error: "Commitment not found or already signed" };
+    return err("Commitment not found or already signed");
   }
 
   // Mark commitment_signed on user FIRST — if this fails the commitment
@@ -58,7 +44,7 @@ export async function signCommitment(
     .eq("id", user.id);
 
   if (userError) {
-    return { error: userError.message };
+    return err(userError.message);
   }
 
   // Update commitment with resident signature
@@ -81,7 +67,7 @@ export async function signCommitment(
     if (revertError) {
       console.error("CRITICAL: Failed to revert commitment_signed flag for user", user.id, revertError.message);
     }
-    return { error: updateError.message };
+    return err(updateError.message);
   }
 
   // Defense-in-depth: supersede any OTHER pending commitments for
@@ -186,5 +172,5 @@ export async function signCommitment(
   revalidatePath("/dashboard");
   revalidatePath("/sign-commitment");
   revalidatePath("/payments");
-  return {};
+  return okVoid();
 }

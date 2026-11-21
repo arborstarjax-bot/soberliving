@@ -5,10 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
-import {
-  createRotationSchema,
-  assignRotationChoreSchema,
-} from "@/lib/validations";
+import { createRotationSchema, assignRotationChoreSchema } from "@/lib/validations";
 import { getHouseToday, DEFAULT_TIMEZONE, addCalendarDays } from "@/lib/timezone";
 import { buildFairAssignments, buildSignoffRows, performRotation } from "@/lib/chore-rotation";
 import { sendNotification } from "@/lib/notifications";
@@ -434,7 +431,8 @@ export async function rotateSchedule(rotationId: string) {
       assignment.id,
       rotation.cycle_start_date,
       { days_of_week: choreData?.days_of_week ?? null, cycle_weeks: choreData?.cycle_weeks ?? null },
-      rotateTodayStr
+      rotateTodayStr,
+      rotation.cycle_end_date
     );
     if (signoffs.length > 0) {
       await supabase.from("chore_signoffs").insert(signoffs);

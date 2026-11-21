@@ -5,6 +5,7 @@ import { canAccessHouse } from "@/lib/permissions";
 import { getWorkspaceSettings } from "@/lib/workspace";
 import { redirect } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Phone, MessageSquare, Mail } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -319,11 +320,18 @@ export default async function ResidentDetailPage(
     residentRole = roleData?.role ?? null;
   }
 
-  // Fetch all houses + manager house assignments (for role editing)
-  const { data: allHouses } = await supabase
-    .from("houses")
-    .select("id, name")
-    .order("name");
+  // Fetch this workspace's houses + manager house assignments (for
+  // role editing). Scoped to the user's workspace — without it the
+  // Transfer House dialog offered every house in the database,
+  // including other workspaces'. Legacy houses with no workspace_id
+  // stay visible so pre-workspace installs keep working.
+  let allHousesQuery = supabase.from("houses").select("id, name").order("name");
+  if (user.workspace_id) {
+    allHousesQuery = allHousesQuery.or(
+      `workspace_id.eq.${user.workspace_id},workspace_id.is.null`
+    );
+  }
+  const { data: allHouses } = await allHousesQuery;
 
   let assignedHouseIds: string[] = [];
   if (resident.user_id) {
@@ -566,8 +574,23 @@ export default async function ResidentDetailPage(
             <CardTitle className="text-sm font-medium">Contact</CardTitle>
           </CardHeader>
           <CardContent className="text-sm">
-            {resident.phone && <p>{resident.phone}</p>}
-            {resident.email && <p>{resident.email}</p>}
+            {resident.phone && (
+              <div className="flex items-center gap-2">
+                <a href={`tel:${resident.phone}`} className="inline-flex items-center gap-1 text-primary hover:underline">
+                  <Phone className="h-3.5 w-3.5" />
+                  {resident.phone}
+                </a>
+                <a href={`sms:${resident.phone}`} title={`Text ${resident.phone}`} className="text-muted-foreground hover:text-foreground">
+                  <MessageSquare className="h-3.5 w-3.5" />
+                </a>
+              </div>
+            )}
+            {resident.email && (
+              <a href={`mailto:${resident.email}`} className="inline-flex items-center gap-1 text-primary hover:underline">
+                <Mail className="h-3.5 w-3.5" />
+                {resident.email}
+              </a>
+            )}
             {!resident.phone && !resident.email && (
               <p className="text-muted-foreground">No contact info</p>
             )}

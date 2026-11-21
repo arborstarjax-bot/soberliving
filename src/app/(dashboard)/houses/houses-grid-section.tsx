@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Home } from "lucide-react";
 import Link from "next/link";
@@ -153,12 +154,7 @@ export async function HousesGridSection({
 
   if (withOccupancy.length === 0) {
     return (
-      <Card>
-        <CardContent className="py-12 text-center">
-          <Home className="mx-auto h-12 w-12 text-muted-foreground/50" />
-          <p className="mt-4 text-muted-foreground">No houses to show.</p>
-        </CardContent>
-      </Card>
+      <EmptyState icon={Home} title="No houses to show" description="Create your first house to get started." />
     );
   }
 

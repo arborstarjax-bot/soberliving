@@ -88,6 +88,12 @@ export async function GET(request: NextRequest) {
   try {
     const admin = createAdminClient();
     const today = getHouseToday(DEFAULT_TIMEZONE);
+    const nowInTz = new Date(
+      new Date().toLocaleString("en-US", { timeZone: DEFAULT_TIMEZONE })
+    );
+    const weekStart = new Date(nowInTz);
+    weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+    const mondayIso = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, "0")}-${String(weekStart.getDate()).padStart(2, "0")}`;
 
     // Auto-cycle: when a workspace enables it, a house whose current
     // rotation has ended gets a fresh fairly-dealt rotation. Starts the
@@ -108,7 +114,7 @@ export async function GET(request: NextRequest) {
       if (!house?.workspace_id) continue;
       const { data: ws } = await admin
         .from("workspace_settings")
-        .select("auto_cycle_chores")
+        .select("auto_cycle_chores, auto_cycle_frequency")
         .eq("workspace_id", house.workspace_id)
         .maybeSingle();
       if (!ws?.auto_cycle_chores) continue;
@@ -118,12 +124,20 @@ export async function GET(request: NextRequest) {
       const nextStart = addCalendarDays(rot.cycle_end_date as string, 1);
       const cycleStart = nextStart > houseToday ? nextStart : houseToday;
 
+      const freqDays: Record<string, number> = {
+        daily: 1,
+        weekly: 7,
+        biweekly: 14,
+        monthly: 28,
+      };
       const result = await performRotation(admin, {
         houseId: rot.house_id,
         cycleStartDate: cycleStart,
         actorId: null,
         actorName: "auto-cycle",
         assignChores: true,
+        cycleLengthDays:
+          freqDays[(ws.auto_cycle_frequency as string) ?? "weekly"] ?? 7,
       });
       if (!result.error) autoCycled++;
       else console.error(`[cron/chore-reminders] auto-cycle failed for house ${rot.house_id}:`, result.error);
@@ -142,26 +156,85 @@ export async function GET(request: NextRequest) {
       .eq("sign_off_date", today)
       .in("status", ["pending", "redo"]);
 
-    if (!signoffs || signoffs.length === 0) {
-      return NextResponse.json({
-        ok: true,
-        sent: 0,
-        autoCycled,
-        variant: isEvening ? "evening" : "noon",
-        durationMs: Date.now() - startedAt,
-      });
+    // --- hygiene: archive reviewed signoffs (30d) + old notifications ---
+    // Reviewed/closed chore signoffs older than 30 days are removed so
+    // the Needs Review backlog stays meaningful. Read notifications
+    // older than 30 days are purged so badges/bell counts don't grow
+    // unbounded.
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      .toISOString();
+    await admin
+      .from("chore_signoffs")
+      .delete()
+      .in("status", ["approved", "rejected", "missed"])
+      .lt("updated_at", cutoff);
+    await admin
+      .from("notifications")
+      .delete()
+      .eq("is_read", true)
+      .lt("created_at", cutoff);
+
+    // Note: no early return when there are no pending signoffs — the
+    // missed-meeting auto-demerit check below still has to run on
+    // Sunday evenings even when every chore is done.
+    const signoffRows = signoffs ?? [];
+
+    // Workspace reminder toggles: chores the resident sees only when
+    // the workspace keeps the "chore" reminder enabled.
+    const houseIdsForWs = [
+      ...new Set(
+        signoffRows
+          .map((r) => {
+            const a = r.rotation_assignment as unknown as {
+              chore: { house_id: string } | null;
+            } | null;
+            return a?.chore?.house_id ?? null;
+          })
+          .filter((x): x is string => Boolean(x))
+      ),
+    ];
+    const { data: wsHouses } = await admin
+      .from("houses")
+      .select("id, workspace_id")
+      .in("id", houseIdsForWs);
+    const houseToWs = new Map<string, string | null>();
+    for (const h of wsHouses ?? []) {
+      houseToWs.set(
+        h.id as string,
+        (h.workspace_id as string | null) ?? null
+      );
     }
+    const { data: reminderRows } = await admin
+      .from("workspace_settings")
+      .select("workspace_id, reminder_settings");
+    const reminderByWs = new Map<
+      string,
+      Record<string, { enabled?: boolean }>
+    >();
+    for (const w of reminderRows ?? []) {
+      reminderByWs.set(
+        w.workspace_id as string,
+        (w.reminder_settings as Record<string, { enabled?: boolean }>) ?? {}
+      );
+    }
+    const choreRemindersOn = (houseId: string | null | undefined) => {
+      if (!houseId) return true;
+      const ws = houseToWs.get(houseId);
+      if (!ws) return true;
+      return reminderByWs.get(ws)?.chore?.enabled !== false;
+    };
 
     let sent = 0;
     const missedItems: { label: string; houseId: string }[] = [];
 
-    for (const row of signoffs) {
+    for (const row of signoffRows) {
       const assignment = row.rotation_assignment as unknown as {
         resident: { user_id: string | null; full_name: string };
         chore: { name: string; house_id: string };
       } | null;
 
       if (!assignment?.resident?.user_id) continue;
+      if (!choreRemindersOn(assignment.chore.house_id)) continue;
 
       const title = isEvening ? "Chore Must Be Completed" : "Chore Reminder";
       const body = isEvening
@@ -238,10 +311,65 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Missed-meeting auto-demerit: on Sunday evening, residents with
+    // no meeting logged since Monday get a 1-point demerit when their
+    // workspace enables it.
+    let meetingDemerits = 0;
+    if (isEvening && nowInTz.getDay() === 0) {
+      const { data: meetingOn } = await admin
+        .from("workspace_settings")
+        .select("workspace_id")
+        .eq("auto_demerit_missed_meetings", true);
+
+      const wsIds = new Set(
+        (meetingOn ?? []).map((w) => w.workspace_id as string)
+      );
+      if (wsIds.size > 0) {
+        const { data: res } = await admin
+          .from("residents")
+          .select("id, full_name, house_id, houses!inner(workspace_id)")
+          .eq("status", "active");
+        for (const r of res ?? []) {
+          const wsId =
+            (r.houses as unknown as { workspace_id: string | null })
+              ?.workspace_id ?? null;
+          if (!wsId || !wsIds.has(wsId)) continue;
+
+          const { data: mtg } = await admin
+            .from("meetings")
+            .select("id")
+            .eq("resident_id", r.id)
+            .gte("meeting_at", mondayIso)
+            .limit(1);
+          if (mtg && mtg.length > 0) continue;
+
+          const reason = `Missed meeting week of ${mondayIso}`;
+          const { data: dup } = await admin
+            .from("demerits")
+            .select("id")
+            .eq("resident_id", r.id)
+            .eq("reason", reason)
+            .limit(1);
+          if (dup && dup.length > 0) continue;
+
+          await admin.from("demerits").insert({
+            resident_id: r.id,
+            house_id: r.house_id,
+            points: 1,
+            reason,
+            category: "Missed Meeting",
+            issued_by: null,
+          });
+          meetingDemerits++;
+        }
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       sent,
       autoCycled,
+      meetingDemerits,
       variant: isEvening ? "evening" : "noon",
       durationMs: Date.now() - startedAt,
     });

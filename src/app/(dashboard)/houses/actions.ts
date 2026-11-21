@@ -1,4 +1,5 @@
 "use server";
+import { err, okVoid, type ActionResult } from "@/lib/action-result";
 
 import { revalidatePath, revalidateTag } from "next/cache";
 import { HOUSES_ACTIVE_TAG } from "@/lib/cached-dropdowns";
@@ -7,7 +8,8 @@ import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { requireAuth, requireRole } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
-import { getHouseToday } from "@/lib/timezone";
+import { DEFAULT_TIMEZONE, getHouseToday } from "@/lib/timezone";
+import { getHouseTimezone } from "@/lib/workspace";
 import {
   createHouseSchema,
   updateHouseSchema,
@@ -20,7 +22,7 @@ import {
 // --- Houses ---
 
 export async function createHouse(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireRole("admin");
@@ -31,17 +33,35 @@ export async function createHouse(
   });
 
   if (!parsed.success) {
-    return { error: parsed.error.issues[0].message };
+    return err(parsed.error.issues[0].message);
   }
 
-  const supabase = await createClient();
-  const { data, error } = await supabase
+  const adminClient = createAdminClient();
+  // New houses take the workspace timezone — per-house overrides happen in
+  // the house edit dialog.
+  let houseTimezone = DEFAULT_TIMEZONE;
+  if (user.workspace_id) {
+    const { data: ws } = await adminClient
+      .from("workspace_settings")
+      .select("timezone")
+      .eq("workspace_id", user.workspace_id)
+      .maybeSingle();
+    if (typeof ws?.timezone === "string" && ws.timezone) {
+      houseTimezone = ws.timezone;
+    }
+  }
+  const { data, error } = await adminClient
     .from("houses")
-    .insert({ ...parsed.data, capacity: 0 })
+    .insert({
+      ...parsed.data,
+      capacity: 0,
+      workspace_id: user.workspace_id,
+      timezone: houseTimezone,
+    })
     .select("id")
     .single();
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: data.id,
@@ -60,16 +80,17 @@ export async function createHouse(
 export async function updateHouse(houseId: string, formData: FormData) {
   const user = await requireAuth();
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
   const parsed = updateHouseSchema.safeParse({
     name: formData.get("name") || undefined,
     address: formData.has("address") ? (formData.get("address") || null) : undefined,
     phone: formData.has("phone") ? (formData.get("phone") || null) : undefined,
+    timezone: formData.get("timezone") || undefined,
   });
 
   if (!parsed.success) {
-    return { error: parsed.error.issues[0].message };
+    return err(parsed.error.issues[0].message);
   }
 
   const supabase = createAdminClient();
@@ -78,7 +99,7 @@ export async function updateHouse(houseId: string, formData: FormData) {
     .update({ ...parsed.data, updated_at: new Date().toISOString() })
     .eq("id", houseId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId,
@@ -92,7 +113,7 @@ export async function updateHouse(houseId: string, formData: FormData) {
   revalidatePath(`/houses/${houseId}`);
   revalidatePath("/houses");
   revalidateTag(HOUSES_ACTIVE_TAG, "max");
-  return {};
+  return okVoid();
 }
 
 export async function archiveHouse(houseId: string) {
@@ -104,7 +125,7 @@ export async function archiveHouse(houseId: string) {
     .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq("id", houseId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId,
@@ -123,7 +144,7 @@ export async function archiveHouse(houseId: string) {
 // --- Rooms ---
 
 export async function createRoom(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
@@ -135,11 +156,11 @@ export async function createRoom(
   });
 
   if (!parsed.success) {
-    return { error: parsed.error.issues[0].message };
+    return err(parsed.error.issues[0].message);
   }
 
   if (user.role !== "admin" && !canAccessHouse(user, parsed.data.house_id)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const supabase = await createClient();
@@ -150,7 +171,7 @@ export async function createRoom(
     .select("id")
     .single();
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   // Auto-create beds if bed_count was specified
   if (bed_count && bed_count > 0) {
@@ -173,13 +194,13 @@ export async function createRoom(
 
   revalidatePath(`/houses/${parsed.data.house_id}`);
   revalidatePath("/admin");
-  return {};
+  return okVoid();
 }
 
 // --- Beds ---
 
 export async function createBed(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
@@ -189,7 +210,7 @@ export async function createBed(
   });
 
   if (!parsed.success) {
-    return { error: parsed.error.issues[0].message };
+    return err(parsed.error.issues[0].message);
   }
 
   const supabase = await createClient();
@@ -201,10 +222,10 @@ export async function createBed(
     .eq("id", parsed.data.room_id)
     .single();
 
-  if (!room) return { error: "Room not found" };
+  if (!room) return err("Room not found");
 
   if (user.role !== "admin" && !canAccessHouse(user, room.house_id)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const { data, error } = await supabase
@@ -213,7 +234,7 @@ export async function createBed(
     .select("id")
     .single();
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   // Update house capacity
   await supabase.rpc("update_house_capacity", { p_house_id: room.house_id });
@@ -228,25 +249,25 @@ export async function createBed(
   });
 
   revalidatePath(`/houses/${room.house_id}`);
-  return {};
+  return okVoid();
 }
 
 // --- Update Room ---
 
 export async function updateRoom(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
   const roomId = formData.get("room_id") as string;
-  if (!roomId) return { error: "Room ID is required" };
+  if (!roomId) return err("Room ID is required");
 
   const parsed = updateRoomSchema.safeParse({
     name: formData.get("name") || undefined,
     floor: formData.get("floor") || undefined,
   });
 
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   const supabase = await createClient();
   const { data: room } = await supabase
@@ -255,10 +276,10 @@ export async function updateRoom(
     .eq("id", roomId)
     .single();
 
-  if (!room) return { error: "Room not found" };
+  if (!room) return err("Room not found");
 
   if (user.role !== "admin" && !canAccessHouse(user, room.house_id)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const { error } = await supabase
@@ -266,7 +287,7 @@ export async function updateRoom(
     .update(parsed.data)
     .eq("id", roomId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: room.house_id,
@@ -279,18 +300,18 @@ export async function updateRoom(
 
   revalidatePath(`/houses/${room.house_id}`);
   revalidatePath("/admin");
-  return {};
+  return okVoid();
 }
 
 // --- Delete Room ---
 
 export async function deleteRoom(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
   const roomId = formData.get("room_id") as string;
-  if (!roomId) return { error: "Room ID is required" };
+  if (!roomId) return err("Room ID is required");
 
   const supabase = await createClient();
   const { data: room } = await supabase
@@ -299,10 +320,10 @@ export async function deleteRoom(
     .eq("id", roomId)
     .single();
 
-  if (!room) return { error: "Room not found" };
+  if (!room) return err("Room not found");
 
   if (user.role !== "admin" && !canAccessHouse(user, room.house_id)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   // Soft-delete by setting is_active = false
@@ -311,7 +332,7 @@ export async function deleteRoom(
     .update({ is_active: false })
     .eq("id", roomId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   // End active bed assignments for all beds in this room and soft-delete beds
   const { data: roomBeds } = await supabase
@@ -323,7 +344,7 @@ export async function deleteRoom(
     const bedIds = roomBeds.map((b) => b.id);
     await supabase
       .from("bed_assignments")
-      .update({ end_date: getHouseToday() })
+      .update({ end_date: getHouseToday(await getHouseTimezone(room.house_id)) })
       .in("bed_id", bedIds)
       .is("end_date", null);
     await supabase
@@ -345,24 +366,24 @@ export async function deleteRoom(
 
   revalidatePath(`/houses/${room.house_id}`);
   revalidatePath("/admin");
-  return {};
+  return okVoid();
 }
 
 // --- Update Bed ---
 
 export async function updateBed(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
   const bedId = formData.get("bed_id") as string;
-  if (!bedId) return { error: "Bed ID is required" };
+  if (!bedId) return err("Bed ID is required");
 
   const parsed = updateBedSchema.safeParse({
     label: formData.get("label"),
   });
 
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   const supabase = await createClient();
   const { data: bed } = await supabase
@@ -371,14 +392,14 @@ export async function updateBed(
     .eq("id", bedId)
     .single();
 
-  if (!bed) return { error: "Bed not found" };
+  if (!bed) return err("Bed not found");
   const bedRoom = (Array.isArray(bed.rooms) ? bed.rooms[0] : bed.rooms) as
     | { house_id: string }
     | null;
   const houseId = bedRoom?.house_id ?? "";
 
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const { error } = await supabase
@@ -386,7 +407,7 @@ export async function updateBed(
     .update(parsed.data)
     .eq("id", bedId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId,
@@ -399,18 +420,18 @@ export async function updateBed(
 
   revalidatePath(`/houses/${houseId}`);
   revalidatePath("/admin");
-  return {};
+  return okVoid();
 }
 
 // --- Delete Bed ---
 
 export async function deleteBed(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
   const bedId = formData.get("bed_id") as string;
-  if (!bedId) return { error: "Bed ID is required" };
+  if (!bedId) return err("Bed ID is required");
 
   const supabase = await createClient();
   const { data: bed } = await supabase
@@ -419,14 +440,14 @@ export async function deleteBed(
     .eq("id", bedId)
     .single();
 
-  if (!bed) return { error: "Bed not found" };
+  if (!bed) return err("Bed not found");
   const bedRoom = (Array.isArray(bed.rooms) ? bed.rooms[0] : bed.rooms) as
     | { house_id: string }
     | null;
   const houseId = bedRoom?.house_id ?? "";
 
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   // Soft-delete by setting is_active = false
@@ -435,12 +456,12 @@ export async function deleteBed(
     .update({ is_active: false })
     .eq("id", bedId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   // End any active bed assignment for this bed
   await supabase
     .from("bed_assignments")
-    .update({ end_date: getHouseToday() })
+    .update({ end_date: getHouseToday(await getHouseTimezone(houseId)) })
     .eq("bed_id", bedId)
     .is("end_date", null);
 
@@ -457,7 +478,7 @@ export async function deleteBed(
 
   revalidatePath(`/houses/${houseId}`);
   revalidatePath("/admin");
-  return {};
+  return okVoid();
 }
 
 // --- Toggle Bed Not Available ---
@@ -466,7 +487,7 @@ export async function toggleBedEmpty(bedId: string, houseId: string) {
   const user = await requireAuth();
 
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const supabase = await createClient();
@@ -480,10 +501,7 @@ export async function toggleBedEmpty(bedId: string, houseId: string) {
     .maybeSingle();
 
   if (activeAssignment) {
-    return {
-      error:
-        "Cannot mark bed as not available while a resident is assigned",
-    };
+    return err("Cannot mark bed as not available while a resident is assigned");
   }
 
   // Check current bed label to see if it's already marked not available
@@ -493,14 +511,14 @@ export async function toggleBedEmpty(bedId: string, houseId: string) {
     .eq("id", bedId)
     .single();
 
-  if (!bed) return { error: "Bed not found" };
+  if (!bed) return err("Bed not found");
 
   // Verify the bed actually belongs to the claimed house
   const bedRoom = (Array.isArray(bed.rooms) ? bed.rooms[0] : bed.rooms) as
     | { house_id: string }
     | null;
   const actualHouseId = bedRoom?.house_id;
-  if (actualHouseId !== houseId) return { error: "Not authorized" };
+  if (actualHouseId !== houseId) return err("Not authorized");
 
   // Toggle: if label ends with " [Not Available]" or legacy " [Empty]",
   // remove it; otherwise add " [Not Available]". We keep the legacy suffix
@@ -520,10 +538,10 @@ export async function toggleBedEmpty(bedId: string, houseId: string) {
     .update({ label: newLabel })
     .eq("id", bedId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   revalidatePath(`/houses/${houseId}`);
-  return {};
+  return okVoid();
 }
 
 // --- Reorder Rooms ---
@@ -532,7 +550,7 @@ export async function reorderRooms(houseId: string, roomIds: string[]) {
   const user = await requireAuth();
 
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const supabase = await createClient();
@@ -547,5 +565,5 @@ export async function reorderRooms(houseId: string, roomIds: string[]) {
 
   revalidatePath(`/houses/${houseId}`);
   revalidatePath("/admin");
-  return {};
+  return okVoid();
 }

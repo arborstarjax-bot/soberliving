@@ -22,8 +22,10 @@ import { getWorkspace, getWorkspaceSettings } from "@/lib/workspace";
  */
 export async function ResidentsTabsSection({
   user,
+  searchQuery = "",
 }: {
   user: SessionUser;
+  searchQuery?: string;
 }) {
   const supabase = await createClient();
   const houseFilter = getAccessibleHouseFilter(user);
@@ -38,6 +40,15 @@ export async function ResidentsTabsSection({
     .order("full_name");
   if (houseFilter) {
     residentsQuery = residentsQuery.in("house_id", houseFilter);
+
+  if (searchQuery) {
+    const safe = searchQuery.replace(/[%,().]/g, "");
+    if (safe) {
+      residentsQuery = residentsQuery.or(
+        `full_name.ilike.%${safe}%,phone.ilike.%${safe}%`
+      );
+    }
+  }
   }
 
   let housesQuery = supabase

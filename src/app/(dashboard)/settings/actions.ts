@@ -1,4 +1,5 @@
 "use server";
+import { err, ok } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -7,7 +8,7 @@ import { requireAuth } from "@/lib/auth";
 export async function updateProfile(fullName: string) {
   const user = await requireAuth();
   const name = fullName.trim();
-  if (!name) return { error: "Name is required" };
+  if (!name) return err("Name is required");
 
   const adminClient = createAdminClient();
   const { error } = await adminClient
@@ -15,14 +16,14 @@ export async function updateProfile(fullName: string) {
     .update({ full_name: name, updated_at: new Date().toISOString() })
     .eq("id", user.id);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
   revalidatePath("/settings");
-  return { ok: true as const };
+  return ok({ ok: true as const });
 }
 
 export async function changePassword(currentPassword: string, newPassword: string) {
   if (!newPassword || newPassword.length < 8) {
-    return { error: "New password must be at least 8 characters" };
+    return err("New password must be at least 8 characters");
   }
 
   const supabase = await createClient();
@@ -34,10 +35,10 @@ export async function changePassword(currentPassword: string, newPassword: strin
 
   if (error) {
     if (error.message.includes("same_password")) {
-      return { error: "New password must be different from your current password" };
+      return err("New password must be different from your current password");
     }
-    return { error: error.message };
+    return err(error.message);
   }
 
-  return { ok: true as const };
+  return ok({ ok: true as const });
 }

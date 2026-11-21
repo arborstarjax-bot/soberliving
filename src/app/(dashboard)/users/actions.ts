@@ -1,4 +1,5 @@
 "use server";
+import { err, ok, okVoid, type ActionResult } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
@@ -15,7 +16,7 @@ export async function createUser(
 ) {
   // Allow both admins and managers to invite residents
   const user = await requireAuth();
-  if (user.role === "resident") return { error: "Not authorized" };
+  if (user.role === "resident") return err("Not authorized");
 
   const parsed = createUserSchema.safeParse({
     email: formData.get("email"),
@@ -26,10 +27,10 @@ export async function createUser(
 
   // Managers can only assign residents to houses they manage
   if (houseId && user.role !== "admin" && !canAccessHouse(user, houseId)) {
-    return { error: "Not authorized for this house" };
+    return err("Not authorized for this house");
   }
 
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   const supabase = await createClient();
   const adminClient = createAdminClient();
@@ -44,7 +45,7 @@ export async function createUser(
     },
   });
 
-  if (linkError) return { error: linkError.message };
+  if (linkError) return err(linkError.message);
 
   const authUserId = linkData.user.id;
 
@@ -68,7 +69,7 @@ export async function createUser(
       ...(houseId ? { pending_house_id: houseId } : {}),
     });
 
-    if (userError) return { error: userError.message };
+    if (userError) return err(userError.message);
 
     // Default role is resident
     const { error: roleError } = await supabase.from("user_roles").insert({
@@ -76,7 +77,7 @@ export async function createUser(
       role: "resident",
     });
 
-    if (roleError) return { error: roleError.message };
+    if (roleError) return err(roleError.message);
   }
 
   await logActivity({
@@ -124,7 +125,7 @@ export async function createUser(
     // Email send failed — admin can still share the link manually
   }
 
-  return { inviteLink };
+  return ok({ inviteLink });
 }
 
 /**
@@ -138,7 +139,7 @@ export async function resendInviteLink(
   userId: string
 ): Promise<{ error?: string; inviteLink?: string }> {
   const user = await requireAuth();
-  if (user.role === "resident") return { error: "Not authorized" };
+  if (user.role === "resident") return err("Not authorized");
 
   const supabase = await createClient();
   const adminClient = createAdminClient();
@@ -150,7 +151,7 @@ export async function resendInviteLink(
     .single();
 
   if (targetError || !target?.email) {
-    return { error: "User not found" };
+    return err("User not found");
   }
 
   const baseUrl = await getAppOrigin();
@@ -162,7 +163,7 @@ export async function resendInviteLink(
     },
   });
 
-  if (linkError) return { error: linkError.message };
+  if (linkError) return err(linkError.message);
 
   let inviteLink = linkData.properties?.action_link ?? "";
   if (inviteLink) {
@@ -200,7 +201,7 @@ export async function resendInviteLink(
   revalidatePath("/residents");
   revalidatePath("/users");
 
-  return { inviteLink };
+  return ok({ inviteLink });
 }
 
 export async function changeUserRole(userId: string, newRole: string) {
@@ -212,7 +213,7 @@ export async function changeUserRole(userId: string, newRole: string) {
     .from("user_roles")
     .upsert({ user_id: userId, role: newRole }, { onConflict: "user_id" });
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   const { data: targetUser } = await supabase
     .from("users")
@@ -229,11 +230,11 @@ export async function changeUserRole(userId: string, newRole: string) {
   });
 
   revalidatePath("/users");
-  return {};
+  return okVoid();
 }
 
 export async function assignManagerToHouses(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireRole("admin");
@@ -245,7 +246,7 @@ export async function assignManagerToHouses(
     house_ids: houseIds,
   });
 
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   const supabase = await createClient();
 
@@ -267,7 +268,7 @@ export async function assignManagerToHouses(
       .from("manager_house_assignments")
       .insert(assignments);
 
-    if (error) return { error: error.message };
+    if (error) return err(error.message);
   }
 
   const { data: targetUser } = await supabase
@@ -285,17 +286,17 @@ export async function assignManagerToHouses(
   });
 
   revalidatePath("/users");
-  return {};
+  return okVoid();
 }
 
 export async function updateUserProfile(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireRole("admin");
   const userId = formData.get("user_id") as string;
 
-  if (!userId) return { error: "User ID is required" };
+  if (!userId) return err("User ID is required");
 
   const parsed = updateUserProfileSchema.safeParse({
     full_name: formData.get("full_name") || undefined,
@@ -303,7 +304,7 @@ export async function updateUserProfile(
     role: formData.get("role") || undefined,
   });
 
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   const supabase = await createClient();
 
@@ -317,7 +318,7 @@ export async function updateUserProfile(
     .update(updateFields)
     .eq("id", userId);
 
-  if (userError) return { error: userError.message };
+  if (userError) return err(userError.message);
 
   // Update role if provided
   if (parsed.data.role) {
@@ -325,7 +326,7 @@ export async function updateUserProfile(
       .from("user_roles")
       .upsert({ user_id: userId, role: parsed.data.role }, { onConflict: "user_id" });
 
-    if (roleError) return { error: roleError.message };
+    if (roleError) return err(roleError.message);
   }
 
   await logActivity({
@@ -338,12 +339,12 @@ export async function updateUserProfile(
 
   revalidatePath(`/users/${userId}`);
   revalidatePath("/users");
-  return {};
+  return okVoid();
 }
 
 export async function deactivateUser(userId: string) {
   const user = await requireRole("admin");
-  if (userId === user.id) return { error: "Cannot deactivate yourself" };
+  if (userId === user.id) return err("Cannot deactivate yourself");
 
   const supabase = await createClient();
 
@@ -352,7 +353,7 @@ export async function deactivateUser(userId: string) {
     .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq("id", userId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   const { data: targetUser } = await supabase
     .from("users")
@@ -369,5 +370,5 @@ export async function deactivateUser(userId: string) {
   });
 
   revalidatePath("/users");
-  return {};
+  return okVoid();
 }

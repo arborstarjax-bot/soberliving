@@ -4,11 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/lib/types";
-import {
-  LayoutDashboard,
+import {LayoutDashboard,
   Home,
   Users,
   ClipboardCheck,
+  ClipboardList,
   CalendarClock,
   Settings,
   LogOut,
@@ -17,11 +17,13 @@ import {
   ShieldAlert,
   MessageSquare,
   Bell,
+  FlaskConical,
   Folder,
+  FolderLock,
   DollarSign,
   Building2,
   Ticket,
-} from "lucide-react";
+  CalendarCheck,} from "lucide-react";
 import { useState, useMemo } from "react";
 import { InstallAppButton } from "@/components/pwa/install-app-button";
 import { usePrefetchRoutes } from "@/lib/use-prefetch-routes";
@@ -118,6 +120,16 @@ const NAV_ITEMS: NavItem[] = [
     module: "documents",
   },
   {
+    // Meetings hub — residents log outside meetings with a
+    // facilitator signature; staff see the weekly roll-up.
+    label: "Meetings",
+    href: "/meetings",
+    icon: CalendarCheck,
+    roles: ["admin", "manager", "resident"],
+    group: "Operations",
+    module: "meetings",
+  },
+  {
     label: "Community Services",
     href: "/bulletin",
     icon: MessageSquare,
@@ -141,6 +153,28 @@ const NAV_ITEMS: NavItem[] = [
     roles: ["admin"],
     group: "Administration",
   },
+  {
+    label: "Manifest",
+    href: "/manifest",
+    icon: ClipboardList,
+    roles: ["admin", "manager"],
+    group: "Operations",
+  },
+  {
+    label: "UA Randomizer",
+    href: "/ua",
+    icon: FlaskConical,
+    roles: ["admin"],
+    group: "Operations",
+    module: "ua",
+  },
+  {
+    label: "Document Vault",
+    href: "/admin/documents",
+    icon: FolderLock,
+    roles: ["admin"],
+    group: "Administration",
+  },
   // Intake Review is now a tab inside the Residents page
   // Users & Roles folded into Residents page — /users route still works for direct access
   // Activity Log is no longer a primary nav item — reachable from the
@@ -158,6 +192,7 @@ interface SidebarProps {
   hasNoLeaveRestriction?: boolean;
   enablePayments?: boolean;
   enabledModules?: string[];
+  residentModules?: string[] | null;
   // Badges are passed as React nodes (not numbers) so the server
   // can stream them into the sidebar behind `<Suspense>` — the
   // sidebar paints immediately and the badges fill in on their own.
@@ -173,6 +208,7 @@ export function Sidebar({
   hasNoLeaveRestriction,
   enablePayments = true,
   enabledModules,
+  residentModules,
   notificationBadge = null,
   bulletinBadge = null,
 }: SidebarProps) {
@@ -184,6 +220,13 @@ export function Sidebar({
     if ((item.href === "/attendance" || item.href === "/passes") && hasNoLeaveRestriction && role === "resident") return false;
     if (item.href === "/payments" && !enablePayments) return false;
     if (item.module && enabledModules && !enabledModules.includes(item.module)) return false;
+    if (
+      item.module &&
+      role === "resident" &&
+      residentModules &&
+      !residentModules.includes(item.module)
+    )
+      return false;
     return true;
   });
 

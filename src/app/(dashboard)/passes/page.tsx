@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { requireAuth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getWorkspaceSettings } from "@/lib/workspace";
-import { isModuleEnabled } from "@/lib/modules";
+import { isModuleVisibleToRole } from "@/lib/modules";
 import { ListSkeleton } from "@/components/ui/skeleton";
 import { LeaveRequestsTabsSection } from "../leave-requests/leave-requests-tabs-section";
 
@@ -17,7 +17,7 @@ export default async function PassesPage() {
   const wsSettings = user.workspace_id
     ? await getWorkspaceSettings(user.workspace_id)
     : null;
-  if (!isModuleEnabled(wsSettings, "attendance")) redirect("/dashboard");
+  if (!isModuleVisibleToRole(wsSettings, "attendance", user.role)) redirect("/dashboard");
 
   return (
     <div className="space-y-4">

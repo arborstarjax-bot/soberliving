@@ -36,6 +36,7 @@ export function SignOffResendButton({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [signature, setSignature] = useState<string | null>(null);
+  const [padKey, setPadKey] = useState(0);
   const [printedName, setPrintedName] = useState("");
   const [date, setDate] = useState<string>(getHouseToday());
   const [useToday, setUseToday] = useState(true);
@@ -75,6 +76,7 @@ export function SignOffResendButton({
         } else {
           setOpen(false);
           setSignature(null);
+          setPadKey((k) => k + 1);
           setPrintedName("");
           setDate(getHouseToday());
         }
@@ -109,6 +111,7 @@ export function SignOffResendButton({
             label="Staff Signature"
             initialValue={signature}
             onSignatureChange={setSignature}
+            resetKey={padKey}
           />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

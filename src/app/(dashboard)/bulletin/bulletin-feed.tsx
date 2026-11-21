@@ -1,5 +1,6 @@
 "use client";
 
+import type { ActionResult } from "@/lib/action-result";
 import { useState, useTransition, useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -154,7 +155,7 @@ function CommentSection({
   const [isPending, startTransition] = useTransition();
 
   const [, commentAction, isCommenting] = useActionState(
-    async (prev: { error?: string } | undefined, formData: FormData) => {
+    async (prev: ActionResult | undefined, formData: FormData) => {
       const result = await addComment(prev, formData);
       return result;
     },

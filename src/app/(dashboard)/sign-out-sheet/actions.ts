@@ -1,13 +1,15 @@
 "use server";
+import { err, okVoid, type ActionResult } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 import { z } from "zod";
 import { getEffectiveHouseCurfews } from "@/lib/workspace";
+import { DEFAULT_TIMEZONE } from "@/lib/timezone";
 
 const signOutSchema = z.object({
   resident_id: z.string().uuid(),
@@ -49,7 +51,7 @@ async function loadResidentWithActiveRestrictions(residentId: string) {
  * restriction cannot sign out and staff cannot sign them out either.
  */
 export async function signOutResident(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
@@ -58,24 +60,24 @@ export async function signOutResident(
     destination: formData.get("destination"),
     notes: formData.get("notes") || "",
   });
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   const { resident, hasNoLeave } = await loadResidentWithActiveRestrictions(
     parsed.data.resident_id
   );
-  if (!resident) return { error: "Resident not found" };
+  if (!resident) return err("Resident not found");
   if (resident.status !== "active") {
-    return { error: "Only active residents can sign out" };
+    return err("Only active residents can sign out");
   }
   if (hasNoLeave) {
-    return { error: "Resident has an active No Leave restriction" };
+    return err("Resident has an active No Leave restriction");
   }
 
   // Authorization
   if (user.role === "resident") {
-    if (resident.user_id !== user.id) return { error: "Not authorized" };
+    if (resident.user_id !== user.id) return err("Not authorized");
   } else if (user.role !== "admin" && !canAccessHouse(user, resident.house_id)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const supabase = await createClient();
@@ -90,7 +92,7 @@ export async function signOutResident(
     .is("time_in", null)
     .maybeSingle();
   if (existingOpen) {
-    return { error: "Resident is already signed out" };
+    return err("Resident is already signed out");
   }
 
   const { data: row, error } = await supabase
@@ -104,7 +106,7 @@ export async function signOutResident(
     .select("id")
     .single();
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: resident.house_id,
@@ -138,7 +140,7 @@ export async function signOutResident(
 
   revalidatePath("/sign-out-sheet");
   revalidatePath("/dashboard");
-  return {};
+  return okVoid();
 }
 
 /**
@@ -154,7 +156,7 @@ const signInSchema = z.object({
 });
 
 export async function signInResident(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
@@ -164,7 +166,7 @@ export async function signInResident(
     discipline_reason: formData.get("discipline_reason") || "",
     demerit_points: formData.get("demerit_points") || undefined,
   });
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   const supabase = await createClient();
 
@@ -173,8 +175,8 @@ export async function signInResident(
     .select("id, resident_id, house_id, destination, time_out, time_in, resident:residents(full_name, user_id)")
     .eq("id", parsed.data.sign_out_id)
     .maybeSingle();
-  if (!row) return { error: "Sign-out record not found" };
-  if (row.time_in) return { error: "Resident is already signed in" };
+  if (!row) return err("Sign-out record not found");
+  if (row.time_in) return err("Resident is already signed in");
 
   const resident = row.resident as unknown as { full_name: string; user_id: string | null } | null;
 
@@ -182,12 +184,12 @@ export async function signInResident(
   // scoped to their house.
   const isSelf = !!resident && resident.user_id === user.id;
   if (user.role === "resident") {
-    if (!isSelf) return { error: "Not authorized" };
+    if (!isSelf) return err("Not authorized");
     if (parsed.data.discipline && parsed.data.discipline !== "none") {
-      return { error: "Residents cannot issue discipline" };
+      return err("Residents cannot issue discipline");
     }
   } else if (user.role !== "admin" && !canAccessHouse(user, row.house_id)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   // Validate the discipline form shape BEFORE we mutate the sign-out
@@ -201,7 +203,7 @@ export async function signInResident(
     user.role !== "resident";
   const disciplineReason = parsed.data.discipline_reason?.trim() ?? "";
   if (attachingDiscipline && !disciplineReason) {
-    return { error: "Reason is required when attaching discipline" };
+    return err("Reason is required when attaching discipline");
   }
 
   // Determine if the sign-in is past curfew or next-day (missed).
@@ -219,9 +221,9 @@ export async function signInResident(
     .eq("id", row.id)
     .is("time_in", null)
     .select("id");
-  if (updateErr) return { error: updateErr.message };
+  if (updateErr) return err(updateErr.message);
   if (!closedRows || closedRows.length === 0) {
-    return { error: "Resident is already signed in" };
+    return err("Resident is already signed in");
   }
 
   await logActivity({
@@ -275,7 +277,7 @@ export async function signInResident(
         })
         .select("id")
         .single();
-      if (warnErr) return { error: warnErr.message };
+      if (warnErr) return err(warnErr.message);
 
       await logActivity({
         houseId: row.house_id,
@@ -312,7 +314,7 @@ export async function signInResident(
         })
         .select("id")
         .single();
-      if (demErr) return { error: demErr.message };
+      if (demErr) return err(demErr.message);
 
       await logActivity({
         houseId: row.house_id,
@@ -341,7 +343,7 @@ export async function signInResident(
   revalidatePath("/sign-out-sheet");
   revalidatePath("/dashboard");
   revalidatePath("/discipline");
-  return {};
+  return okVoid();
 }
 
 // --- Curfew helpers ---
@@ -356,7 +358,7 @@ const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "frid
  * (anything after that time is past curfew).
  *
  * Rules:
- * 1. Look at the day-of-week of the sign-out time (in Eastern TZ).
+ * 1. Look at the day-of-week of the sign-out time (in the house's TZ).
  * 2. Get that day's curfew from house_curfews.
  * 3. If no curfew is set for that day, it's not past curfew.
  * 4. If the sign-in is on a different calendar day than the sign-out
@@ -372,7 +374,15 @@ async function isPastCurfew(
   const curfews = await getEffectiveHouseCurfews(houseId);
   if (curfews.length === 0) return false;
 
-  const tz = "America/New_York";
+  const admin = createAdminClient();
+  const { data: houseRow } = await admin
+    .from("houses")
+    .select("timezone")
+    .eq("id", houseId)
+    .maybeSingle();
+  const tz =
+    (houseRow as { timezone?: string | null } | null)?.timezone ??
+    DEFAULT_TIMEZONE;
 
   // Get the day-of-week of the sign-out in house TZ
   const outDate = new Date(timeOutIso);

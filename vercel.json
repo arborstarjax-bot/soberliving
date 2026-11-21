@@ -1,3 +1,21 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json"
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/sweep-charges",
+      "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/cron/check-in-sender",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/chore-reminders",
+      "schedule": "0 2,16 * * *"
+    },
+    {
+      "path": "/api/cron/curfew-check",
+      "schedule": "*/15 * * * *"
+    }
+  ]
 }

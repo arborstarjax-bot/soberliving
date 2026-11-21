@@ -2,12 +2,12 @@ import "server-only";
 
 import { cache } from "react";
 import { createAdminClient } from "@/lib/supabase/server";
+import { DEFAULT_TIMEZONE } from "@/lib/timezone";
 import type {
   Workspace,
   WorkspaceSettings,
   WorkspacePaymentConfig,
   HouseCurfew,
-  WorkspaceInvite,
   WorkspaceMember,
 } from "@/lib/types";
 
@@ -33,6 +33,22 @@ export const getWorkspace = cache(
       .eq("id", workspaceId)
       .single();
     return data as Workspace | null;
+  }
+);
+
+/** The house's configured timezone (falls back to the app default). */
+export const getHouseTimezone = cache(
+  async (houseId: string): Promise<string> => {
+    const admin = createAdminClient();
+    const { data } = await admin
+      .from("houses")
+      .select("timezone")
+      .eq("id", houseId)
+      .maybeSingle();
+    return (
+      (data as { timezone?: string | null } | null)?.timezone ??
+      DEFAULT_TIMEZONE
+    );
   }
 );
 
@@ -116,19 +132,6 @@ export async function getEffectiveHouseCurfews(
   return [];
 }
 
-export async function getWorkspaceInvites(
-  workspaceId: string
-): Promise<WorkspaceInvite[]> {
-  const admin = createAdminClient();
-  const { data } = await admin
-    .from("workspace_invites")
-    .select("*")
-    .eq("workspace_id", workspaceId)
-    .is("accepted_at", null)
-    .gt("expires_at", new Date().toISOString())
-    .order("created_at", { ascending: false });
-  return (data ?? []) as WorkspaceInvite[];
-}
 
 export async function getWorkspaceMembers(
   workspaceId: string,

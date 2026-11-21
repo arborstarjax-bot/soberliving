@@ -1,23 +1,43 @@
 "use server";
+import { err, okVoid } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { generateRulesAcknowledgmentPdf } from "./generate-rules-pdf";
+import { buildRulesSlides } from "./rules-content";
+import {
+  getWorkspaceForUser,
+  getWorkspace,
+  getWorkspaceSettings,
+} from "@/lib/workspace";
 
 export async function submitRulesAcknowledgment(signatureDataUrl: string) {
   const user = await requireAuth();
   const adminClient = createAdminClient();
 
   if (!signatureDataUrl) {
-    return { error: "Signature is required" };
+    return err("Signature is required");
   }
+
+  // Rebuild the same deck the resident saw so the signed acknowledgment
+  // records the workspace's actual rules (custom sheet or named deck).
+  const membership = await getWorkspaceForUser(user.id);
+  const [workspace, settings] = membership
+    ? await Promise.all([
+        getWorkspace(membership.workspace_id),
+        getWorkspaceSettings(membership.workspace_id),
+      ])
+    : [null, null];
+  const houseName = workspace?.name ?? "the house";
+  const slides = buildRulesSlides(houseName, settings?.rules_text);
 
   // Generate full PDF with all rules content + resident signature
   const pdfBuffer = await generateRulesAcknowledgmentPdf(
     user.full_name,
-    signatureDataUrl
+    signatureDataUrl,
+    { slides, houseName }
   );
 
   // Upload PDF to Supabase Storage
@@ -31,7 +51,7 @@ export async function submitRulesAcknowledgment(signatureDataUrl: string) {
 
   if (uploadError) {
     console.error("[submitRulesAcknowledgment] PDF upload failed:", uploadError.message);
-    return { error: "Failed to save acknowledgment document" };
+    return err("Failed to save acknowledgment document");
   }
 
   // Create document record for the rules acknowledgment
@@ -57,7 +77,7 @@ export async function submitRulesAcknowledgment(signatureDataUrl: string) {
     .eq("id", user.id);
 
   if (updateError) {
-    return { error: updateError.message };
+    return err(updateError.message);
   }
 
   await logActivity({
@@ -69,5 +89,5 @@ export async function submitRulesAcknowledgment(signatureDataUrl: string) {
   });
 
   revalidatePath("/dashboard");
-  return {};
+  return okVoid();
 }

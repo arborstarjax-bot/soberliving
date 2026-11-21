@@ -3,8 +3,10 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ClipboardCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { getCachedActiveHouses } from "@/lib/cached-dropdowns";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
+import { getHouseToday } from "@/lib/timezone";
 import type { SessionUser } from "@/lib/types";
 import { RotationBoard } from "./rotation-board";
 import { ChoreListManager } from "./chore-list-manager";
@@ -107,6 +109,21 @@ export async function ChoresBodySection({
     .order("sign_off_date", { ascending: false })
     .limit(100);
 
+  // Approved leaves whose window covers today — the covering resident
+  // stands in for the assignee on the chore board until they return.
+  const todayStr = getHouseToday();
+  // Admin client: the coverer isn't the requester, so RLS would hide
+  // the leave row from them and their covered chores would never show.
+  const coversQuery = createAdminClient()
+    .from("leave_requests")
+    .select(
+      "resident_id, covering_resident_id, resident:residents!leave_requests_resident_id_fkey(full_name), covering_resident:residents!leave_requests_covering_resident_id_fkey(full_name)"
+    )
+    .eq("status", "approved")
+    .not("covering_resident_id", "is", null)
+    .lte("departure_date", todayStr)
+    .gte("expected_return_date", todayStr);
+
   const [
     allHouses,
     { data: chores },
@@ -117,6 +134,7 @@ export async function ChoresBodySection({
     { data: roomExclusions },
     { data: pendingSignoffs },
     { data: missedSignoffs },
+    { data: rawCovers },
   ] = await Promise.all([
     getCachedActiveHouses(user.workspace_id),
     choresQuery,
@@ -127,7 +145,19 @@ export async function ChoresBodySection({
     roomExclusionsQuery,
     pendingSignoffsQuery,
     missedSignoffsQuery,
+    coversQuery,
   ]);
+
+  const activeCovers = (rawCovers ?? []).map((c) => ({
+    residentId: c.resident_id as string,
+    covererId: c.covering_resident_id as string,
+    covererName: (Array.isArray(c.covering_resident)
+      ? c.covering_resident[0]
+      : c.covering_resident)?.full_name ?? "Cover",
+    residentName: (Array.isArray(c.resident)
+      ? c.resident[0]
+      : c.resident)?.full_name ?? "resident",
+  }));
 
   const houses = houseFilter
     ? allHouses.filter((h) => houseFilter.includes(h.id))
@@ -161,17 +191,27 @@ export async function ChoresBodySection({
   if (user.role === "resident") {
     let userResidentId: string | null = null;
     let userForcePhoto = false;
+    let userHouseTimezone: string | null = null;
     let myAssignments: typeof rotations = null;
 
     const { data: resident } = await supabase
       .from("residents")
-      .select("id, force_photo")
+      .select("id, force_photo, house_id")
       .eq("user_id", user.id)
       .eq("status", "active")
       .maybeSingle();
 
     if (resident) {
       userResidentId = resident.id;
+      if (resident.house_id) {
+        const { data: houseRow } = await supabase
+          .from("houses")
+          .select("timezone")
+          .eq("id", resident.house_id)
+          .maybeSingle();
+        userHouseTimezone =
+          (houseRow as { timezone?: string | null } | null)?.timezone ?? null;
+      }
       userForcePhoto = resident.force_photo ?? false;
       const { data } = await supabase
         .from("chore_rotations")
@@ -180,7 +220,45 @@ export async function ChoresBodySection({
         )
         .eq("is_current", true)
         .eq("chore_rotation_assignments.resident_id", resident.id);
-      myAssignments = data;
+      myAssignments = data ?? [];
+
+      // Pull in chores this resident is covering while the assignee is
+      // out on approved leave — they appear tagged "Covering for …".
+      const coveringFor = new Map(
+        activeCovers
+          .filter((c) => c.covererId === resident.id)
+          .map((c) => [c.residentId, c.residentName])
+      );
+      if (coveringFor.size > 0) {
+        const { data: coverData } = await supabase
+          .from("chore_rotations")
+          .select(
+            "*, chore_rotation_assignments!inner(*, chore:chores(id, name, days_of_week, cycle_weeks, chore_tasks(*)), resident:residents(id, full_name), chore_signoffs(*))"
+          )
+          .eq("is_current", true)
+          .in("chore_rotation_assignments.resident_id", [...coveringFor.keys()]);
+
+        const seen = new Set(
+          myAssignments.flatMap((r) =>
+            (r.chore_rotation_assignments ?? []).map((a: { id: string }) => a.id)
+          )
+        );
+        for (const rot of coverData ?? []) {
+          let target = myAssignments.find((r) => r.id === rot.id);
+          if (!target) {
+            target = { ...rot, chore_rotation_assignments: [] };
+            myAssignments.push(target);
+          }
+          for (const a of rot.chore_rotation_assignments ?? []) {
+            if (seen.has(a.id)) continue;
+            seen.add(a.id);
+            target.chore_rotation_assignments.push({
+              ...a,
+              coveringFor: coveringFor.get(a.resident_id) ?? "resident",
+            });
+          }
+        }
+      }
     }
 
     return (
@@ -188,6 +266,11 @@ export async function ChoresBodySection({
         rotations={myAssignments ?? []}
         userResidentId={userResidentId}
         forcePhoto={userForcePhoto}
+        houseTimezone={userHouseTimezone}
+        coveredByName={
+          activeCovers.find((c) => c.residentId === userResidentId)
+            ?.covererName ?? null
+        }
       />
     );
   }
@@ -243,6 +326,7 @@ export async function ChoresBodySection({
                   chores={houseChores}
                   residents={houseResidents}
                   assignments={rotation.chore_rotation_assignments ?? []}
+                  covers={activeCovers}
                   isStaff={isStaff}
                   userRole={user.role}
                   userResidentId={null}

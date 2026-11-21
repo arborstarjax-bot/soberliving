@@ -106,6 +106,10 @@ export async function signup(
   const fullName = (formData.get("full_name") as string | null)?.trim() ?? "";
   const workspaceName = (formData.get("workspace_name") as string | null)?.trim() ?? "";
   const workspaceCode = (formData.get("workspace_code") as string | null)?.trim() ?? "";
+  // Lockdown: if the form carries a workspace_code field at all, this
+  // is a join attempt — an empty or bad code must fail, never fall
+  // through to creating a new workspace.
+  const attemptedJoin = formData.has("workspace_code");
 
   if (!email) {
     return { error: "Email is required" };
@@ -117,7 +121,10 @@ export async function signup(
     return { error: "Password must be at least 8 characters" };
   }
 
-  const isJoinFlow = !!workspaceCode;
+  const isJoinFlow = attemptedJoin;
+  if (isJoinFlow && !workspaceCode) {
+    return { error: "Invalid invite link. Please check with your administrator." };
+  }
 
   // If creating a workspace, name is required
   if (!isJoinFlow && !workspaceName) {
@@ -203,14 +210,23 @@ export async function signup(
   }
 
   if (isJoinFlow && workspace) {
-    // Join workspace with PENDING status — admin must approve
+    // Join mode: "auto" grants immediate access; "requires_signoff"
+    // parks the member until an admin approves (previous behavior).
+    const { data: wsSettings } = await adminClient
+      .from("workspace_settings")
+      .select("intake_mode")
+      .eq("workspace_id", workspace.id)
+      .maybeSingle();
+    const joinStatus =
+      wsSettings?.intake_mode === "auto" ? "active" : "pending";
+
     const { error: memberError } = await adminClient
       .from("workspace_members")
       .insert({
         workspace_id: workspace.id,
         user_id: data.user.id,
         role: "resident",
-        status: "pending",
+        status: joinStatus,
       });
 
     if (memberError) {

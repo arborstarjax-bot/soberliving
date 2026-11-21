@@ -2,7 +2,7 @@ import { requireAuth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getWorkspaceSettings } from "@/lib/workspace";
-import { isModuleEnabled } from "@/lib/modules";
+import { isModuleVisibleToRole } from "@/lib/modules";
 
 import { getCachedActiveHouses } from "@/lib/cached-dropdowns";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
@@ -11,14 +11,13 @@ import { DemeritMatrix } from "./demerit-matrix";
 import { DisciplineTabs } from "./discipline-tabs";
 import { CreateWarningDialog } from "./create-warning-dialog";
 import { WarningsList } from "./warnings-list";
-import { CleanupBackfilledDemeritsButton } from "./cleanup-backfilled-demerits-button";
 import { CreateIncidentDialog } from "../incidents/create-incident-dialog";
 import { getHouseToday } from "@/lib/timezone";
 
 export default async function DisciplinePage() {
   const user = await requireAuth();
   const wsSettings = user.workspace_id ? await getWorkspaceSettings(user.workspace_id) : null;
-  if (!isModuleEnabled(wsSettings, "discipline")) redirect("/dashboard");
+  if (!isModuleVisibleToRole(wsSettings, "discipline", user.role)) redirect("/dashboard");
   const supabase = await createClient();
   const adminClient = createAdminClient();
   const houseFilter = getAccessibleHouseFilter(user);
@@ -286,7 +285,6 @@ export default async function DisciplinePage() {
           <div className="space-y-4">
             {isStaff && (
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <CleanupBackfilledDemeritsButton />
                 <CreateWarningDialog
                   houses={houses ?? []}
                   residents={residents ?? []}

@@ -7,12 +7,16 @@ interface SignaturePadProps {
   onSignatureChange: (dataUrl: string | null) => void;
   initialValue?: string | null;
   label?: string;
+  // Bump to wipe the canvas after a successful submit — the parent
+  // owns the dataUrl state, but only the pad can erase its pixels.
+  resetKey?: number;
 }
 
 export function SignaturePad({
   onSignatureChange,
   initialValue,
   label = "Signature",
+  resetKey,
 }: SignaturePadProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -100,6 +104,22 @@ export function SignaturePad({
       onSignatureChange(canvas.toDataURL("image/png"));
     }
   }, [isDrawing, onSignatureChange]);
+
+  const [seenResetKey, setSeenResetKey] = useState(resetKey);
+  if (resetKey !== seenResetKey) {
+    setSeenResetKey(resetKey);
+    setHasSignature(false);
+  }
+  const paintedResetKey = useRef(resetKey);
+  useEffect(() => {
+    if (resetKey === paintedResetKey.current) return;
+    paintedResetKey.current = resetKey;
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!ctx || !canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    ctx.clearRect(0, 0, rect.width, rect.height);
+  }, [resetKey]);
 
   function clear() {
     const canvas = canvasRef.current;

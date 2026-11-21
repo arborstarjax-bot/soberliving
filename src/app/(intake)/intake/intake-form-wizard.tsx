@@ -129,7 +129,7 @@ export function IntakeFormWizard({
   const isLastPage = page === TOTAL_PAGES;
 
   if (submitted) {
-    return <IntakeDocumentsStep continueHref="/rules" />;
+    return <IntakeDocumentsStep continueHref="/checklist" />;
   }
 
   return (

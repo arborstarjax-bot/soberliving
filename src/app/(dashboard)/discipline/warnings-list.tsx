@@ -1,5 +1,6 @@
 "use client";
 
+import { EmptyState } from "@/components/ui/empty-state";
 import { useState, useTransition } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -71,7 +72,7 @@ export function WarningsList({ warnings, canEdit = false }: Props) {
       <Card>
         <CardContent className="py-12 text-center">
           <AlertTriangle className="mx-auto h-12 w-12 text-muted-foreground/40" />
-          <p className="mt-4 text-muted-foreground">No warnings on record.</p>
+          <EmptyState title="No warnings on record" className="mt-4" />
         </CardContent>
       </Card>
     );

@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import {
-  Home,
+import {Home,
   ClipboardCheck,
   ShieldAlert,
   CalendarClock,
@@ -14,8 +13,8 @@ import {
   Flag,
   LogOut,
   X,
-} from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+  CalendarCheck,} from "lucide-react";
+import { useState, useCallback } from "react";
 import { usePrefetchRoutes } from "@/lib/use-prefetch-routes";
 
 interface BottomNavItem {
@@ -35,6 +34,7 @@ const PRIMARY_ITEMS: BottomNavItem[] = [
 
 const MORE_ITEMS: BottomNavItem[] = [
   { label: "Passes", href: "/passes", icon: CalendarClock, module: "attendance" },
+  { label: "Meetings", href: "/meetings", icon: CalendarCheck, module: "meetings" },
   { label: "My Documents", href: "/my-documents", icon: Folder, module: "documents" },
   { label: "Report", href: "/report", icon: Flag },
 ];
@@ -42,19 +42,26 @@ const MORE_ITEMS: BottomNavItem[] = [
 interface ResidentBottomNavProps {
   hasNoLeaveRestriction?: boolean;
   enabledModules?: string[];
+  residentModules?: string[] | null;
   bulletinBadge?: React.ReactNode;
 }
 
 export function ResidentBottomNav({
   hasNoLeaveRestriction,
   enabledModules,
+  residentModules,
   bulletinBadge = null,
 }: ResidentBottomNavProps) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
 
   const moduleOn = (item: BottomNavItem) =>
-    !item.module || !enabledModules || enabledModules.includes(item.module);
+    (!item.module ||
+      !enabledModules ||
+      enabledModules.includes(item.module)) &&
+    (!item.module ||
+      !residentModules ||
+      residentModules.includes(item.module));
 
   const primaryItems = PRIMARY_ITEMS.filter(
     (item) =>
@@ -77,10 +84,13 @@ export function ResidentBottomNav({
   );
   usePrefetchRoutes(allRoutes);
 
-  // Close More panel on route change
-  useEffect(() => {
+  // Close More panel on route change — render-adjustment pattern
+  // (synchronous setState inside an effect is disallowed).
+  const [seenPathname, setSeenPathname] = useState(pathname);
+  if (pathname !== seenPathname) {
+    setSeenPathname(pathname);
     setMoreOpen(false);
-  }, [pathname]);
+  }
 
   return (
     <>

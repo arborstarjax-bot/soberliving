@@ -71,14 +71,17 @@ export async function GET(request: NextRequest) {
 
   try {
     const admin = createAdminClient();
-    const tz = DEFAULT_TIMEZONE;
     const now = new Date();
-    const nowInTz = new Date(now.toLocaleString("en-US", { timeZone: tz }));
-    const currentH = nowInTz.getHours();
-    const currentM = nowInTz.getMinutes();
-    const currentMinutes = currentH * 60 + currentM;
-    const todayName = DAY_NAMES[nowInTz.getDay()];
-    const todayDate = `${nowInTz.getFullYear()}-${String(nowInTz.getMonth() + 1).padStart(2, "0")}-${String(nowInTz.getDate()).padStart(2, "0")}`;
+    // Curfew math is per-house: each house's timezone decides its local
+    // day name, date, and minutes-since-midnight.
+    function houseLocal(timezone: string) {
+      const local = new Date(now.toLocaleString("en-US", { timeZone: timezone }));
+      return {
+        minutes: local.getHours() * 60 + local.getMinutes(),
+        dayName: DAY_NAMES[local.getDay()],
+        date: `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, "0")}-${String(local.getDate()).padStart(2, "0")}`,
+      };
+    }
 
     // Find all residents currently signed out (time_in IS NULL).
     const { data: openRows } = await admin
@@ -105,19 +108,47 @@ export async function GET(request: NextRequest) {
 
     // Check which houses already received a curfew notification today.
     const houseIds = [...byHouse.keys()];
+    // Bound to recent log rows — notification dedupe only compares the
+    // house-local today/yesterday, and an unfiltered history scan would
+    // eventually hit the API row cap and resend alerts.
+    const cutoff = new Date(now);
+    cutoff.setUTCDate(cutoff.getUTCDate() - 2);
+    const cutoffDate = cutoff.toISOString().slice(0, 10);
     const { data: alreadySent } = await admin
       .from("curfew_notification_log")
-      .select("house_id")
-      .eq("notification_date", todayDate)
+      .select("house_id, notification_date")
+      .gte("notification_date", cutoffDate)
       .in("house_id", houseIds);
+    const sentKeys = new Set(
+      (alreadySent ?? []).map(
+        (r) => `${(r as { house_id: string }).house_id}:${(r as { notification_date: string }).notification_date}`
+      )
+    );
 
-    const sentHouseIds = new Set((alreadySent ?? []).map((r) => (r as { house_id: string }).house_id));
+    const { data: houseRows } = await admin
+      .from("houses")
+      .select("id, workspace_id, timezone")
+      .in("id", houseIds);
+    const houseMeta = new Map(
+      (houseRows ?? []).map((h) => [
+        (h as { id: string }).id,
+        {
+          workspaceId: (h as { workspace_id?: string | null }).workspace_id ?? null,
+          timezone:
+            (h as { timezone?: string | null }).timezone ?? DEFAULT_TIMEZONE,
+        },
+      ])
+    );
 
     let totalNotified = 0;
 
     for (const [houseId, rows] of byHouse) {
-      // Skip if already notified today.
-      if (sentHouseIds.has(houseId)) continue;
+      const meta = houseMeta.get(houseId);
+      const { minutes: currentMinutes, dayName: todayName, date: todayDate } =
+        houseLocal(meta?.timezone ?? DEFAULT_TIMEZONE);
+
+      // Skip if already notified on this house's local date.
+      if (sentKeys.has(`${houseId}:${todayDate}`)) continue;
 
       const curfews = await getEffectiveHouseCurfews(houseId);
       const todayCurfew = curfews.find((c) => c.day_of_week === todayName);
@@ -151,6 +182,37 @@ export async function GET(request: NextRequest) {
         body: summary,
         url: "/sign-out-sheet",
       });
+
+      // Auto-demerit residents still out past curfew when the
+      // workspace enabled it (one per resident per day via dedupe).
+      const wsId = meta?.workspaceId ?? null;
+      if (wsId) {
+        const { data: wsRow } = await admin
+          .from("workspace_settings")
+          .select("auto_demerit_missed_curfew")
+          .eq("workspace_id", wsId)
+          .maybeSingle();
+        if (wsRow?.auto_demerit_missed_curfew) {
+          for (const row of rows) {
+            const reason = `Missed curfew on ${todayDate}`;
+            const { data: dup } = await admin
+              .from("demerits")
+              .select("id")
+              .eq("resident_id", row.resident_id)
+              .eq("reason", reason)
+              .limit(1);
+            if (dup && dup.length > 0) continue;
+            await admin.from("demerits").insert({
+              resident_id: row.resident_id,
+              house_id: houseId,
+              points: 1,
+              reason,
+              category: "Missed Curfew",
+              issued_by: null,
+            });
+          }
+        }
+      }
 
       // Record that we sent a notification for this house today.
       await admin.from("curfew_notification_log").insert({

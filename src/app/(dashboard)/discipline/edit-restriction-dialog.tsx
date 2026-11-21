@@ -1,5 +1,6 @@
 "use client";
 
+import type { ActionResult } from "@/lib/action-result";
 import { useActionState, useState } from "react";
 import { updateRestriction } from "./actions";
 import { Button } from "@/components/ui/button";
@@ -47,7 +48,7 @@ export function EditRestrictionDialog({ restriction }: Props) {
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const [state, action, pending] = useActionState(
-    async (prev: { error?: string } | undefined, formData: FormData) => {
+    async (prev: ActionResult | undefined, formData: FormData) => {
       const result = await updateRestriction(prev, formData);
       if (!result?.error) {
         setError(undefined);

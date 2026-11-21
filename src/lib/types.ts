@@ -51,11 +51,36 @@ export interface WorkspaceSettings {
   require_commitment: boolean;
   enable_payments: boolean;
   auto_cycle_chores: boolean;
+  auto_cycle_frequency: "daily" | "weekly" | "biweekly" | "monthly";
   auto_demerit_missed_chores: boolean;
+  auto_demerit_missed_meetings: boolean;
+  auto_demerit_missed_curfew: boolean;
   require_chore_photo: boolean;
   require_meeting_photo: boolean;
   enabled_modules: string[];
   pass_approver: "manager" | "admin" | "both";
+  reminder_settings: Record<
+    string,
+    { enabled?: boolean; timing?: "day_of" | "day_before" }
+  >;
+  resident_modules: string[] | null;
+  intake_mode: "auto" | "requires_signoff";
+  intake_steps: { id: string; label: string; required?: boolean }[];
+  rules_text: string | null;
+  rules_document_id: string | null;
+  require_rule_checkoff: boolean;
+  director_name: string | null;
+  timezone: string;
+  check_in_schedules: {
+    id: string;
+    label?: string;
+    house_ids?: string[];
+    frequency?: "daily" | "weekly" | "biweekly" | "monthly";
+    day_of_week?: number;
+    day_of_month?: number;
+    enabled?: boolean;
+    last_sent_on?: string;
+  }[];
   created_at: string;
   updated_at: string;
 }
