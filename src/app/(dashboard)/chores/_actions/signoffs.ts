@@ -73,8 +73,22 @@ export async function markSignoffComplete(signoffId: string, photoUrl?: string) 
       .eq("status", "active")
       .maybeSingle();
 
-    if (!residentRecord || residentRecord.id !== assignment?.resident_id) {
+    if (!residentRecord) {
       return { error: "Not authorized" };
+    }
+    if (residentRecord.id !== assignment?.resident_id) {
+      // A covering resident may complete the assignee's signoff while an
+      // approved leave places them on cover duty for that date.
+      const { data: cover } = await supabase
+        .from("leave_requests")
+        .select("id")
+        .eq("resident_id", assignment?.resident_id ?? "")
+        .eq("covering_resident_id", residentRecord.id)
+        .eq("status", "approved")
+        .lte("departure_date", signoff.sign_off_date ?? "")
+        .gte("expected_return_date", signoff.sign_off_date ?? "")
+        .maybeSingle();
+      if (!cover) return { error: "Not authorized" };
     }
 
     // Residents can only mark today's signoff (with ±1 day grace)

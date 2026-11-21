@@ -36,6 +36,12 @@ interface Props {
   chores: Array<{ id: string; name: string; house_id: string; days_of_week?: string[]; cycle_weeks?: number }>;
   residents: Array<{ id: string; full_name: string }>;
   assignments: RotationAssignment[];
+  covers?: Array<{
+    residentId: string;
+    covererId: string;
+    covererName: string;
+    residentName: string;
+  }>;
   isStaff: boolean;
   userRole: string;
   userResidentId?: string | null;
@@ -65,6 +71,7 @@ export function RotationBoard({
   chores,
   residents,
   assignments,
+  covers = [],
   isStaff,
   userRole,
   userResidentId,
@@ -142,7 +149,21 @@ export function RotationBoard({
                     <td className="border-r p-2">
                       {assignment ? (
                         <div className="flex items-center gap-1">
-                          <span className="flex-1">{assignment.resident?.full_name}</span>
+                          <span className="flex-1">
+                            {(() => {
+                              const cover = covers.find(
+                                (c) => c.residentId === assignment.resident_id
+                              );
+                              return cover ? (
+                                <span title={`Covering for ${cover.residentName}`}>
+                                  {cover.covererName}{" "}
+                                  <span className="text-muted-foreground">(C)</span>
+                                </span>
+                              ) : (
+                                assignment.resident?.full_name
+                              );
+                            })()}
+                          </span>
                           {isStaff && (
                             <UnassignButton assignmentId={assignment.id} />
                           )}
