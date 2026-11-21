@@ -57,11 +57,15 @@ export function RulesPresentation({
     }
     setError(null);
     startSubmitting(async () => {
-      const result = await submitRulesAcknowledgment(signature);
-      if (result?.error) {
-        setError(result.error);
-      } else {
-        router.push("/dashboard");
+      try {
+        const result = await submitRulesAcknowledgment(signature);
+        if (result?.error) {
+          setError(result.error);
+        } else {
+          router.push("/dashboard");
+        }
+      } catch {
+        setError("Save failed — please try again.");
       }
     });
   }

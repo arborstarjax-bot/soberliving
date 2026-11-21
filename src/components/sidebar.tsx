@@ -23,7 +23,8 @@ import {LayoutDashboard,
   DollarSign,
   Building2,
   Ticket,
-  CalendarCheck,} from "lucide-react";
+  CalendarCheck,
+  LifeBuoy,} from "lucide-react";
 import { useState, useMemo } from "react";
 import { InstallAppButton } from "@/components/pwa/install-app-button";
 import { usePrefetchRoutes } from "@/lib/use-prefetch-routes";
@@ -174,6 +175,13 @@ const NAV_ITEMS: NavItem[] = [
     icon: FolderLock,
     roles: ["admin"],
     group: "Administration",
+  },
+  {
+    label: "Support",
+    href: "/support",
+    icon: LifeBuoy,
+    roles: ["admin", "manager", "resident"],
+    group: "Community",
   },
   // Intake Review is now a tab inside the Residents page
   // Users & Roles folded into Residents page — /users route still works for direct access

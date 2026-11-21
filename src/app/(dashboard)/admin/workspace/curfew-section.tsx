@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import {
   Card,
   CardContent,
@@ -47,7 +47,7 @@ export function CurfewSection({
   curfews: HouseCurfew[];
 }) {
   const [selectedHouse, setSelectedHouse] = useState(houses[0]?.id ?? "");
-  const [pending, startTransition] = useTransition();
+  const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
   // Build curfew map for the selected house
@@ -107,14 +107,15 @@ export function CurfewSection({
     setMessage("");
   }
 
-  function handleSave() {
+  async function handleSave() {
     const curfewRows = DAYS.filter((d) => enabled[d]).map((d) => ({
       day_of_week: d,
       curfew_time: times[d],
       curfew_start_time: startTimes[d] || null,
     }));
 
-    startTransition(async () => {
+    setSaving(true);
+    try {
       const result = await updateHouseCurfews(selectedHouse, curfewRows);
       if (result.error) {
         setMessage(result.error);
@@ -122,7 +123,11 @@ export function CurfewSection({
         setMessage("Saved");
         setTimeout(() => setMessage(""), 2000);
       }
-    });
+    } catch {
+      setMessage("Save failed — try again");
+    } finally {
+      setSaving(false);
+    }
   }
 
   if (houses.length === 0) {
@@ -218,8 +223,8 @@ export function CurfewSection({
         </div>
 
         <div className="flex items-center gap-3">
-          <Button onClick={handleSave} disabled={pending || !selectedHouse}>
-            {pending ? "Saving..." : "Save Curfews"}
+          <Button onClick={handleSave} disabled={saving || !selectedHouse}>
+            {saving ? "Saving..." : "Save Curfews"}
           </Button>
           {message && (
             <p
