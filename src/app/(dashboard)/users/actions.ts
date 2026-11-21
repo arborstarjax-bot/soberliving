@@ -59,16 +59,21 @@ export async function createUser(
   // workspace's account must never get a membership or link here (tenant
   // isolation), a member of THIS workspace is a re-invite, and an account
   // with no membership anywhere is fresh and gets fully provisioned.
-  const { data: memberships } = await adminClient
+  const { data: memberships, error: memberLookupError } = await adminClient
     .from("workspace_members")
-    .select("workspace_id")
-    .eq("user_id", authUserId)
-    .eq("status", "active");
+    .select("workspace_id, status")
+    .eq("user_id", authUserId);
+  // Fail closed: a failed lookup must not provision a cross-tenant invite.
+  if (memberLookupError) return err(memberLookupError.message);
+  // Any membership in another workspace — active or not — marks the
+  // account as belonging to that tenant. Only an active membership here
+  // makes this a re-invite; an inactive/pending row here is re-activated
+  // by the provisioning upsert below.
   const inAnotherWorkspace = (memberships ?? []).some(
     (m) => m.workspace_id !== user.workspace_id
   );
   const inThisWorkspace = (memberships ?? []).some(
-    (m) => m.workspace_id === user.workspace_id
+    (m) => m.workspace_id === user.workspace_id && m.status === "active"
   );
 
   if (inAnotherWorkspace) {
@@ -106,6 +111,20 @@ export async function createUser(
 
     // Workspace membership is the role/workspace trust anchor.
     if (user.workspace_id) {
+      // Claim the account atomically: workspace_id may only move from
+      // NULL (or our own id) to us. If a concurrent invite in another
+      // workspace claimed it first, zero rows match and we fail instead
+      // of crossing the tenant boundary.
+      const { data: claimed, error: claimError } = await adminClient
+        .from("users")
+        .update({ workspace_id: user.workspace_id })
+        .eq("id", authUserId)
+        .or(`workspace_id.is.null,workspace_id.eq.${user.workspace_id}`)
+        .select("id");
+      if (claimError) return err(claimError.message);
+      if (!claimed?.length) {
+        return err("A user with this email already exists");
+      }
       await adminClient.from("workspace_members").upsert(
         {
           workspace_id: user.workspace_id,
@@ -116,10 +135,6 @@ export async function createUser(
         },
         { onConflict: "workspace_id,user_id" }
       );
-      await adminClient
-        .from("users")
-        .update({ workspace_id: user.workspace_id })
-        .eq("id", authUserId);
     }
   }
 
