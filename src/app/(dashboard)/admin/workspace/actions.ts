@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/server";
 import { requireRole } from "@/lib/auth";
 import { getAppOrigin } from "@/lib/app-url";
+import { isValidTimezone } from "@/lib/timezone";
 import type { PaymentFrequencyOption, PaymentMethod } from "@/lib/types";
 
 // --- Workspace General ---
@@ -51,6 +52,7 @@ export async function updateWorkspaceSettings(
     rules_document_id?: string | null;
     require_rule_checkoff?: boolean;
     director_name?: string | null;
+    timezone?: string;
     check_in_schedules?: {
       id: string;
       label?: string;
@@ -70,6 +72,9 @@ export async function updateWorkspaceSettings(
   const user = await requireRole("admin");
   if (!user.workspace_id || user.workspace_id !== workspaceId) {
     return { error: "Not authorized" };
+  }
+  if (settings.timezone !== undefined && !isValidTimezone(settings.timezone)) {
+    return { error: "Unknown timezone" };
   }
   const admin = createAdminClient();
   const { error } = await admin
@@ -128,6 +133,9 @@ export async function updateWorkspaceSettings(
         : {}),
       ...(settings.director_name !== undefined
         ? { director_name: settings.director_name }
+        : {}),
+      ...(settings.timezone !== undefined
+        ? { timezone: settings.timezone }
         : {}),
       ...(settings.rules_document_id !== undefined
         ? { rules_document_id: settings.rules_document_id }

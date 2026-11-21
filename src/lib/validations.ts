@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isValidTimezone } from "./timezone";
 
 // Shared refine for a sobriety_date string value. Accepts empty/unset;
 // rejects any date strictly in the future (compared to today in the
@@ -26,6 +27,11 @@ export const updateHouseSchema = z.object({
   name: z.string().min(1, "House name is required").max(100).optional(),
   address: z.string().max(500).nullish(),
   phone: z.string().max(20).nullish(),
+  timezone: z
+    .string()
+    .max(64)
+    .refine(isValidTimezone, "Unknown timezone")
+    .optional(),
 });
 
 // --- Rooms ---

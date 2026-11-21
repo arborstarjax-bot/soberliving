@@ -41,6 +41,7 @@ interface Props {
   }>;
   userResidentId?: string | null;
   forcePhoto?: boolean;
+  houseTimezone?: string | null;
 }
 
 function getCurrentWeekNumber(cycleStartDate: string): number {
@@ -78,7 +79,7 @@ function getTodayDate(timezone?: string): string {
   return getHouseToday();
 }
 
-export function ResidentChoreView({ rotations, userResidentId, forcePhoto }: Props) {
+export function ResidentChoreView({ rotations, userResidentId, forcePhoto, houseTimezone }: Props) {
   if (rotations.length === 0) {
     return (
       <Card>
@@ -91,8 +92,8 @@ export function ResidentChoreView({ rotations, userResidentId, forcePhoto }: Pro
     );
   }
 
-  const todayDay = getTodayDayOfWeek();
-  const todayDate = getTodayDate();
+  const todayDay = getTodayDayOfWeek(houseTimezone ?? undefined);
+  const todayDate = getTodayDate(houseTimezone ?? undefined);
 
   return (
     <div className="space-y-6">

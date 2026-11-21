@@ -70,6 +70,7 @@ export interface WorkspaceSettings {
   rules_document_id: string | null;
   require_rule_checkoff: boolean;
   director_name: string | null;
+  timezone: string;
   check_in_schedules: {
     id: string;
     label?: string;

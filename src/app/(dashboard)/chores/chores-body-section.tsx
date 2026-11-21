@@ -191,17 +191,27 @@ export async function ChoresBodySection({
   if (user.role === "resident") {
     let userResidentId: string | null = null;
     let userForcePhoto = false;
+    let userHouseTimezone: string | null = null;
     let myAssignments: typeof rotations = null;
 
     const { data: resident } = await supabase
       .from("residents")
-      .select("id, force_photo")
+      .select("id, force_photo, house_id")
       .eq("user_id", user.id)
       .eq("status", "active")
       .maybeSingle();
 
     if (resident) {
       userResidentId = resident.id;
+      if (resident.house_id) {
+        const { data: houseRow } = await supabase
+          .from("houses")
+          .select("timezone")
+          .eq("id", resident.house_id)
+          .maybeSingle();
+        userHouseTimezone =
+          (houseRow as { timezone?: string | null } | null)?.timezone ?? null;
+      }
       userForcePhoto = resident.force_photo ?? false;
       const { data } = await supabase
         .from("chore_rotations")
@@ -256,6 +266,7 @@ export async function ChoresBodySection({
         rotations={myAssignments ?? []}
         userResidentId={userResidentId}
         forcePhoto={userForcePhoto}
+        houseTimezone={userHouseTimezone}
       />
     );
   }
