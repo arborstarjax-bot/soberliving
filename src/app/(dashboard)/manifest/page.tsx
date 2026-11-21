@@ -1,4 +1,5 @@
 import { requireAuth } from "@/lib/auth";
+import { EmptyState } from "@/components/ui/empty-state";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import { createAdminClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
@@ -25,7 +26,7 @@ export default async function ManifestPage() {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">House Manifest</h1>
-        <p className="text-muted-foreground">No houses.</p>
+        <EmptyState title="No houses" description="Add a house to see its manifest." />
       </div>
     );
   }

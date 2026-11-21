@@ -1,5 +1,6 @@
 "use client";
 
+import { EmptyState } from "@/components/ui/empty-state";
 import { useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -242,7 +243,7 @@ export function MeetingsView({ meetings, residents, showResident, isAdmin = fals
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">History</h2>
         {byWeek.filter(([k]) => k !== thisWeekKey).length === 0 ? (
-          <p className="text-sm text-muted-foreground">No past meetings.</p>
+          <EmptyState title="No past meetings" />
         ) : (
           byWeek
             .filter(([k]) => k !== thisWeekKey)

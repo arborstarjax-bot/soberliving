@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { EmptyState } from "@/components/ui/empty-state";
 import { createAdminClient } from "@/lib/supabase/server";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -88,7 +89,7 @@ export async function GrievancesListSection({ user }: { user: SessionUser }) {
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Open</h2>
         {open.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No open reports.</p>
+          <EmptyState title="No open reports" />
         ) : (
           open.map((item) => <GrievanceRow key={item.id} item={item} />)
         )}
