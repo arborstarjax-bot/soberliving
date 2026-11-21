@@ -37,7 +37,6 @@ export async function createUser(
 
   if (!parsed.success) return err(parsed.error.issues[0].message);
 
-  const supabase = await createClient();
   const adminClient = createAdminClient();
   const baseUrl = await getAppOrigin();
 
@@ -54,39 +53,59 @@ export async function createUser(
 
   const authUserId = linkData.user.id;
 
-  // Check if user record already exists (e.g. re-inviting an existing email)
-  const { data: existingUser } = await supabase
+  // Check if user record already exists (e.g. re-inviting an existing email).
+  // Service client — the RLS-scoped client can't see users rows outside the
+  // caller's workspace, which made a cross-tenant auth user look "new" and the
+  // insert below die on users_pkey.
+  const { data: existingUser } = await adminClient
     .from("users")
     .select("id")
     .eq("id", authUserId)
     .maybeSingle();
 
-  if (existingUser) {
+  // Memberships in ANY workspace. This is the tenant-isolation gate: an
+  // account that already belongs to another workspace must never gain a
+  // membership here — including when its users row appears between the
+  // read above and the upsert below (concurrent invites).
+  const { data: otherMemberships } = await adminClient
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("user_id", authUserId)
+    .eq("status", "active");
+  const inAnotherWorkspace = (otherMemberships ?? []).some(
+    (m) => m.workspace_id !== user.workspace_id
+  );
+
+  if (existingUser || inAnotherWorkspace) {
     // Re-invite only makes sense inside the caller's own workspace.
-    if (!(await isUserInWorkspace(user, authUserId))) {
+    if (inAnotherWorkspace || !(await isUserInWorkspace(user, authUserId))) {
       return err("A user with this email already exists");
     }
   } else {
     // Create user record (service client — the invite is a staff action,
-    // not the new user writing their own row)
-    const { error: userError } = await adminClient.from("users").insert({
-      id: authUserId,
-      email: parsed.data.email,
-      full_name: parsed.data.full_name || parsed.data.email.split("@")[0],
-      phone: parsed.data.phone ?? null,
-      // Admin-invited users are pre-approved; mark active so they aren't
-      // blocked by the getSessionUser account_status gate.
-      account_status: "active",
-      ...(houseId ? { pending_house_id: houseId } : {}),
-    });
+    // not the new user writing their own row). Upsert guards the race where
+    // a trigger or a concurrent invite already wrote the row.
+    const { error: userError } = await adminClient.from("users").upsert(
+      {
+        id: authUserId,
+        email: parsed.data.email,
+        full_name: parsed.data.full_name || parsed.data.email.split("@")[0],
+        phone: parsed.data.phone ?? null,
+        // Admin-invited users are pre-approved; mark active so they aren't
+        // blocked by the getSessionUser account_status gate.
+        account_status: "active",
+        ...(houseId ? { pending_house_id: houseId } : {}),
+      },
+      { onConflict: "id" }
+    );
 
     if (userError) return err(userError.message);
 
     // Default role is resident
-    const { error: roleError } = await adminClient.from("user_roles").insert({
-      user_id: authUserId,
-      role: "resident",
-    });
+    const { error: roleError } = await adminClient.from("user_roles").upsert(
+      { user_id: authUserId, role: "resident" },
+      { onConflict: "user_id" }
+    );
 
     if (roleError) return err(roleError.message);
 
