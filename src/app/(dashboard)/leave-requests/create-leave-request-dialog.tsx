@@ -84,10 +84,10 @@ export function CreateLeaveRequestDialog({ residents, busyResidentIds = [], user
           </div>
 
           <div className="space-y-2">
-            <Label>Covering Resident (same house) *</Label>
+            <Label>Covering Resident (same house) {eligibleCoverResidents.length > 0 && "*"}</Label>
             <select
               name="covering_resident_id"
-              required
+              required={eligibleCoverResidents.length > 0}
               className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
               disabled={!selectedResidentId}
             >
@@ -95,7 +95,7 @@ export function CreateLeaveRequestDialog({ residents, busyResidentIds = [], user
                 {!selectedResidentId
                   ? "Select a resident first"
                   : eligibleCoverResidents.length === 0
-                  ? "No other residents in this house"
+                  ? "No other residents in this house — goes straight to staff"
                   : "Select covering resident"}
               </option>
               {eligibleCoverResidents.map((r) => (
@@ -105,9 +105,16 @@ export function CreateLeaveRequestDialog({ residents, busyResidentIds = [], user
               ))}
             </select>
             <p className="text-xs text-muted-foreground">
-              The covering resident must approve before the request proceeds.
-              Residents with assigned chores this rotation aren&apos;t shown —
-              they can&apos;t cover someone else&apos;s duties while doing their own.
+              {eligibleCoverResidents.length > 0 ? (
+                <>
+                  The covering resident must approve before the request
+                  proceeds. Residents with assigned chores this rotation
+                  aren&apos;t shown — they can&apos;t cover someone else&apos;s
+                  duties while doing their own.
+                </>
+              ) : (
+                "You're the only active resident in this house, so the request skips the cover step and goes straight to staff review."
+              )}
             </p>
           </div>
 
@@ -161,7 +168,9 @@ export function CreateLeaveRequestDialog({ residents, busyResidentIds = [], user
 
           <div className="bg-muted/50 rounded-md p-3 text-xs text-muted-foreground space-y-1">
             <p className="font-medium text-foreground">Approval Flow:</p>
-            <p>1. Covering resident approves</p>
+            {eligibleCoverResidents.length > 0 && (
+              <p>1. Covering resident approves</p>
+            )}
             <p>2. House manager approves</p>
             <p>3. Admin gives final approval</p>
           </div>
