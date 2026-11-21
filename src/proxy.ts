@@ -12,6 +12,9 @@ const publicRoutes = [
   "/forgot-password",
   "/application-denied",
   "/offline",
+  "/privacy",
+  "/terms",
+  "/delete-account",
 ];
 
 // Keep the Supabase auth cookie around for ~1 year so the refresh

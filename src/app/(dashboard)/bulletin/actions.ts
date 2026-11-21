@@ -8,6 +8,7 @@ import { requireAuth, requireRole } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { sendWebPushToMany } from "@/lib/push";
+import { sendNotificationToAdmins } from "@/lib/notifications";
 import { z } from "zod";
 
 /**
@@ -416,4 +417,34 @@ export async function uploadBulletinPhoto(formData: FormData) {
   const { data: urlData } = adminClient.storage.from("uploads").getPublicUrl(path);
 
   return ok({ url: urlData.publicUrl });
+}
+
+// --- Report a post (App Store UGC moderation, guideline 1.2) ---
+export async function reportBulletinPost(postId: string) {
+  const user = await requireAuth();
+  const admin = createAdminClient();
+
+  const { data: post } = await admin
+    .from("bulletin_posts")
+    .select("id, title, content, house_id, author_id")
+    .eq("id", postId)
+    .single();
+  if (!post) return err("Post not found");
+  if (post.author_id === user.id) return err("You can't report your own post");
+
+  const workspaceId = user.workspace_id ?? null;
+  const title = String(post.title ?? post.content ?? "").slice(0, 60);
+  await sendNotificationToAdmins(
+    {
+      type: "post_reported",
+      title: "Post reported",
+      message: `${user.full_name} reported a bulletin post: "${title}"`,
+      actionUrl: "/bulletin",
+      entityType: "bulletin_post",
+      entityId: post.id,
+    },
+    { workspaceId }
+  );
+
+  return okVoid();
 }
