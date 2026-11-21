@@ -116,10 +116,6 @@ describe("payments", () => {
 });
 
 describe("chores and rotations", () => {
-  it("rent config due day is 1-28", () => {
-    const base = { house_id: uuid(), monthly_amount: 400 };
-  });
-
   it("schemas exist and reject empty payloads", () => {
     expect(createRotationSchema.safeParse({}).success).toBe(false);
     expect(createChoreSchema.safeParse({}).success).toBe(false);
