@@ -36,6 +36,7 @@ interface Props {
         status: string;
         sign_off_date: string;
       }>;
+      coveringFor?: string | null;
     }>;
   }>;
   userResidentId?: string | null;
@@ -110,6 +111,11 @@ export function ResidentChoreView({ rotations, userResidentId, forcePhoto }: Pro
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle>{assignment.chore.name}</CardTitle>
+                    {assignment.coveringFor && (
+                      <Badge variant="secondary" className="mt-1">
+                        Covering for {assignment.coveringFor}
+                      </Badge>
+                    )}
                     <p className="text-sm text-muted-foreground">
                       {formatDateOnly(rotation.cycle_start_date)}{" "}
                       —{" "}

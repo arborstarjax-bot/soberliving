@@ -290,6 +290,21 @@ export async function generateMissedChoreDemerits(houseId?: string) {
     autoDemerit = wsSettings?.auto_demerit_missed_chores ?? false;
   }
 
+  // Residents out on approved leave have their chores covered — the
+  // demerit for a missed covered chore lands on the covering resident.
+  const { data: approvedCovers } = await supabase
+    .from("leave_requests")
+    .select("resident_id, covering_resident_id, departure_date, expected_return_date")
+    .eq("status", "approved")
+    .not("covering_resident_id", "is", null);
+  const covererFor = (residentId: string, date: string) =>
+    (approvedCovers ?? []).find(
+      (c) =>
+        c.resident_id === residentId &&
+        c.departure_date <= date &&
+        date <= c.expected_return_date
+    )?.covering_resident_id ?? null;
+
   // Pending signoffs whose date has already passed. created_at lets us
   // skip back-fills (signoffs inserted mid-cycle, after the sign_off_date
   // had already passed) that would otherwise get flagged as missed.
@@ -368,11 +383,22 @@ export async function generateMissedChoreDemerits(houseId?: string) {
           .maybeSingle();
 
         if (!existingDemerit) {
-          const reason = `Missed chore: ${ra.chore.name} on ${signoff.sign_off_date}`;
+          const covererId = covererFor(ra.resident_id, signoff.sign_off_date);
+          const demeritResidentId = covererId ?? ra.resident_id;
+          const { data: leaveTaker } = covererId
+            ? await supabase
+                .from("residents")
+                .select("full_name")
+                .eq("id", ra.resident_id)
+                .single()
+            : { data: null };
+          const reason = covererId
+            ? `Missed chore (covering for ${leaveTaker?.full_name ?? "resident"}): ${ra.chore.name} on ${signoff.sign_off_date}`
+            : `Missed chore: ${ra.chore.name} on ${signoff.sign_off_date}`;
           const { data: demerit } = await supabase
             .from("demerits")
             .insert({
-              resident_id: ra.resident_id,
+              resident_id: demeritResidentId,
               house_id: ra.chore.house_id,
               points: 1,
               reason,
@@ -387,12 +413,12 @@ export async function generateMissedChoreDemerits(houseId?: string) {
             const { data: resident } = await supabase
               .from("residents")
               .select("full_name, user_id")
-              .eq("id", ra.resident_id)
+              .eq("id", demeritResidentId)
               .single();
 
             await logActivity({
               houseId: ra.chore.house_id,
-              residentId: ra.resident_id,
+              residentId: demeritResidentId,
               actorId: user.id,
               eventType: "demerit_issued",
               entityType: "demerit",
