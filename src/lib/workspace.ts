@@ -1,0 +1,218 @@
+import "server-only";
+
+import { cache } from "react";
+import { createAdminClient } from "@/lib/supabase/server";
+import { DEFAULT_TIMEZONE } from "@/lib/timezone";
+import type {
+  SessionUser,
+  Workspace,
+  WorkspaceSettings,
+  WorkspacePaymentConfig,
+  HouseCurfew,
+  WorkspaceMember,
+} from "@/lib/types";
+
+export const getWorkspaceForUser = cache(
+  async (userId: string): Promise<{ workspace_id: string; role: string } | null> => {
+    const admin = createAdminClient();
+    const { data } = await admin
+      .from("workspace_members")
+      .select("workspace_id, role")
+      .eq("user_id", userId)
+      .limit(1)
+      .maybeSingle();
+    return data;
+  }
+);
+
+export const getWorkspace = cache(
+  async (workspaceId: string): Promise<Workspace | null> => {
+    const admin = createAdminClient();
+    const { data } = await admin
+      .from("workspaces")
+      .select("*")
+      .eq("id", workspaceId)
+      .single();
+    return data as Workspace | null;
+  }
+);
+
+/** The house's configured timezone (falls back to the app default). */
+export const getHouseTimezone = cache(
+  async (houseId: string): Promise<string> => {
+    const admin = createAdminClient();
+    const { data } = await admin
+      .from("houses")
+      .select("timezone")
+      .eq("id", houseId)
+      .maybeSingle();
+    return (
+      (data as { timezone?: string | null } | null)?.timezone ??
+      DEFAULT_TIMEZONE
+    );
+  }
+);
+
+export const getWorkspaceSettings = cache(
+  async (workspaceId: string): Promise<WorkspaceSettings | null> => {
+    const admin = createAdminClient();
+    const { data } = await admin
+      .from("workspace_settings")
+      .select("*")
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+    return data as WorkspaceSettings | null;
+  }
+);
+
+export const getWorkspacePaymentConfig = cache(
+  async (workspaceId: string): Promise<WorkspacePaymentConfig | null> => {
+    const admin = createAdminClient();
+    const { data } = await admin
+      .from("workspace_payment_config")
+      .select("*")
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+    return data as WorkspacePaymentConfig | null;
+  }
+);
+
+export async function getHouseCurfews(
+  houseId: string
+): Promise<HouseCurfew[]> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("house_curfews")
+    .select("*")
+    .eq("house_id", houseId)
+    .order("day_of_week");
+  return (data ?? []) as HouseCurfew[];
+}
+
+/**
+ * Returns the effective curfews for a house: its own curfews if any,
+ * otherwise falls back to workspace-level defaults (curfews from any
+ * other house in the same workspace).
+ */
+export async function getEffectiveHouseCurfews(
+  houseId: string
+): Promise<HouseCurfew[]> {
+  const own = await getHouseCurfews(houseId);
+  if (own.length > 0) return own;
+
+  // Fall back to workspace defaults: find the workspace, then look for
+  // curfews from any sibling house.
+  const admin = createAdminClient();
+  const { data: house } = await admin
+    .from("houses")
+    .select("workspace_id")
+    .eq("id", houseId)
+    .single();
+
+  if (!house?.workspace_id) return [];
+
+  // Get all sibling house IDs in the workspace.
+  const { data: siblings } = await admin
+    .from("houses")
+    .select("id")
+    .eq("workspace_id", house.workspace_id)
+    .neq("id", houseId);
+
+  if (!siblings || siblings.length === 0) return [];
+
+  // Find the first sibling that has curfews configured.
+  for (const sib of siblings) {
+    const sibCurfews = await getHouseCurfews(sib.id);
+    if (sibCurfews.length > 0) {
+      // Return sibling curfews but with the original house_id so
+      // callers don't need to know about the fallback.
+      return sibCurfews.map((c) => ({ ...c, house_id: houseId }));
+    }
+  }
+
+  return [];
+}
+
+
+export async function getWorkspaceMembers(
+  workspaceId: string,
+  status: "active" | "pending" | "denied" = "active"
+): Promise<(WorkspaceMember & { user: { email: string; full_name: string } })[]> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("workspace_members")
+    .select("*, user:users(email, full_name)")
+    .eq("workspace_id", workspaceId)
+    .eq("status", status)
+    .order("joined_at");
+  return (data ?? []) as (WorkspaceMember & { user: { email: string; full_name: string } })[];
+}
+
+export function generateSlug(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48);
+}
+
+// ---- Tenant-boundary helpers for server actions ----
+// All lookups go through the service-role client so RLS never has to
+// be trusted, and every check fails closed when the caller has no
+// workspace.
+
+/** The workspace a user belongs to, from the service-maintained column. */
+export async function getUserWorkspaceId(
+  userId: string
+): Promise<string | null> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("users")
+    .select("workspace_id")
+    .eq("id", userId)
+    .maybeSingle();
+  return (data?.workspace_id as string | null) ?? null;
+}
+
+/** True only when targetUserId is a member of the caller's workspace. */
+export async function isUserInWorkspace(
+  user: SessionUser,
+  targetUserId: string
+): Promise<boolean> {
+  if (!user.workspace_id) return false;
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("workspace_members")
+    .select("id")
+    .eq("workspace_id", user.workspace_id)
+    .eq("user_id", targetUserId)
+    .limit(1)
+    .maybeSingle();
+  return !!data;
+}
+
+/** The workspace that owns a house, or null. */
+export async function getHouseWorkspaceId(
+  houseId: string
+): Promise<string | null> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("houses")
+    .select("workspace_id")
+    .eq("id", houseId)
+    .maybeSingle();
+  return (data?.workspace_id as string | null) ?? null;
+}
+
+/** The house a residents row belongs to, or null. */
+export async function getResidentHouseId(
+  residentId: string
+): Promise<string | null> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("residents")
+    .select("house_id")
+    .eq("id", residentId)
+    .maybeSingle();
+  return (data?.house_id as string | null) ?? null;
+}
