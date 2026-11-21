@@ -63,9 +63,22 @@ export async function createUser(
     .eq("id", authUserId)
     .maybeSingle();
 
-  if (existingUser) {
+  // Memberships in ANY workspace. This is the tenant-isolation gate: an
+  // account that already belongs to another workspace must never gain a
+  // membership here — including when its users row appears between the
+  // read above and the upsert below (concurrent invites).
+  const { data: otherMemberships } = await adminClient
+    .from("workspace_members")
+    .select("workspace_id")
+    .eq("user_id", authUserId)
+    .eq("status", "active");
+  const inAnotherWorkspace = (otherMemberships ?? []).some(
+    (m) => m.workspace_id !== user.workspace_id
+  );
+
+  if (existingUser || inAnotherWorkspace) {
     // Re-invite only makes sense inside the caller's own workspace.
-    if (!(await isUserInWorkspace(user, authUserId))) {
+    if (inAnotherWorkspace || !(await isUserInWorkspace(user, authUserId))) {
       return err("A user with this email already exists");
     }
   } else {
