@@ -10,6 +10,7 @@ import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { DEFAULT_TIMEZONE, getHouseToday } from "@/lib/timezone";
 import { getHouseTimezone } from "@/lib/workspace";
+import { houseLimitFor } from "@/lib/billing";
 import {
   createHouseSchema,
   updateHouseSchema,
@@ -37,6 +38,31 @@ export async function createHouse(
   }
 
   const adminClient = createAdminClient();
+
+  // Subscription house-limit gate (Solo 1 / House 3 / Org & legacy unlimited).
+  if (user.workspace_id) {
+    const { data: wsBilling } = await adminClient
+      .from("workspaces")
+      .select("subscription_tier")
+      .eq("id", user.workspace_id)
+      .maybeSingle();
+    const limit = houseLimitFor(
+      (wsBilling?.subscription_tier as string | null) ?? null
+    );
+    if (limit !== null) {
+      const { count } = await adminClient
+        .from("houses")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", user.workspace_id)
+        .eq("is_active", true);
+      if ((count ?? 0) >= limit) {
+        return err(
+          `Your plan allows ${limit} house${limit === 1 ? "" : "s"} — upgrade in Workspace Settings → Billing to add more`
+        );
+      }
+    }
+  }
+
   // New houses take the workspace timezone — per-house overrides happen in
   // the house edit dialog.
   let houseTimezone = DEFAULT_TIMEZONE;

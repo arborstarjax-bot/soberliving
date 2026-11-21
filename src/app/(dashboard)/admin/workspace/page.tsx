@@ -13,8 +13,13 @@ import { OnboardingSection } from "./onboarding-section";
 import { PaymentConfigSection } from "./payment-config-section";
 import { CurfewSection } from "./curfew-section";
 import { MembersSection } from "./members-section";
+import { BillingSection } from "./billing-section";
 
-export default async function WorkspaceSettingsPage() {
+export default async function WorkspaceSettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requireRole("admin");
 
   if (!user.workspace_id) {
@@ -31,6 +36,13 @@ export default async function WorkspaceSettingsPage() {
     ]);
 
   if (!workspace) redirect("/admin");
+
+  const params = await searchParams;
+  const defaultTab =
+    typeof params.tab === "string" &&
+    ["general", "onboarding", "payments", "curfews", "members", "billing"].includes(params.tab)
+      ? params.tab
+      : "general";
 
   // Fetch houses for curfew config
   const admin = createAdminClient();
@@ -59,7 +71,7 @@ export default async function WorkspaceSettingsPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="general">
+      <Tabs defaultValue={defaultTab}>
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="onboarding">Onboarding</TabsTrigger>
@@ -75,6 +87,7 @@ export default async function WorkspaceSettingsPage() {
               </span>
             )}
           </TabsTrigger>
+          <TabsTrigger value="billing">Billing</TabsTrigger>
         </TabsList>
 
         <TabsContent value="general">
@@ -109,6 +122,28 @@ export default async function WorkspaceSettingsPage() {
           <MembersSection
             members={members}
             pendingMembers={pendingMembers}
+          />
+        </TabsContent>
+
+        <TabsContent value="billing">
+          <BillingSection
+            billing={{
+              subscription_tier:
+                (workspace as { subscription_tier?: string | null })
+                  .subscription_tier ?? null,
+              subscription_status:
+                (workspace as { subscription_status?: string | null })
+                  .subscription_status ?? null,
+              stripe_customer_id:
+                (workspace as { stripe_customer_id?: string | null })
+                  .stripe_customer_id ?? null,
+              stripe_subscription_id:
+                (workspace as { stripe_subscription_id?: string | null })
+                  .stripe_subscription_id ?? null,
+              trial_ends_at:
+                (workspace as { trial_ends_at?: string | null })
+                  .trial_ends_at ?? null,
+            }}
           />
         </TabsContent>
       </Tabs>
