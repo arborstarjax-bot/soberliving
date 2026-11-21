@@ -21,7 +21,7 @@ export function LogMeetingForm({ photoRequired }: Props) {
   const [state, action, pending] = useActionState(logMeeting, undefined);
 
   useEffect(() => {
-    if (!pending && state && !state.error) {
+    if (!pending && state?.ok) {
       formRef.current?.reset();
       setSignature(null);
       setPadKey((k) => k + 1);
@@ -114,7 +114,7 @@ export function LogMeetingForm({ photoRequired }: Props) {
             )}
           </div>
 
-          {state?.error && (
+          {state && !state.ok && (
             <p className="text-sm text-destructive">{state.error}</p>
           )}
 

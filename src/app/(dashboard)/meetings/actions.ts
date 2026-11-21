@@ -5,16 +5,17 @@ import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { getWorkspaceSettings } from "@/lib/workspace";
+import { okVoid, err, type ActionResult } from "@/lib/action-result";
 
 const MEETING_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
 
 export async function logMeeting(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
-): Promise<{ error?: string }> {
+): Promise<ActionResult> {
   const user = await requireAuth();
   if (user.role !== "resident") {
-    return { error: "Only residents log their own meetings" };
+    return err("Only residents log their own meetings");
   }
 
   const meetingName = String(formData.get("meeting_name") ?? "").trim();
@@ -25,13 +26,13 @@ export async function logMeeting(
   const signature = String(formData.get("facilitator_signature") ?? "");
   const photo = formData.get("photo");
 
-  if (!meetingName) return { error: "Meeting name is required" };
-  if (!location) return { error: "Meeting location is required" };
+  if (!meetingName) return err("Meeting name is required");
+  if (!location) return err("Meeting location is required");
   if (!meetingAt || Number.isNaN(Date.parse(meetingAt))) {
-    return { error: "Meeting date & time is required" };
+    return err("Meeting date & time is required");
   }
   if (!signature.startsWith("data:image/")) {
-    return { error: "The facilitator must sign on the signature pad" };
+    return err("The facilitator must sign on the signature pad");
   }
 
   const wsSettings = user.workspace_id
@@ -46,14 +47,14 @@ export async function logMeeting(
     .eq("user_id", user.id)
     .eq("status", "active")
     .maybeSingle();
-  if (!resident) return { error: "No active resident profile found" };
+  if (!resident) return err("No active resident profile found");
 
   // Optional photo of the sign-in sheet — stored next to the
   // resident's other uploaded documents.
   let photoPath: string | null = null;
   if (photo instanceof File && photo.size > 0) {
     if (photo.size > MEETING_PHOTO_MAX_BYTES) {
-      return { error: "Photo must be under 10MB" };
+      return err("Photo must be under 10MB");
     }
     const safeName = photo.name.replace(/[^a-zA-Z0-9._-]/g, "_");
     photoPath = `${user.id}/meetings/${Date.now()}-${safeName}`;
@@ -61,9 +62,9 @@ export async function logMeeting(
     const { error: uploadError } = await adminStorage.storage
       .from("documents")
       .upload(photoPath, photo, { contentType: photo.type });
-    if (uploadError) return { error: uploadError.message };
+    if (uploadError) return err(uploadError.message);
   } else if (photoRequired) {
-    return { error: "A photo of the meeting is required" };
+    return err("A photo of the meeting is required");
   }
 
   const admin = createAdminClient();
@@ -77,7 +78,7 @@ export async function logMeeting(
     facilitator_signature: signature,
     photo_path: photoPath,
   });
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: resident.house_id ?? "",
@@ -90,26 +91,26 @@ export async function logMeeting(
   });
 
   revalidatePath("/meetings");
-  return {};
+  return okVoid();
 }
 
 export async function deleteMeeting(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
-): Promise<{ error?: string }> {
+): Promise<ActionResult> {
   const user = await requireAuth();
-  if (user.role !== "admin") return { error: "Not authorized" };
+  if (user.role !== "admin") return err("Not authorized");
 
   const meetingId = String(formData.get("meeting_id") ?? "");
-  if (!meetingId) return { error: "Missing meeting" };
+  if (!meetingId) return err("Missing meeting");
 
   const admin = createAdminClient();
   const { error } = await admin
     .from("meetings")
     .delete()
     .eq("id", meetingId);
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   revalidatePath("/meetings");
-  return {};
+  return okVoid();
 }
