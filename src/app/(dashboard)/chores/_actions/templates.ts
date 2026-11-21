@@ -5,13 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
-import {
-  createChoreSchema,
-  updateChoreSchema,
-  createChoreTaskSchema,
-  updateChoreTaskSchema,
-  setChoreRoomExclusionsSchema,
-} from "@/lib/validations";
+import { createChoreSchema, updateChoreSchema, createChoreTaskSchema, updateChoreTaskSchema, setChoreRoomExclusionsSchema } from "@/lib/validations";
 import { regenerateFutureSignoffsForChore } from "./_signoff-generation";
 
 // --- Chore Templates ---
