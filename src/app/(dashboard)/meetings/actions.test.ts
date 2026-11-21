@@ -61,13 +61,15 @@ const residentUser = {
   role: "resident",
   workspace_id: "ws1",
   full_name: "Res One",
-};
+} as unknown as import("@/lib/types").SessionUser;
 const adminUser = {
   id: "u9",
   role: "admin",
   workspace_id: "ws1",
   full_name: "Admin",
-};
+} as unknown as import("@/lib/types").SessionUser;
+const wsSettings = (requirePhoto: boolean) =>
+  ({ require_meeting_photo: requirePhoto }) as unknown as import("@/lib/types").WorkspaceSettings;
 
 function fd(fields: Record<string, string | File>) {
   const d = new FormData();
@@ -87,7 +89,7 @@ const valid = () =>
 beforeEach(() => {
   vi.clearAllMocks();
   authMock.mockResolvedValue(residentUser);
-  settingsMock.mockResolvedValue({ require_meeting_photo: false });
+  settingsMock.mockResolvedValue(wsSettings(false));
   const db = fakeDb((table) =>
     table === "residents"
       ? [{ id: "r1", house_id: "h1", full_name: "Res One" }]
@@ -125,7 +127,7 @@ describe("logMeeting", () => {
     expect((await logMeeting(undefined, d)).error).toMatch(/signature pad/i);
   });
   it("requires a photo when the workspace requires it", async () => {
-    settingsMock.mockResolvedValue({ require_meeting_photo: true });
+    settingsMock.mockResolvedValue(wsSettings(true));
     expect((await logMeeting(undefined, valid())).error).toMatch(/photo/i);
   });
   it("inserts the meeting on the happy path", async () => {

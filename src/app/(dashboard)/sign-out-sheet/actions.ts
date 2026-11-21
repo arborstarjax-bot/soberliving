@@ -1,13 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 import { z } from "zod";
 import { getEffectiveHouseCurfews } from "@/lib/workspace";
+import { DEFAULT_TIMEZONE } from "@/lib/timezone";
 
 const signOutSchema = z.object({
   resident_id: z.string().uuid(),
@@ -356,7 +357,7 @@ const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "frid
  * (anything after that time is past curfew).
  *
  * Rules:
- * 1. Look at the day-of-week of the sign-out time (in Eastern TZ).
+ * 1. Look at the day-of-week of the sign-out time (in the house's TZ).
  * 2. Get that day's curfew from house_curfews.
  * 3. If no curfew is set for that day, it's not past curfew.
  * 4. If the sign-in is on a different calendar day than the sign-out
@@ -372,7 +373,15 @@ async function isPastCurfew(
   const curfews = await getEffectiveHouseCurfews(houseId);
   if (curfews.length === 0) return false;
 
-  const tz = "America/New_York";
+  const admin = createAdminClient();
+  const { data: houseRow } = await admin
+    .from("houses")
+    .select("timezone")
+    .eq("id", houseId)
+    .maybeSingle();
+  const tz =
+    (houseRow as { timezone?: string | null } | null)?.timezone ??
+    DEFAULT_TIMEZONE;
 
   // Get the day-of-week of the sign-out in house TZ
   const outDate = new Date(timeOutIso);
