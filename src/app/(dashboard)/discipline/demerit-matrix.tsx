@@ -449,6 +449,7 @@ function AddDemeritDialog({
       setPhotoFile(file);
       const fd = new FormData();
       fd.append("file", file);
+      if (resolvedHouseId) fd.append("house_id", resolvedHouseId);
       const result = await uploadDemeritPhoto(fd);
       if (result.error) {
         setUploadError(result.error);

@@ -90,8 +90,16 @@ export async function createBulletinPost(
           return err("You can only post to your assigned houses");
         }
       }
+    } else {
+      // staff (admin/manager/owner): each target house must be one the
+      // user can actually access — never a house outside their
+      // workspace.
+      for (const hid of houseIds) {
+        if (!canAccessHouse(user, hid)) {
+          return err("Not authorized for that house");
+        }
+      }
     }
-    // admin can post to any house
   }
 
   // Build rows for batch insert
@@ -426,11 +434,20 @@ export async function reportBulletinPost(postId: string) {
 
   const { data: post } = await admin
     .from("bulletin_posts")
-    .select("id, title, content, house_id, author_id")
+    .select("id, title, content, house_id, author_id, workspace_id")
     .eq("id", postId)
     .single();
   if (!post) return err("Post not found");
   if (post.author_id === user.id) return err("You can't report your own post");
+  if (
+    !(await canSeeBulletinHouse(
+      user,
+      (post.house_id as string | null) ?? null,
+      (post.workspace_id as string | null) ?? null
+    ))
+  ) {
+    return err("Post not found");
+  }
 
   const workspaceId = user.workspace_id ?? null;
   const title = String(post.title ?? post.content ?? "").slice(0, 60);

@@ -42,10 +42,7 @@ export async function dischargeResident(
     .maybeSingle();
 
   if (!resident) return err("Resident not found");
-  if (
-    user.role !== "admin" &&
-    !canAccessHouse(user, resident.house_id)
-  ) {
+  if (!canAccessHouse(user, resident.house_id)) {
     return err("Not authorized");
   }
 
@@ -268,6 +265,9 @@ export async function deleteResident(residentId: string) {
     .maybeSingle();
 
   if (!resident) return err("Resident not found");
+  if (!canAccessHouse(user, resident.house_id)) {
+    return err("Not authorized");
+  }
 
   // Block hard-delete if the resident has any real history. We check
   // the tables where a cascade would destroy compliance-relevant
@@ -471,9 +471,13 @@ export async function transferResident(
   }
 
   const sourceHouseId: string = resident.house_id;
+  if (!canAccessHouse(user, sourceHouseId)) {
+    return err("Not authorized");
+  }
 
-  // Verify target house exists + is active + belongs to the same
-  // workspace. Houses with no workspace_id are legacy and open to all.
+  // Verify target house exists + is active + belongs to the user's
+  // workspace. Fail closed: no workspace on either side means the
+  // tenant can't be proven to match.
   const { data: targetHouse } = await supabase
     .from("houses")
     .select("id, name, is_active, workspace_id")
@@ -483,9 +487,9 @@ export async function transferResident(
     return err("Target house is not available");
   }
   if (
-    user.workspace_id &&
-    targetHouse.workspace_id &&
-    targetHouse.workspace_id !== user.workspace_id
+    !user.workspace_id ||
+    targetHouse.workspace_id !== user.workspace_id ||
+    !canAccessHouse(user, targetHouseId)
   ) {
     return err("Target house is not available");
   }
@@ -719,6 +723,12 @@ export async function reinstateResident(
   if (!resident) return err("Resident not found");
   if (resident.status !== "discharged") {
     return err("Only discharged residents can be reinstated");
+  }
+  if (
+    (resident.house_id && !canAccessHouse(user, resident.house_id)) ||
+    !canAccessHouse(user, houseId)
+  ) {
+    return err("Not authorized");
   }
 
   const residentUserId = resident.user_id as string | null;

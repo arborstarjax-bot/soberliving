@@ -262,6 +262,9 @@ export async function resendApplicationToResident(residentId: string) {
   if (resident.status !== "active") {
     return err("Can only resend applications to active residents");
   }
+  if (!canAccessHouse(currentUser, resident.house_id)) {
+    return err("Not authorized");
+  }
 
   const residentUserId = resident.user_id as string | null;
   if (!residentUserId) {
@@ -360,6 +363,30 @@ export async function signOffResendApplication(
   if (!userRow) return err("User not found");
   if (!userRow.application_resent) {
     return err("No pending resent application for this user");
+  }
+
+  // Scope check: only sign off on a user in the admin's own tenant —
+  // either a resident in an accessible house or an active member of
+  // the admin's workspace.
+  const { data: targetResident } = await adminClient
+    .from("residents")
+    .select("house_id")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (targetResident) {
+    if (!canAccessHouse(currentUser, targetResident.house_id)) {
+      return err("Not authorized");
+    }
+  } else {
+    const { data: member } = await adminClient
+      .from("workspace_members")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("workspace_id", currentUser.workspace_id ?? "")
+      .eq("status", "active")
+      .maybeSingle();
+    if (!member) return err("Not authorized");
   }
 
   // Store the staff signature on the intake form

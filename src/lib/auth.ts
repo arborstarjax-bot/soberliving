@@ -42,6 +42,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
       .from("workspace_members")
       .select("workspace_id, role, status")
       .eq("user_id", user.id)
+      .eq("status", "active")
       .order("joined_at", { ascending: true })
       .limit(1)
       .maybeSingle(),

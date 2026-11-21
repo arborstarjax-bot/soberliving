@@ -164,6 +164,23 @@ export async function escapeToDashboard(blockerId: string) {
   const user = await requireAuth();
   const admin = createAdminClient();
 
+  // Guard: this escape hatch may only write an ack when the blocker
+  // is genuinely done for this user — archived, removed, already
+  // acked, or not targeted at them. Writing one for an active,
+  // applicable blocker would bypass a required signature.
+  const { data: blocker } = await admin
+    .from("blockers")
+    .select("id, archived_at")
+    .eq("id", blockerId)
+    .maybeSingle();
+  if (blocker && !blocker.archived_at) {
+    const alreadyAcked = await hasExistingAck(admin, blockerId, user.id);
+    const applicable = await isBlockerApplicableToUser(blockerId, user.id, admin);
+    if (applicable && !alreadyAcked) {
+      return err("This notice still requires your acknowledgment");
+    }
+  }
+
   // Upsert a best-effort ack row so the gate reliably advances on the
   // next navigation. We don't bail on errors — the redirect below is
   // what actually unsticks the resident.

@@ -276,14 +276,17 @@ export async function createLeaveRequest(
   // Solo requests land straight on the first approver — make sure admins
   // are pinged when the workspace routes approvals to them only.
   if (initialStatus === "pending_admin") {
-    await sendNotificationToAdmins({
-      type: "admin_approval",
-      title: "Leave Request Needs Approval",
-      message: `${resident.full_name} requested leave from ${departureDate} to ${expectedReturnDate}. Please review.`,
-      actionUrl: "/leave-requests",
-      entityType: "leave_request",
-      entityId: data.id,
-    });
+    await sendNotificationToAdmins(
+      {
+        type: "admin_approval",
+        title: "Leave Request Needs Approval",
+        message: `${resident.full_name} requested leave from ${departureDate} to ${expectedReturnDate}. Please review.`,
+        actionUrl: "/leave-requests",
+        entityType: "leave_request",
+        entityId: data.id,
+      },
+      { houseId: resident.house_id }
+    );
   }
 
   revalidatePath("/leave-requests");
@@ -349,14 +352,17 @@ export async function approveCoverRequest(requestId: string) {
 
   // Notify whoever reviews next
   if (nextStatus === "pending_admin") {
-    await sendNotificationToAdmins({
-      type: "admin_approval",
-      title: "Leave Request Needs Approval",
-      message: `${resident?.full_name}'s leave request has been approved by the covering resident. Please review.`,
-      actionUrl: "/leave-requests",
-      entityType: "leave_request",
-      entityId: requestId,
-    });
+    await sendNotificationToAdmins(
+      {
+        type: "admin_approval",
+        title: "Leave Request Needs Approval",
+        message: `${resident?.full_name}'s leave request has been approved by the covering resident. Please review.`,
+        actionUrl: "/leave-requests",
+        entityType: "leave_request",
+        entityId: requestId,
+      },
+      { houseId }
+    );
   } else {
     await sendNotificationToHouseManagers(houseId, {
       type: "manager_approval",
@@ -513,14 +519,17 @@ export async function approveManagerRequest(requestId: string) {
     }
   } else {
     // Notify admins
-    await sendNotificationToAdmins({
-      type: "admin_approval",
-      title: "Leave Request Final Approval",
-      message: `${resident?.full_name}'s leave request has been approved by the house manager. Final approval needed.`,
-      actionUrl: "/leave-requests",
-      entityType: "leave_request",
-      entityId: requestId,
-    });
+    await sendNotificationToAdmins(
+      {
+        type: "admin_approval",
+        title: "Leave Request Final Approval",
+        message: `${resident?.full_name}'s leave request has been approved by the house manager. Final approval needed.`,
+        actionUrl: "/leave-requests",
+        entityType: "leave_request",
+        entityId: requestId,
+      },
+      { houseId }
+    );
   }
 
   revalidatePath("/leave-requests");

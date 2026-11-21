@@ -119,6 +119,21 @@ export async function createPayment(
   // (no pre-opening months of future rows) while still letting staff
   // collect rent early.
   if (!chargeIdForPayment && parsed.data.commitment_id) {
+    // Bind the commitment to the authorized house + resident before
+    // materializing — it is client-supplied and must not open a
+    // charge in another tenant.
+    const { data: commitment } = await supabase
+      .from("house_commitments")
+      .select("id, resident_id, house_id")
+      .eq("id", parsed.data.commitment_id)
+      .maybeSingle();
+    if (
+      !commitment ||
+      commitment.house_id !== parsed.data.house_id ||
+      commitment.resident_id !== parsed.data.resident_id
+    ) {
+      return err("Commitment not found in this house");
+    }
     const next = await materializeNextRentCharge(parsed.data.commitment_id);
     if (!next) {
       return err("No active commitment found for upcoming rent");

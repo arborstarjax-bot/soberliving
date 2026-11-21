@@ -16,7 +16,9 @@ export default async function NewSafetyAssessmentPage({
   if (user.role !== "admin" && user.role !== "manager") {
     redirect(`/houses/${id}`);
   }
-  if (user.role === "manager" && !canAccessHouse(user, id)) {
+  // Admin bypass is not allowed here — the form writes via a
+  // service-role client, so the page itself must enforce tenancy.
+  if (!canAccessHouse(user, id)) {
     redirect("/dashboard");
   }
 

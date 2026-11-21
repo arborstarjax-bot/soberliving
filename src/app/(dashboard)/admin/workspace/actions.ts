@@ -79,6 +79,17 @@ export async function updateWorkspaceSettings(
   if (settings.timezone !== undefined && !isValidTimezone(settings.timezone)) {
     return err("Unknown timezone");
   }
+  if (settings.check_in_schedules !== undefined) {
+    // Every house_id in a check-in schedule must belong to this
+    // workspace — the schedules are stored verbatim, so validate the
+    // client-supplied ids against the member's own house set.
+    const allowed = new Set(user.workspace_house_ids);
+    for (const sched of settings.check_in_schedules) {
+      for (const hid of sched.house_ids ?? []) {
+        if (!allowed.has(hid)) return err("Not authorized for that house");
+      }
+    }
+  }
   const admin = createAdminClient();
   const { error } = await admin
     .from("workspace_settings")

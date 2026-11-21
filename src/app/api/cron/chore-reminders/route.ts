@@ -27,16 +27,26 @@ async function getStaffForWorkspace(
   workspaceId: string | null,
   affectedHouseIds: string[]
 ): Promise<string[]> {
-  const adminsQuery = workspaceId
-    ? admin
-        .from("user_roles")
-        .select("user_id, users!inner(workspace_id)")
-        .eq("role", "admin")
-        .eq("users.workspace_id", workspaceId)
-    : admin.from("user_roles").select("user_id").eq("role", "admin");
+  // Fail closed: no workspace means no safe tenant to scope staff to —
+  // never fall back to platform-wide admins.
+  if (!workspaceId) {
+    const { data: managers } = affectedHouseIds.length > 0
+      ? await admin
+          .from("manager_house_assignments")
+          .select("user_id")
+          .in("house_id", affectedHouseIds)
+          .is("unassigned_at", null)
+      : { data: [] as { user_id: string }[] };
+    return [...new Set((managers ?? []).map((m) => m.user_id))];
+  }
 
   const [adminsRes, managersRes] = await Promise.all([
-    adminsQuery,
+    admin
+      .from("workspace_members")
+      .select("user_id")
+      .eq("workspace_id", workspaceId)
+      .eq("status", "active")
+      .in("role", ["owner", "admin", "manager"]),
     affectedHouseIds.length > 0
       ? admin
           .from("manager_house_assignments")

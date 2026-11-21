@@ -92,6 +92,11 @@ export async function BulletinFeedSection({
   workspaceId,
   searchParams,
 }: BulletinFeedSectionProps) {
+  // Fail closed: the feed queries through the service-role client, so
+  // without a workspace there is no safe tenant to scope posts to —
+  // render nothing rather than cross-tenant content.
+  if (!workspaceId) return null;
+
   const supabase = createAdminClient();
   const cursor = parseCursor(searchParams.c);
   const prevCursor = parseCursor(searchParams.cp);

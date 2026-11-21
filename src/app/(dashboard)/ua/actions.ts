@@ -1,5 +1,6 @@
 "use server";
 import { err, ok, okVoid, type ActionResult } from "@/lib/action-result";
+import { canAccessHouse } from "@/lib/permissions";
 
 import { requireAuth } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -21,6 +22,7 @@ export async function drawUaTest(
     .map((x) => x.trim())
     .filter(Boolean);
   if (!houseId) return err("Pick a house");
+  if (!canAccessHouse(user, houseId)) return err("Not authorized");
 
   const admin = createAdminClient();
   const { data: residents } = await admin
@@ -120,6 +122,25 @@ export async function uploadUaPhoto(
   if (file.size > 10 * 1024 * 1024) return err("Photo too large (10MB)");
 
   const admin = createAdminClient();
+
+  // Verify the result belongs to an open test in the actor's own
+  // workspace before touching storage or the row.
+  const { data: row } = await admin
+    .from("ua_results")
+    .select("id, test_id, ua_tests!inner(workspace_id, status)")
+    .eq("id", resultId)
+    .maybeSingle();
+  const test = row?.ua_tests as unknown as {
+    workspace_id: string | null;
+    status: string;
+  } | null;
+  if (!row || !test || test.workspace_id !== user.workspace_id || test.status !== "open") {
+    return err("Test not found");
+  }
+  if (file.type && !file.type.startsWith("image/")) {
+    return err("Only image files are allowed");
+  }
+
   const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
   const path = `${user.id}/ua/${Date.now()}-${safe}`;
   const { error: upErr } = await admin.storage

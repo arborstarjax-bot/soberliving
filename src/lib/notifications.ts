@@ -80,20 +80,30 @@ export async function sendNotificationToHouseManagers(
 
 export async function sendNotificationToAdmins(
   params: Omit<SendNotificationParams, "userId">,
-  options?: { workspaceId?: string | null }
+  options?: { workspaceId?: string | null; houseId?: string | null }
 ) {
   const adminClient = createAdminClient();
 
-  const workspaceId = options?.workspaceId ?? null;
-  const adminsQuery = workspaceId
-    ? adminClient
-        .from("user_roles")
-        .select("user_id, users!inner(workspace_id)")
-        .eq("role", "admin")
-        .eq("users.workspace_id", workspaceId)
-    : adminClient.from("user_roles").select("user_id").eq("role", "admin");
+  // An explicit workspaceId wins; otherwise derive it from the house.
+  let workspaceId = options?.workspaceId ?? null;
+  if (!workspaceId && options?.houseId) {
+    const { data: houseRow } = await adminClient
+      .from("houses")
+      .select("workspace_id")
+      .eq("id", options.houseId)
+      .maybeSingle();
+    workspaceId = (houseRow?.workspace_id as string | null) ?? null;
+  }
+  // Fail closed: without a workspace there is no safe tenant to scope
+  // recipients to — never fall back to platform-wide admins.
+  if (!workspaceId) return;
 
-  const { data: admins } = await adminsQuery;
+  const { data: admins } = await adminClient
+    .from("workspace_members")
+    .select("user_id")
+    .eq("workspace_id", workspaceId)
+    .eq("status", "active")
+    .in("role", ["owner", "admin", "manager"]);
 
   if (admins) {
     for (const a of admins) {
@@ -138,16 +148,17 @@ export async function notifyHouseStaff(
     workspaceId = (houseRow?.workspace_id as string | null) ?? null;
   }
 
-  const adminsQuery = workspaceId
-    ? adminClient
-        .from("user_roles")
-        .select("user_id, users!inner(workspace_id)")
-        .eq("role", "admin")
-        .eq("users.workspace_id", workspaceId)
-    : adminClient.from("user_roles").select("user_id").eq("role", "admin");
+  // Fail closed: without a workspace there is no safe tenant to scope
+  // recipients to — never fall back to platform-wide admins.
+  if (!workspaceId) return;
 
   const [adminsRes, managersRes] = await Promise.all([
-    adminsQuery,
+    adminClient
+      .from("workspace_members")
+      .select("user_id")
+      .eq("workspace_id", workspaceId)
+      .eq("status", "active")
+      .in("role", ["owner", "admin", "manager"]),
     houseId
       ? adminClient
           .from("manager_house_assignments")
