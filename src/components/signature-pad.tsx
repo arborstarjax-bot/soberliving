@@ -105,16 +105,20 @@ export function SignaturePad({
     }
   }, [isDrawing, onSignatureChange]);
 
-  const prevResetKey = useRef(resetKey);
+  const [seenResetKey, setSeenResetKey] = useState(resetKey);
+  if (resetKey !== seenResetKey) {
+    setSeenResetKey(resetKey);
+    setHasSignature(false);
+  }
+  const paintedResetKey = useRef(resetKey);
   useEffect(() => {
-    if (resetKey === prevResetKey.current) return;
-    prevResetKey.current = resetKey;
+    if (resetKey === paintedResetKey.current) return;
+    paintedResetKey.current = resetKey;
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (!ctx || !canvas) return;
     const rect = canvas.getBoundingClientRect();
     ctx.clearRect(0, 0, rect.width, rect.height);
-    setHasSignature(false);
   }, [resetKey]);
 
   function clear() {
