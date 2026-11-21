@@ -76,7 +76,19 @@ export default async function IntakeReviewPage({
   if (currentUser.workspace_id) {
     housesQuery = housesQuery.eq("workspace_id", currentUser.workspace_id);
   }
-  const [{ data: intakeUsersRaw }, { data: commitmentsRaw }, { data: housesRaw }] =
+  // Discharged residents stay out of the queue entirely: their
+  // users row keeps intake_completed/is_active, but discharge is
+  // meant to end their review cycle. Reinstated residents flip their
+  // resident record back to 'active' and resubmit intake, so they
+  // are not excluded here. residents has no workspace_id, so the
+  // tenant scope is applied client-side via house_id below.
+  const dischargedQuery = adminClient
+    .from("residents")
+    .select("user_id, house_id")
+    .eq("status", "discharged")
+    .not("user_id", "is", null);
+
+  const [{ data: intakeUsersRaw }, { data: commitmentsRaw }, { data: housesRaw }, { data: dischargedRaw }] =
     await Promise.all([
       intakeUsersQuery,
       adminClient
@@ -93,6 +105,7 @@ export default async function IntakeReviewPage({
           "pending_resident_signature",
         ]),
       housesQuery,
+      dischargedQuery,
     ]);
 
   // Fetch workspace settings to determine if commitment is required
@@ -113,12 +126,23 @@ export default async function IntakeReviewPage({
   );
   const houseById = new Map(houses.map((h) => [h.id, h]));
 
+  const dischargedUserIds = new Set(
+    (dischargedRaw ?? [])
+      // When workspace-scoped, only count discharged residents whose
+      // house belongs to this workspace (residents has no
+      // workspace_id column; house_id is the tenant link).
+      .filter((r) => !currentUser.workspace_id || houseById.has(r.house_id))
+      .map((r) => r.user_id)
+      .filter((id): id is string => typeof id === "string")
+  );
+
   // Partition
   const pendingUsers = intakeUsers.filter(
     (u) =>
       (u.account_status ?? "active") !== "rejected" &&
       u.is_active !== false &&
-      !commitmentByUser.has(u.id)
+      !commitmentByUser.has(u.id) &&
+      !dischargedUserIds.has(u.id)
   );
   const approvedUsers = intakeUsers.filter(
     (u) =>
