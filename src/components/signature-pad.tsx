@@ -105,8 +105,10 @@ export function SignaturePad({
     }
   }, [isDrawing, onSignatureChange]);
 
+  const prevResetKey = useRef(resetKey);
   useEffect(() => {
-    if (resetKey === undefined) return;
+    if (resetKey === prevResetKey.current) return;
+    prevResetKey.current = resetKey;
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (!ctx || !canvas) return;
