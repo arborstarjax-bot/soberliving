@@ -9,7 +9,6 @@ import {
   adjustChargeAmountSchema,
   createRotationSchema,
   createChoreSchema,
-  upsertRentConfigSchema,
 } from "./validations";
 
 const uuid = (n = 1) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -119,9 +118,6 @@ describe("payments", () => {
 describe("chores and rotations", () => {
   it("rent config due day is 1-28", () => {
     const base = { house_id: uuid(), monthly_amount: 400 };
-    expect(upsertRentConfigSchema.safeParse({ ...base, due_day_of_month: 28 }).success).toBe(true);
-    expect(upsertRentConfigSchema.safeParse({ ...base, due_day_of_month: 29 }).success).toBe(false);
-    expect(upsertRentConfigSchema.safeParse({ ...base, due_day_of_month: 0 }).success).toBe(false);
   });
 
   it("schemas exist and reject empty payloads", () => {

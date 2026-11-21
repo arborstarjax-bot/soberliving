@@ -4,7 +4,6 @@ import { requireAuth } from "@/lib/auth";
 import { getWorkspaceSettings } from "@/lib/workspace";
 import { ListSkeleton } from "@/components/ui/skeleton";
 import { StaffPaymentsSection } from "./staff-payments-section";
-import { CreatePaymentSection } from "./create-payment-section";
 
 interface PaymentsPageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -17,7 +16,7 @@ interface PaymentsPageProps {
  *
  * Title + subtitle paint immediately. Staff see the Record
  * Payment button populated in its own `<Suspense>` island. The
- * heavy RentStructure / RentFlowKpis / 3-tab body streams in
+ * * Rent Roll + History tabs stream in
  * behind a second boundary.
  *
  * Charge sweep runs in `/api/cron/sweep-charges` daily.
@@ -42,16 +41,11 @@ export default async function PaymentsPage({ searchParams }: PaymentsPageProps) 
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Payments</h1>
-          <p className="text-muted-foreground">
-            Track rent flow, open balances, and receipts
-          </p>
-        </div>
-        <Suspense fallback={null}>
-          <CreatePaymentSection user={user} />
-        </Suspense>
+      <div>
+        <h1 className="text-2xl font-bold">Payments</h1>
+        <p className="text-muted-foreground">
+          Weekly & monthly rent, balances, and receipts
+        </p>
       </div>
 
       <Suspense

@@ -10,13 +10,15 @@ import {
   createPaymentSchema,
   voidPaymentSchema,
   deletePaymentSchema,
-  upsertRentConfigSchema,
   adjustChargeAmountSchema,
   addOneTimeChargeSchema,
   writeOffChargeSchema,
 } from "@/lib/validations";
 import { generateReceiptPdf } from "@/lib/payments/receipt-pdf";
-import { materializeNextRentCharge } from "@/lib/payments/charges";
+import {
+  materializeNextRentCharge,
+  openRentChargesForCommitment,
+} from "@/lib/payments/charges";
 import { sendNotification } from "@/lib/notifications";
 import { getWorkspace } from "@/lib/workspace";
 
@@ -437,79 +439,6 @@ export async function deletePayment(
   revalidatePath("/payments");
   revalidatePath("/dashboard");
   revalidatePath(`/residents/${payment.resident_id}`);
-  return okVoid();
-}
-
-export async function upsertRentConfig(
-  _prevState: ActionResult | undefined,
-  formData: FormData
-) {
-  const user = await requireAuth();
-  if (user.role === "resident") return err("Not authorized");
-
-  const parsed = upsertRentConfigSchema.safeParse({
-    house_id: formData.get("house_id"),
-    monthly_amount: formData.get("monthly_amount"),
-    due_day_of_month: formData.get("due_day_of_month"),
-  });
-
-  if (!parsed.success) return err(parsed.error.issues[0].message);
-
-  if (user.role !== "admin" && !canAccessHouse(user, parsed.data.house_id)) {
-    return err("Not authorized");
-  }
-
-  const supabase = await createClient();
-
-  // Insert first, then deactivate the previous rows. This keeps the
-  // house from being left with zero active configs if the insert fails
-  // (e.g. unique constraint, network blip) — the old config stays in
-  // place and the user sees a real error instead of a silently broken
-  // rent schedule.
-  const { data: inserted, error: insertError } = await supabase
-    .from("rent_configs")
-    .insert({
-      house_id: parsed.data.house_id,
-      monthly_amount: parsed.data.monthly_amount,
-      due_day_of_month: parsed.data.due_day_of_month,
-      is_active: true,
-    })
-    .select("id")
-    .single();
-
-  if (insertError) return err(insertError.message);
-
-  await supabase
-    .from("rent_configs")
-    .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq("house_id", parsed.data.house_id)
-    .eq("is_active", true)
-    .neq("id", inserted.id);
-
-  // Rent config changes are financially significant — keep the
-  // audit trail entry so we can see who changed the rent schedule
-  // and when from the Activity feed.
-  const { data: house } = await supabase
-    .from("houses")
-    .select("name")
-    .eq("id", parsed.data.house_id)
-    .single();
-
-  await logActivity({
-    houseId: parsed.data.house_id,
-    actorId: user.id,
-    eventType: "rent_config_updated",
-    entityType: "rent_config",
-    entityId: parsed.data.house_id,
-    description: `Rent config updated for ${house?.name ?? "house"}: $${parsed.data.monthly_amount}/mo, due day ${parsed.data.due_day_of_month}`,
-    metadata: {
-      monthly_amount: parsed.data.monthly_amount,
-      due_day: parsed.data.due_day_of_month,
-    },
-  });
-
-  revalidatePath("/payments");
-  revalidatePath(`/houses/${parsed.data.house_id}`);
   return okVoid();
 }
 
@@ -1018,4 +947,173 @@ export async function writeOffCharge(
   revalidatePath("/dashboard");
   revalidatePath(`/residents/${charge.resident_id}`);
   return okVoid();
+}
+
+/**
+ * Simple rent terms edit — the lightweight path for changing a
+ * resident's rent. Sets amount, weekly/monthly cadence, and the next
+ * due date on their active commitment, then re-derives open charges
+ * from the new schedule. Unpaid past-due charges are kept (they're
+ * owed); only future open rent rows are rebuilt.
+ *
+ * For changes that need a fresh resident signature (term length,
+ * restrictions, etc.) use `proposeAmendment` instead — this is the
+ * everyday "rent went up / moved to weekly" tool.
+ */
+export async function updateRentTerms(
+  _prevState: { error?: string } | undefined,
+  formData: FormData
+): Promise<{ error?: string }> {
+  const user = await requireAuth();
+  if (user.role !== "admin") return { error: "Not authorized" };
+
+  const commitmentId = String(formData.get("commitment_id") ?? "");
+  const rentAmount = Number(formData.get("rent_amount"));
+  const frequency = String(formData.get("payment_frequency") ?? "");
+  const nextDue = String(formData.get("next_due_date") ?? "");
+  const rawAdminFee = String(formData.get("admin_fee") ?? "").trim();
+  const adminFee = rawAdminFee === "" ? null : Number(rawAdminFee);
+
+  if (!commitmentId) return { error: "Missing commitment" };
+  if (!Number.isFinite(rentAmount) || rentAmount <= 0) {
+    return { error: "Rent must be a positive amount" };
+  }
+  if (frequency !== "weekly" && frequency !== "monthly") {
+    return { error: "Frequency must be weekly or monthly" };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(nextDue)) {
+    return { error: "Next due date is required" };
+  }
+  if (adminFee !== null && (!Number.isFinite(adminFee) || adminFee < 0)) {
+    return { error: "Admin fee must be a non-negative number" };
+  }
+
+  const admin = createAdminClient();
+  const { data: commitment } = await admin
+    .from("house_commitments")
+    .select("id, resident_id, house_id, status")
+    .eq("id", commitmentId)
+    .maybeSingle();
+
+  if (!commitment || commitment.status !== "active") {
+    return { error: "No active commitment found" };
+  }
+
+  const { data: commitmentHouse } = await admin
+    .from("houses")
+    .select("workspace_id")
+    .eq("id", commitment.house_id)
+    .maybeSingle();
+  if (
+    !commitmentHouse ||
+    commitmentHouse.workspace_id !== user.workspace_id
+  ) {
+    return { error: "No active commitment found" };
+  }
+
+  // The anchor for the next cycle is the day AFTER the due date
+  // (rent is due the day before the period it covers).
+  const anchorDate = new Date(`${nextDue}T12:00:00`);
+  anchorDate.setDate(anchorDate.getDate() + 1);
+  const anchorIso = anchorDate.toISOString().slice(0, 10);
+
+  const { error } = await admin
+    .from("house_commitments")
+    .update({
+      rent_amount: rentAmount,
+      payment_frequency: frequency,
+      billing_anchor_date: anchorIso,
+      admin_fee: adminFee,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", commitmentId);
+  if (error) return { error: error.message };
+
+  // Rebuild the open rent schedule under the new terms. Only
+  // future-dated OPEN rows are deleted — charges already due stay
+  // on the books as owed debt. Deleting those would erase unpaid
+  // rent and could unlink a payment mid-flight.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const { data: futureOpen } = await admin
+    .from("payment_charges")
+    .select("id")
+    .eq("commitment_id", commitmentId)
+    .eq("charge_type", "rent")
+    .eq("status", "open")
+    .gt("due_date", todayIso);
+  const futureIds = (futureOpen ?? []).map((c) => c.id as string);
+  if (futureIds.length > 0) {
+    // Keep any row a payment already references — deleting it would
+    // unlink the receipt and leave the credit applied to nothing.
+    const { data: linked } = await admin
+      .from("payments")
+      .select("charge_id")
+      .in("charge_id", futureIds);
+    const linkedIds = new Set(
+      (linked ?? []).map((p) => p.charge_id as string)
+    );
+    const deletable = futureIds.filter((id) => !linkedIds.has(id));
+    if (deletable.length > 0) {
+      await admin.from("payment_charges").delete().in("id", deletable);
+    }
+  }
+  await openRentChargesForCommitment(commitmentId);
+
+  // Keep an open admin-fee charge in sync with the new value:
+  // null clears it, otherwise the latest amount wins.
+  if (adminFee === null) {
+    await admin
+      .from("payment_charges")
+      .delete()
+      .eq("commitment_id", commitmentId)
+      .eq("charge_type", "admin_fee")
+      .eq("status", "open");
+  } else {
+    await admin
+      .from("payment_charges")
+      .update({ amount: adminFee })
+      .eq("commitment_id", commitmentId)
+      .eq("charge_type", "admin_fee")
+      .in("status", ["open", "partial"]);
+    // Close out fees already covered by payments so a reduced fee
+    // doesn't linger on the outstanding list with a zero balance.
+    // Settle fees already covered by payments. The gte check runs
+    // server-side per row, so a voided payment can't leave a stale
+    // "paid" flag on a still-owed fee.
+    await admin
+      .from("payment_charges")
+      .update({ status: "paid" })
+      .eq("commitment_id", commitmentId)
+      .eq("charge_type", "admin_fee")
+      .in("status", ["open", "partial"])
+      .gte("paid_amount", adminFee);
+  }
+
+  const { data: resident } = await admin
+    .from("residents")
+    .select("full_name")
+    .eq("id", commitment.resident_id)
+    .maybeSingle();
+
+  await logActivity({
+    houseId: commitment.house_id as string,
+    residentId: (commitment.resident_id as string | null) ?? undefined,
+    actorId: user.id,
+    eventType: "rent_terms_updated",
+    entityType: "house_commitment",
+    entityId: commitmentId,
+    description: `Rent terms updated for ${resident?.full_name ?? "resident"}: $${rentAmount}/${frequency === "weekly" ? "wk" : "mo"}, next due ${nextDue}`,
+    metadata: {
+      rent_amount: rentAmount,
+      payment_frequency: frequency,
+      next_due: nextDue,
+    },
+  });
+
+  revalidatePath("/payments");
+  revalidatePath("/dashboard");
+  if (commitment.resident_id) {
+    revalidatePath(`/residents/${commitment.resident_id}`);
+  }
+  return {};
 }

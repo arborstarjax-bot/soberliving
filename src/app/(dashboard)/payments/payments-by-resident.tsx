@@ -21,6 +21,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertCircle, ExternalLink, Search } from "lucide-react";
 import { RecordChargePaymentDialog } from "./record-charge-payment-dialog";
+import { RecordUpcomingRentDialog } from "./record-upcoming-rent-dialog";
+import { EditRentTermsDialog } from "./edit-rent-terms-dialog";
 import { DownloadReceiptButton } from "./download-receipt-button";
 import { DeletePaymentDialog } from "./delete-payment-dialog";
 import { todayLocalIso, daysUntilLocal } from "@/lib/local-date";
@@ -53,6 +55,13 @@ interface ResidentRow {
   full_name: string;
   house_id: string;
   house_name: string;
+  commitment_id: string | null;
+  rent_amount: number | null;
+  admin_fee: number | null;
+  payment_frequency: "weekly" | "monthly" | null;
+  // Next rent due date, computed server-side — either the earliest
+  // open rent charge or the next cycle on the commitment schedule.
+  next_due: string | null;
 }
 
 interface Props {
@@ -208,6 +217,17 @@ export function PaymentsByResident({
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
+                        {s.resident.rent_amount !== null ? (
+                          <>
+                            {formatMoney(s.resident.rent_amount)}/
+                            {s.resident.payment_frequency === "weekly"
+                              ? "wk"
+                              : "mo"}
+                          </>
+                        ) : (
+                          "No rent terms"
+                        )}
+                        {" · "}
                         {s.nextDue ? (
                           <>
                             Next:{" "}
@@ -222,6 +242,10 @@ export function PaymentsByResident({
                             {days !== null && days < 0 && (
                               <> · <span className="text-destructive font-medium">{Math.abs(days)}d late</span></>
                             )}
+                          </>
+                        ) : s.resident.next_due ? (
+                          <>
+                            Next due {formatDate(s.resident.next_due)}
                           </>
                         ) : (
                           "No open charges"
@@ -302,6 +326,37 @@ export function PaymentsByResident({
 
               <div className="px-4 pb-4 space-y-5">
                 <section className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold">Rent Terms</h3>
+                    {isAdmin && selected.resident.commitment_id && (
+                      <EditRentTermsDialog
+                        commitmentId={selected.resident.commitment_id}
+                        residentName={selected.resident.full_name}
+                        currentAmount={selected.resident.rent_amount}
+                        currentFrequency={selected.resident.payment_frequency}
+                        currentAdminFee={selected.resident.admin_fee}
+                        nextDue={selected.resident.next_due}
+                      />
+                    )}
+                  </div>
+                  {selected.resident.rent_amount !== null ? (
+                    <p className="text-sm text-muted-foreground">
+                      {formatMoney(selected.resident.rent_amount)} per{" "}
+                      {selected.resident.payment_frequency === "weekly"
+                        ? "week"
+                        : "month"}
+                      {selected.resident.next_due &&
+                        ` · next due ${formatDate(selected.resident.next_due)}`}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      No rent terms set — the resident&apos;s commitment
+                      hasn&apos;t been signed yet.
+                    </p>
+                  )}
+                </section>
+
+                <section className="space-y-2">
                   <h3 className="text-sm font-semibold">Open Charges</h3>
                   {selected.charges.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
@@ -366,6 +421,26 @@ export function PaymentsByResident({
                     </div>
                   )}
                 </section>
+
+                {selected.resident.commitment_id &&
+                  selected.resident.rent_amount !== null &&
+                  selected.resident.next_due &&
+                  !selected.charges.some(
+                    (c) => c.charge_type === "rent"
+                  ) && (
+                    <section className="space-y-2">
+                      <h3 className="text-sm font-semibold">Pay Early</h3>
+                      <RecordUpcomingRentDialog
+                        commitmentId={selected.resident.commitment_id}
+                        residentId={selected.resident.id}
+                        residentName={selected.resident.full_name}
+                        houseId={selected.resident.house_id}
+                        rentAmount={selected.resident.rent_amount}
+                        nextDueDate={selected.resident.next_due}
+                        label={`Pay rent due ${formatDate(selected.resident.next_due)}`}
+                      />
+                    </section>
+                  )}
 
                 <section className="space-y-2">
                   <h3 className="text-sm font-semibold">Recent Receipts</h3>
