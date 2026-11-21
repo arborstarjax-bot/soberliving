@@ -78,14 +78,14 @@ export default async function IntakeReviewPage({
   }
   // Discharged residents stay out of the queue entirely: their
   // users row keeps intake_completed/is_active, but discharge is
-  // meant to end their review cycle. Reinstated residents flip their
-  // resident record back to 'active' and resubmit intake, so they
-  // are not excluded here. residents has no workspace_id, so the
-  // tenant scope is applied client-side via house_id below.
-  const dischargedQuery = adminClient
+  // meant to end their review cycle. A user is only excluded when
+  // every resident record they have is discharged — reinstated
+  // residents get an 'active' record back, even when an older
+  // discharged record still exists. residents has no workspace_id,
+  // so the tenant scope is applied client-side via house_id below.
+  const residentsQuery = adminClient
     .from("residents")
-    .select("user_id, house_id")
-    .eq("status", "discharged")
+    .select("user_id, house_id, status")
     .not("user_id", "is", null);
 
   const [{ data: intakeUsersRaw }, { data: commitmentsRaw }, { data: housesRaw }, { data: dischargedRaw }] =
@@ -105,7 +105,7 @@ export default async function IntakeReviewPage({
           "pending_resident_signature",
         ]),
       housesQuery,
-      dischargedQuery,
+      residentsQuery,
     ]);
 
   // Fetch workspace settings to determine if commitment is required
@@ -126,15 +126,24 @@ export default async function IntakeReviewPage({
   );
   const houseById = new Map(houses.map((h) => [h.id, h]));
 
-  const dischargedUserIds = new Set(
-    (dischargedRaw ?? [])
-      // When workspace-scoped, only count discharged residents whose
-      // house belongs to this workspace (residents has no
-      // workspace_id column; house_id is the tenant link).
-      .filter((r) => !currentUser.workspace_id || houseById.has(r.house_id))
-      .map((r) => r.user_id)
-      .filter((id): id is string => typeof id === "string")
-  );
+  const dischargedUserIds = new Set<string>();
+  for (const r of dischargedRaw ?? []) {
+    if (currentUser.workspace_id && !houseById.has(r.house_id)) continue;
+    if (typeof r.user_id === "string" && r.status === "discharged") {
+      dischargedUserIds.add(r.user_id);
+    }
+  }
+  for (const r of dischargedRaw ?? []) {
+    if (
+      typeof r.user_id === "string" &&
+      r.status !== "discharged" &&
+      (!currentUser.workspace_id || houseById.has(r.house_id))
+    ) {
+      // An active/on-leave record means the user was reinstated —
+      // their older discharged rows must not hide the resubmission.
+      dischargedUserIds.delete(r.user_id);
+    }
+  }
 
   // Partition
   const pendingUsers = intakeUsers.filter(
