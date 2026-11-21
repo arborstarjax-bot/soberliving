@@ -16,6 +16,10 @@
     {
       "path": "/api/cron/curfew-check",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/health",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
