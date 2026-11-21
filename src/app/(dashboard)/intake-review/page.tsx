@@ -83,7 +83,25 @@ export default async function IntakeReviewPage({
   // residents get an 'active' record back, even when an older
   // discharged record still exists. residents has no workspace_id,
   // so the tenant scope is applied client-side via house_id below.
-  const { data: intakeUsersRaw } = await intakeUsersQuery;
+  // Fire the independent fetches first; residentsQuery depends on
+  // the applicant ids, so it joins the batch once they resolve.
+  const intakeUsersPromise = intakeUsersQuery;
+  const commitmentsPromise = adminClient
+    .from("house_commitments")
+    .select(
+      "user_id, status, commitment_start_date, house_id, payment_frequency, rent_amount, admin_fee, commitment_term, notes, parent_commitment_id"
+    )
+    // Only live commitments count as "already approved" — a
+    // discharged/reinstated resident keeps their old cancelled row
+    // for history but must re-enter the pending queue.
+    .in("status", [
+      "active",
+      "pending_staff_signature",
+      "pending_resident_signature",
+    ]);
+  const housesPromise = housesQuery;
+
+  const { data: intakeUsersRaw } = await intakeUsersPromise;
 
   // Scoped to the applicants themselves — bounded by the queue size,
   // never truncated by the PostgREST row cap.
@@ -94,23 +112,7 @@ export default async function IntakeReviewPage({
     .in("user_id", applicantIds.length ? applicantIds : ["00000000-0000-0000-0000-000000000000"]);
 
   const [{ data: commitmentsRaw }, { data: housesRaw }, { data: dischargedRaw }] =
-    await Promise.all([
-      adminClient
-        .from("house_commitments")
-        .select(
-          "user_id, status, commitment_start_date, house_id, payment_frequency, rent_amount, admin_fee, commitment_term, notes, parent_commitment_id"
-        )
-        // Only live commitments count as "already approved" — a
-        // discharged/reinstated resident keeps their old cancelled row
-        // for history but must re-enter the pending queue.
-        .in("status", [
-          "active",
-          "pending_staff_signature",
-          "pending_resident_signature",
-        ]),
-      housesQuery,
-      residentsQuery,
-    ]);
+    await Promise.all([commitmentsPromise, housesPromise, residentsQuery]);
 
   // Fetch workspace settings to determine if commitment is required
   const wsSettings = currentUser.workspace_id
