@@ -5,6 +5,7 @@ import { getRoleLabel } from "@/lib/permissions";
 import { ProfileForm } from "./profile-form";
 import { PasswordForm } from "./password-form";
 import { PushNotificationCard } from "./push-notification-card";
+import { DeleteAccountCard } from "./delete-account-card";
 
 export default async function SettingsPage() {
   const user = await requireAuth();
@@ -64,6 +65,8 @@ export default async function SettingsPage() {
         }}
         userRole={user.role}
       />
+
+      <DeleteAccountCard />
     </div>
   );
 }

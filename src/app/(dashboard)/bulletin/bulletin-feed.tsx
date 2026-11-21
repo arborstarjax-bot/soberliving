@@ -12,6 +12,7 @@ import {
   Send,
   MoreVertical,
   PinOff,
+  Flag,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -25,6 +26,7 @@ import {
   deleteComment,
   deleteBulletinPost,
   togglePinPost,
+  reportBulletinPost,
 } from "./actions";
 import type { UserRole } from "@/lib/types";
 import { sobrietyAvatarTier } from "@/components/sobriety-chip";
@@ -305,7 +307,7 @@ export function BulletinFeed({
                   {timeAgo(post.created_at)}
                 </p>
               </div>
-              {(isStaff || post.author_id === currentUserId) && (
+              {(isStaff || post.author_id !== currentUserId) && (
                 <DropdownMenu>
                   <DropdownMenuTrigger className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
                     <MoreVertical className="h-4 w-4" />
@@ -331,6 +333,21 @@ export function BulletinFeed({
                             Pin to Top
                           </>
                         )}
+                      </DropdownMenuItem>
+                    )}
+                    {post.author_id !== currentUserId && (
+                      <DropdownMenuItem
+                        disabled={isPending}
+                        onClick={() => {
+                          if (confirm("Report this post to workspace admins?")) {
+                            startTransition(() => {
+                              reportBulletinPost(post.id);
+                            });
+                          }
+                        }}
+                      >
+                        <Flag className="mr-2 h-4 w-4" />
+                        Report
                       </DropdownMenuItem>
                     )}
                     {(post.author_id === currentUserId || isStaff) && (

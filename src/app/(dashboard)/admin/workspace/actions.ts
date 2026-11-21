@@ -3,6 +3,8 @@ import { err, ok, okVoid } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import type { ActionResult } from "@/lib/action-result";
 import { requireRole } from "@/lib/auth";
 import { getAppOrigin } from "@/lib/app-url";
 import { isValidTimezone } from "@/lib/timezone";
@@ -344,4 +346,81 @@ export async function removeWorkspaceMember(memberId: string) {
   if (error) return err(error.message);
   revalidatePath("/admin/workspace");
   return okVoid();
+}
+
+// --- Workspace Deletion (App Store guideline 5.1.1) ---
+// Admin-only, requires typing the workspace name. Purges storage files
+// best-effort, deletes auth users, then the delete_workspace_cascade
+// function sweeps every workspace-scoped row.
+export async function deleteWorkspace(
+  _prevState: ActionResult | undefined,
+  formData: FormData
+) {
+  const user = await requireRole("admin");
+  const workspaceId = user.workspace_id;
+  if (!workspaceId) return err("Not authorized");
+
+  const confirmText = (formData.get("confirm") as string | null)?.trim();
+  const admin = createAdminClient();
+  const { data: ws } = await admin
+    .from("workspaces")
+    .select("id, name")
+    .eq("id", workspaceId)
+    .single();
+  if (!ws) return err("Workspace not found");
+  if (confirmText !== ws.name) {
+    return err(`Type "${ws.name}" to confirm deletion`);
+  }
+
+  // Collect auth user ids before the cascade removes the member rows.
+  const { data: members } = await admin
+    .from("workspace_members")
+    .select("user_id")
+    .eq("workspace_id", workspaceId);
+  const userIds = (members ?? []).map((m) => m.user_id as string);
+
+  // Collect storage objects to purge. Paths live on these document/
+  // attachment tables — query the ones that carry a file_path or
+  // storage_path and are workspace or house scoped.
+  const { data: houses } = await admin
+    .from("houses")
+    .select("id")
+    .eq("workspace_id", workspaceId);
+  const houseIds = (houses ?? []).map((h) => h.id as string);
+
+  const purgeBucket = async (
+    bucket: string,
+    table: string,
+    pathCol: string,
+    scopeCol: string,
+    scopeIds: string[]
+  ) => {
+    if (scopeIds.length === 0) return;
+    const { data: rows } = await admin
+      .from(table)
+      .select(pathCol)
+      .in(scopeCol, scopeIds);
+    const paths = (rows ?? [])
+      .map((r) => r[pathCol as keyof typeof r] as string | null)
+      .filter((p): p is string => !!p);
+    if (paths.length > 0) {
+      await admin.storage.from(bucket).remove(paths);
+    }
+  };
+
+  await purgeBucket("house-documents", "house_documents", "file_path", "house_id", houseIds);
+  await purgeBucket("admin-vault", "documents", "file_path", "workspace_id", [workspaceId]);
+
+  const { error: cascadeError } = await admin.rpc("delete_workspace_cascade", {
+    p_workspace_id: workspaceId,
+  });
+  if (cascadeError) return err(cascadeError.message);
+
+  // Auth users last — deleting them earlier would orphan nothing, but
+  // doing it after the cascade keeps member-row cleanup deterministic.
+  for (const uid of userIds) {
+    await admin.auth.admin.deleteUser(uid).catch(() => {});
+  }
+
+  redirect("/login");
 }

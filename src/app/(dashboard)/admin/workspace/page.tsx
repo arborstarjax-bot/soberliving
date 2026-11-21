@@ -14,6 +14,7 @@ import { PaymentConfigSection } from "./payment-config-section";
 import { CurfewSection } from "./curfew-section";
 import { MembersSection } from "./members-section";
 import { BillingSection } from "./billing-section";
+import { DeleteWorkspaceCard } from "./delete-workspace-card";
 
 export default async function WorkspaceSettingsPage({
   searchParams,
@@ -91,7 +92,10 @@ export default async function WorkspaceSettingsPage({
         </TabsList>
 
         <TabsContent value="general">
-          <GeneralSection workspace={workspace} />
+          <div className="space-y-4">
+            <GeneralSection workspace={workspace} />
+            <DeleteWorkspaceCard workspaceName={workspace.name} />
+          </div>
         </TabsContent>
 
         <TabsContent value="onboarding">
