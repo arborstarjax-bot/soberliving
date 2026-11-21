@@ -5,7 +5,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AvatarInitials } from "@/components/ui/avatar-initials";
-import { Users, Phone } from "lucide-react";
+import { Users, Phone, MessageSquare, Mail } from "lucide-react";
 import Link from "next/link";
 import { DeleteResidentButton } from "./delete-resident-button";
 import { MarkCompleteButton } from "../intake-review/mark-complete-button";
@@ -322,15 +322,40 @@ export function ResidentsTabs({
                     )}
                     {!p.is_active && <Badge variant="destructive">Inactive</Badge>}
                   </div>
-                  {p.phone && (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); e.preventDefault(); window.location.href = `tel:${p.phone}`; }}
-                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                    >
-                      <Phone className="h-3 w-3" />
-                      {p.phone}
-                    </button>
+                  {(p.phone || p.email) && (
+                    <div className="flex items-center gap-2">
+                      {p.phone && (
+                        <>
+                          <button
+                            type="button"
+                            title={`Call ${p.phone}`}
+                            onClick={(e) => { e.stopPropagation(); e.preventDefault(); window.location.href = `tel:${p.phone}`; }}
+                            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                          >
+                            <Phone className="h-3 w-3" />
+                            {p.phone}
+                          </button>
+                          <button
+                            type="button"
+                            title={`Text ${p.phone}`}
+                            onClick={(e) => { e.stopPropagation(); e.preventDefault(); window.location.href = `sms:${p.phone}`; }}
+                            className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                          >
+                            <MessageSquare className="h-3 w-3" />
+                          </button>
+                        </>
+                      )}
+                      {p.email && (
+                        <button
+                          type="button"
+                          title={`Email ${p.email}`}
+                          onClick={(e) => { e.stopPropagation(); e.preventDefault(); window.location.href = `mailto:${p.email}`; }}
+                          className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                        >
+                          <Mail className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
                   )}
                   <p className="text-xs text-muted-foreground truncate">
                     {p.house_name}
