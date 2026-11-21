@@ -53,35 +53,30 @@ export async function createUser(
 
   const authUserId = linkData.user.id;
 
-  // Check if user record already exists (e.g. re-inviting an existing email).
-  // Service client — the RLS-scoped client can't see users rows outside the
-  // caller's workspace, which made a cross-tenant auth user look "new" and the
-  // insert below die on users_pkey.
-  const { data: existingUser } = await adminClient
-    .from("users")
-    .select("id")
-    .eq("id", authUserId)
-    .maybeSingle();
-
-  // Memberships in ANY workspace. This is the tenant-isolation gate: an
-  // account that already belongs to another workspace must never gain a
-  // membership here — including when its users row appears between the
-  // read above and the upsert below (concurrent invites).
-  const { data: otherMemberships } = await adminClient
+  // A DB trigger auto-provisions the public users row when the auth user
+  // is created, so `existingUser` is set on every invite — existence alone
+  // says nothing. The real gate is workspace membership: another
+  // workspace's account must never get a membership or link here (tenant
+  // isolation), a member of THIS workspace is a re-invite, and an account
+  // with no membership anywhere is fresh and gets fully provisioned.
+  const { data: memberships } = await adminClient
     .from("workspace_members")
     .select("workspace_id")
     .eq("user_id", authUserId)
     .eq("status", "active");
-  const inAnotherWorkspace = (otherMemberships ?? []).some(
+  const inAnotherWorkspace = (memberships ?? []).some(
     (m) => m.workspace_id !== user.workspace_id
   );
+  const inThisWorkspace = (memberships ?? []).some(
+    (m) => m.workspace_id === user.workspace_id
+  );
 
-  if (existingUser || inAnotherWorkspace) {
-    // Re-invite only makes sense inside the caller's own workspace.
-    if (inAnotherWorkspace || !(await isUserInWorkspace(user, authUserId))) {
-      return err("A user with this email already exists");
-    }
-  } else {
+  if (inAnotherWorkspace) {
+    return err("A user with this email already exists");
+  }
+  const isReinvite = inThisWorkspace;
+
+  if (!isReinvite) {
     // Create user record (service client — the invite is a staff action,
     // not the new user writing their own row). Upsert guards the race where
     // a trigger or a concurrent invite already wrote the row.
@@ -130,10 +125,10 @@ export async function createUser(
 
   await logActivity({
     actorId: user.id,
-    eventType: existingUser ? "user_reinvited" : "user_created",
+    eventType: isReinvite ? "user_reinvited" : "user_created",
     entityType: "user",
     entityId: authUserId,
-    description: existingUser
+    description: isReinvite
       ? `Resident "${parsed.data.email}" re-invited by ${user.full_name}`
       : `Resident "${parsed.data.email}" invited by ${user.full_name}`,
   });
