@@ -259,3 +259,13 @@ export const TIMEZONE_OPTIONS = [
   "America/Puerto_Rico",
   "UTC",
 ] as const;
+
+/** True when `tz` is an IANA name Intl understands. */
+export function isValidTimezone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}

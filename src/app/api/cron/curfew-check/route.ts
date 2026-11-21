@@ -71,14 +71,17 @@ export async function GET(request: NextRequest) {
 
   try {
     const admin = createAdminClient();
-    const tz = DEFAULT_TIMEZONE;
     const now = new Date();
-    const nowInTz = new Date(now.toLocaleString("en-US", { timeZone: tz }));
-    const currentH = nowInTz.getHours();
-    const currentM = nowInTz.getMinutes();
-    const currentMinutes = currentH * 60 + currentM;
-    const todayName = DAY_NAMES[nowInTz.getDay()];
-    const todayDate = `${nowInTz.getFullYear()}-${String(nowInTz.getMonth() + 1).padStart(2, "0")}-${String(nowInTz.getDate()).padStart(2, "0")}`;
+    // Curfew math is per-house: each house's timezone decides its local
+    // day name, date, and minutes-since-midnight.
+    function houseLocal(timezone: string) {
+      const local = new Date(now.toLocaleString("en-US", { timeZone: timezone }));
+      return {
+        minutes: local.getHours() * 60 + local.getMinutes(),
+        dayName: DAY_NAMES[local.getDay()],
+        date: `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, "0")}-${String(local.getDate()).padStart(2, "0")}`,
+      };
+    }
 
     // Find all residents currently signed out (time_in IS NULL).
     const { data: openRows } = await admin
@@ -107,17 +110,38 @@ export async function GET(request: NextRequest) {
     const houseIds = [...byHouse.keys()];
     const { data: alreadySent } = await admin
       .from("curfew_notification_log")
-      .select("house_id")
-      .eq("notification_date", todayDate)
+      .select("house_id, notification_date")
       .in("house_id", houseIds);
+    const sentKeys = new Set(
+      (alreadySent ?? []).map(
+        (r) => `${(r as { house_id: string }).house_id}:${(r as { notification_date: string }).notification_date}`
+      )
+    );
 
-    const sentHouseIds = new Set((alreadySent ?? []).map((r) => (r as { house_id: string }).house_id));
+    const { data: houseRows } = await admin
+      .from("houses")
+      .select("id, workspace_id, timezone")
+      .in("id", houseIds);
+    const houseMeta = new Map(
+      (houseRows ?? []).map((h) => [
+        (h as { id: string }).id,
+        {
+          workspaceId: (h as { workspace_id?: string | null }).workspace_id ?? null,
+          timezone:
+            (h as { timezone?: string | null }).timezone ?? DEFAULT_TIMEZONE,
+        },
+      ])
+    );
 
     let totalNotified = 0;
 
     for (const [houseId, rows] of byHouse) {
-      // Skip if already notified today.
-      if (sentHouseIds.has(houseId)) continue;
+      const meta = houseMeta.get(houseId);
+      const { minutes: currentMinutes, dayName: todayName, date: todayDate } =
+        houseLocal(meta?.timezone ?? DEFAULT_TIMEZONE);
+
+      // Skip if already notified on this house's local date.
+      if (sentKeys.has(`${houseId}:${todayDate}`)) continue;
 
       const curfews = await getEffectiveHouseCurfews(houseId);
       const todayCurfew = curfews.find((c) => c.day_of_week === todayName);
@@ -154,12 +178,7 @@ export async function GET(request: NextRequest) {
 
       // Auto-demerit residents still out past curfew when the
       // workspace enabled it (one per resident per day via dedupe).
-      const { data: houseWs } = await admin
-        .from("houses")
-        .select("workspace_id")
-        .eq("id", houseId)
-        .maybeSingle();
-      const wsId = (houseWs?.workspace_id as string | null) ?? null;
+      const wsId = meta?.workspaceId ?? null;
       if (wsId) {
         const { data: wsRow } = await admin
           .from("workspace_settings")
