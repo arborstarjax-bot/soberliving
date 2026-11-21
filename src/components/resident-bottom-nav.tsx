@@ -14,7 +14,7 @@ import {Home,
   LogOut,
   X,
   CalendarCheck,} from "lucide-react";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { usePrefetchRoutes } from "@/lib/use-prefetch-routes";
 
 interface BottomNavItem {
@@ -84,10 +84,13 @@ export function ResidentBottomNav({
   );
   usePrefetchRoutes(allRoutes);
 
-  // Close More panel on route change
-  useEffect(() => {
+  // Close More panel on route change — render-adjustment pattern
+  // (synchronous setState inside an effect is disallowed).
+  const [seenPathname, setSeenPathname] = useState(pathname);
+  if (pathname !== seenPathname) {
+    setSeenPathname(pathname);
     setMoreOpen(false);
-  }, [pathname]);
+  }
 
   return (
     <>

@@ -6,21 +6,6 @@ import { requireAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { openAllChargesForCommitment } from "@/lib/payments/charges";
 
-export async function getCommitmentForResident() {
-  const user = await requireAuth();
-  const adminClient = createAdminClient();
-
-  const { data: commitment } = await adminClient
-    .from("house_commitments")
-    .select("*, houses(name, address)")
-    .eq("user_id", user.id)
-    .eq("status", "pending_resident_signature")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  return commitment;
-}
 
 export async function signCommitment(
   commitmentId: string,

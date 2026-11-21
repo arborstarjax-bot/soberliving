@@ -7,7 +7,7 @@ import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
 import { createDemeritSchema, editDemeritSchema } from "@/lib/validations";
 import { getHouseToday, getHouseYesterday, isoDateInTz, DEFAULT_TIMEZONE } from "@/lib/timezone";
-import { getHouseTimezone, getWorkspaceSettings } from "@/lib/workspace";
+import { getHouseTimezone } from "@/lib/workspace";
 import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 
 export async function createDemerit(
@@ -710,29 +710,6 @@ export async function updateRestriction(
   return {};
 }
 
-export async function expireRestrictions() {
-  const user = await requireAuth();
-  if (user.role === "resident") return { count: 0 };
-  const supabase = await createClient();
-  // Restrictions may span several houses; the workspace timezone is the
-  // shared frame for "today" here.
-  const wsTz = user.workspace_id
-    ? (await getWorkspaceSettings(user.workspace_id))?.timezone
-    : null;
-  const today = getHouseToday(wsTz ?? DEFAULT_TIMEZONE);
-
-  const { data: expired } = await supabase
-    .from("restrictions")
-    .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq("is_active", true)
-    .lte("end_date", today)
-    .not("end_date", "is", null)
-    .select("id, resident_id, house_id, description");
-
-  revalidatePath("/discipline");
-  revalidatePath("/dashboard");
-  return { count: expired?.length ?? 0 };
-}
 
 export async function uploadDemeritPhoto(formData: FormData): Promise<{ url?: string; error?: string }> {
   const user = await requireAuth();

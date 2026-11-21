@@ -97,10 +97,6 @@ export const updateResidentSchema = z.object({
 
 // --- Bed Assignments ---
 
-export const createBedAssignmentSchema = z.object({
-  resident_id: z.string().uuid(),
-  bed_id: z.string().uuid(),
-});
 
 // --- Transfer resident ---
 

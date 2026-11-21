@@ -34,7 +34,7 @@ function fakeDb(resolve: (table: string, filters: Filters) => unknown[] | null) 
       b.then = (onFulfilled: (v: unknown) => unknown) => run().then(onFulfilled);
       return b;
     },
-    // biome-ignore lint/suspicious/noExplicitAny: test double
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double
   } as any;
 }
 
