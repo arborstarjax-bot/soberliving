@@ -108,9 +108,16 @@ export async function GET(request: NextRequest) {
 
     // Check which houses already received a curfew notification today.
     const houseIds = [...byHouse.keys()];
+    // Bound to recent log rows — notification dedupe only compares the
+    // house-local today/yesterday, and an unfiltered history scan would
+    // eventually hit the API row cap and resend alerts.
+    const cutoff = new Date(now);
+    cutoff.setUTCDate(cutoff.getUTCDate() - 2);
+    const cutoffDate = cutoff.toISOString().slice(0, 10);
     const { data: alreadySent } = await admin
       .from("curfew_notification_log")
       .select("house_id, notification_date")
+      .gte("notification_date", cutoffDate)
       .in("house_id", houseIds);
     const sentKeys = new Set(
       (alreadySent ?? []).map(
