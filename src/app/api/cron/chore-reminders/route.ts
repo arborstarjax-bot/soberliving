@@ -174,21 +174,16 @@ export async function GET(request: NextRequest) {
       .eq("is_read", true)
       .lt("created_at", cutoff);
 
-    if (!signoffs || signoffs.length === 0) {
-      return NextResponse.json({
-        ok: true,
-        sent: 0,
-        autoCycled,
-        variant: isEvening ? "evening" : "noon",
-        durationMs: Date.now() - startedAt,
-      });
-    }
+    // Note: no early return when there are no pending signoffs — the
+    // missed-meeting auto-demerit check below still has to run on
+    // Sunday evenings even when every chore is done.
+    const signoffRows = signoffs ?? [];
 
     // Workspace reminder toggles: chores the resident sees only when
     // the workspace keeps the "chore" reminder enabled.
     const houseIdsForWs = [
       ...new Set(
-        signoffs
+        signoffRows
           .map((r) => {
             const a = r.rotation_assignment as unknown as {
               chore: { house_id: string } | null;
@@ -232,7 +227,7 @@ export async function GET(request: NextRequest) {
     let sent = 0;
     const missedItems: { label: string; houseId: string }[] = [];
 
-    for (const row of signoffs) {
+    for (const row of signoffRows) {
       const assignment = row.rotation_assignment as unknown as {
         resident: { user_id: string | null; full_name: string };
         chore: { name: string; house_id: string };
