@@ -82,9 +82,9 @@ export async function createUser(
   const isReinvite = inThisWorkspace;
 
   if (!isReinvite) {
-    // Create user record (service client — the invite is a staff action,
-    // not the new user writing their own row). Upsert guards the race where
-    // a trigger or a concurrent invite already wrote the row.
+    // Provision the users row. DO NOTHING on conflict: the profile write
+    // happens only inside the guarded claim below, so an invite that is
+    // rejected (another tenant owns the account) never mutates it.
     const { error: userError } = await adminClient.from("users").upsert(
       {
         id: authUserId,
@@ -94,30 +94,30 @@ export async function createUser(
         // Admin-invited users are pre-approved; mark active so they aren't
         // blocked by the getSessionUser account_status gate.
         account_status: "active",
+        ...(user.workspace_id ? { workspace_id: user.workspace_id } : {}),
         ...(houseId ? { pending_house_id: houseId } : {}),
       },
-      { onConflict: "id" }
+      { onConflict: "id", ignoreDuplicates: true }
     );
 
     if (userError) return err(userError.message);
 
-    // Default role is resident
-    const { error: roleError } = await adminClient.from("user_roles").upsert(
-      { user_id: authUserId, role: "resident" },
-      { onConflict: "user_id" }
-    );
-
-    if (roleError) return err(roleError.message);
-
-    // Workspace membership is the role/workspace trust anchor.
+    // Claim the account atomically: workspace_id may only move from
+    // NULL (or our own id) to us. If a concurrent invite in another
+    // workspace claimed it first, zero rows match and we fail instead
+    // of crossing the tenant boundary. full_name/phone are only written
+    // when the staff form actually supplied them, so a re-invited user
+    // keeps the details saved at signup.
     if (user.workspace_id) {
-      // Claim the account atomically: workspace_id may only move from
-      // NULL (or our own id) to us. If a concurrent invite in another
-      // workspace claimed it first, zero rows match and we fail instead
-      // of crossing the tenant boundary.
       const { data: claimed, error: claimError } = await adminClient
         .from("users")
-        .update({ workspace_id: user.workspace_id })
+        .update({
+          workspace_id: user.workspace_id,
+          account_status: "active",
+          ...(parsed.data.full_name ? { full_name: parsed.data.full_name } : {}),
+          ...(parsed.data.phone ? { phone: parsed.data.phone } : {}),
+          ...(houseId ? { pending_house_id: houseId } : {}),
+        })
         .eq("id", authUserId)
         .or(`workspace_id.is.null,workspace_id.eq.${user.workspace_id}`)
         .select("id");
@@ -125,6 +125,14 @@ export async function createUser(
       if (!claimed?.length) {
         return err("A user with this email already exists");
       }
+
+      // Default role is resident
+      const { error: roleError } = await adminClient.from("user_roles").upsert(
+        { user_id: authUserId, role: "resident" },
+        { onConflict: "user_id" }
+      );
+      if (roleError) return err(roleError.message);
+
       await adminClient.from("workspace_members").upsert(
         {
           workspace_id: user.workspace_id,
