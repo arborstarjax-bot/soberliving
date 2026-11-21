@@ -31,7 +31,7 @@ export async function createRestriction(
     return err("Resident, house, and description are required");
   }
 
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (!canAccessHouse(user, houseId)) {
     return err("Not authorized");
   }
 
@@ -41,7 +41,9 @@ export async function createRestriction(
     .from("residents")
     .select("full_name")
     .eq("id", residentId)
-    .single();
+    .eq("house_id", houseId)
+    .maybeSingle();
+  if (!resident) return err("Resident not found in this house");
 
   const { data, error } = await supabase
     .from("restrictions")
@@ -109,7 +111,7 @@ export async function liftRestriction(restrictionId: string) {
     .single();
 
   if (!restriction) return err("Restriction not found");
-  if (user.role !== "admin" && !canAccessHouse(user, restriction.house_id)) {
+  if (!canAccessHouse(user, restriction.house_id)) {
     return err("Not authorized");
   }
 
@@ -167,7 +169,7 @@ export async function deleteRestriction(restrictionId: string) {
     .single();
 
   if (!restriction) return err("Restriction not found");
-  if (user.role !== "admin" && !canAccessHouse(user, restriction.house_id)) {
+  if (!canAccessHouse(user, restriction.house_id)) {
     return err("Not authorized");
   }
 
@@ -225,7 +227,7 @@ export async function updateRestriction(
     .single();
 
   if (!existing) return err("Restriction not found");
-  if (user.role !== "admin" && !canAccessHouse(user, existing.house_id)) {
+  if (!canAccessHouse(user, existing.house_id)) {
     return err("Not authorized");
   }
 

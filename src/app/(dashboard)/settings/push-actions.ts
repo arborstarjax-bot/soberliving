@@ -12,7 +12,18 @@ export async function subscribePush(subscription: {
   const user = await requireAuth();
   const admin = createAdminClient();
 
-  // Upsert: if this endpoint already exists, just update keys.
+  // If this endpoint is already registered to a different user, do not
+  // reassign it — the other device keeps its subscription and this
+  // subscribe call is dropped.
+  const { data: existing } = await admin
+    .from("push_subscriptions")
+    .select("id, user_id")
+    .eq("endpoint", subscription.endpoint)
+    .maybeSingle();
+  if (existing && existing.user_id !== user.id) {
+    return { error: "Subscription belongs to another user" };
+  }
+
   const { error } = await admin.from("push_subscriptions").upsert(
     {
       user_id: user.id,

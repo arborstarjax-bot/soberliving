@@ -36,7 +36,7 @@ export async function assignBed(
 ) {
   const user = await requireAuth();
 
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (!canAccessHouse(user, houseId)) {
     return err("Not authorized");
   }
 
@@ -150,7 +150,7 @@ export async function changeResidentBed(
 ) {
   const user = await requireAuth();
 
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (!canAccessHouse(user, houseId)) {
     return err("Not authorized");
   }
 
@@ -297,7 +297,7 @@ export async function vacateBed(assignmentId: string) {
   if (!assignment) return err("Assignment not found");
 
   const houseId = assignment.bed?.room?.house_id ?? "";
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (!canAccessHouse(user, houseId)) {
     return err("Not authorized");
   }
 

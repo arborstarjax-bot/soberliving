@@ -27,6 +27,7 @@ export async function createHouse(
   formData: FormData
 ) {
   const user = await requireRole("admin");
+  if (!user.workspace_id) return err("Not authorized");
   const parsed = createHouseSchema.safeParse({
     name: formData.get("name"),
     address: formData.get("address"),
@@ -105,7 +106,7 @@ export async function createHouse(
 
 export async function updateHouse(houseId: string, formData: FormData) {
   const user = await requireAuth();
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (!canAccessHouse(user, houseId)) {
     return err("Not authorized");
   }
   const parsed = updateHouseSchema.safeParse({
@@ -144,6 +145,9 @@ export async function updateHouse(houseId: string, formData: FormData) {
 
 export async function archiveHouse(houseId: string) {
   const user = await requireRole("admin");
+  if (!canAccessHouse(user, houseId)) {
+    return err("Not authorized");
+  }
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -185,7 +189,7 @@ export async function createRoom(
     return err(parsed.error.issues[0].message);
   }
 
-  if (user.role !== "admin" && !canAccessHouse(user, parsed.data.house_id)) {
+  if (!canAccessHouse(user, parsed.data.house_id)) {
     return err("Not authorized");
   }
 
@@ -250,7 +254,7 @@ export async function createBed(
 
   if (!room) return err("Room not found");
 
-  if (user.role !== "admin" && !canAccessHouse(user, room.house_id)) {
+  if (!canAccessHouse(user, room.house_id)) {
     return err("Not authorized");
   }
 
@@ -304,7 +308,7 @@ export async function updateRoom(
 
   if (!room) return err("Room not found");
 
-  if (user.role !== "admin" && !canAccessHouse(user, room.house_id)) {
+  if (!canAccessHouse(user, room.house_id)) {
     return err("Not authorized");
   }
 
@@ -348,7 +352,7 @@ export async function deleteRoom(
 
   if (!room) return err("Room not found");
 
-  if (user.role !== "admin" && !canAccessHouse(user, room.house_id)) {
+  if (!canAccessHouse(user, room.house_id)) {
     return err("Not authorized");
   }
 
@@ -424,7 +428,7 @@ export async function updateBed(
     | null;
   const houseId = bedRoom?.house_id ?? "";
 
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (!canAccessHouse(user, houseId)) {
     return err("Not authorized");
   }
 
@@ -472,7 +476,7 @@ export async function deleteBed(
     | null;
   const houseId = bedRoom?.house_id ?? "";
 
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (!canAccessHouse(user, houseId)) {
     return err("Not authorized");
   }
 
@@ -512,7 +516,7 @@ export async function deleteBed(
 export async function toggleBedEmpty(bedId: string, houseId: string) {
   const user = await requireAuth();
 
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (!canAccessHouse(user, houseId)) {
     return err("Not authorized");
   }
 
@@ -575,7 +579,7 @@ export async function toggleBedEmpty(bedId: string, houseId: string) {
 export async function reorderRooms(houseId: string, roomIds: string[]) {
   const user = await requireAuth();
 
-  if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
+  if (!canAccessHouse(user, houseId)) {
     return err("Not authorized");
   }
 

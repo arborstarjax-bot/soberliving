@@ -23,7 +23,7 @@ export async function createWarning(
   });
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
-  if (user.role !== "admin" && !canAccessHouse(user, parsed.data.house_id)) {
+  if (!canAccessHouse(user, parsed.data.house_id)) {
     return { error: "Not authorized" };
   }
 
@@ -113,7 +113,7 @@ export async function editWarning(
     .maybeSingle();
 
   if (!warning) return { error: "Warning not found" };
-  if (user.role !== "admin" && !canAccessHouse(user, warning.house_id)) {
+  if (!canAccessHouse(user, warning.house_id)) {
     return { error: "Not authorized" };
   }
 
@@ -147,7 +147,7 @@ export async function deleteWarning(warningId: string) {
     .single();
 
   if (!warning) return { error: "Warning not found" };
-  if (user.role !== "admin" && !canAccessHouse(user, warning.house_id)) {
+  if (!canAccessHouse(user, warning.house_id)) {
     return { error: "Not authorized" };
   }
 
@@ -203,7 +203,7 @@ export async function issueChoreWarning(signoffId: string, extraNote?: string) {
 
   const ra = signoff.rotation_assignment;
   if (!ra?.chore) return { error: "Chore not found" };
-  if (user.role !== "admin" && !canAccessHouse(user, ra.chore.house_id)) {
+  if (!canAccessHouse(user, ra.chore.house_id)) {
     return { error: "Not authorized" };
   }
 
@@ -311,7 +311,7 @@ export async function issueChoreDemerit(signoffId: string, extraNote?: string) {
 
   const ra = signoff.rotation_assignment;
   if (!ra?.chore) return { error: "Chore not found" };
-  if (user.role !== "admin" && !canAccessHouse(user, ra.chore.house_id)) {
+  if (!canAccessHouse(user, ra.chore.house_id)) {
     return { error: "Not authorized" };
   }
 
@@ -393,8 +393,18 @@ export async function uploadWarningPhoto(formData: FormData): Promise<{ url?: st
   const user = await requireAuth();
   const supabase = await createClient();
 
+  if (user.role === "resident") return { error: "Not authorized" };
+
   const file = formData.get("file") as File;
   if (!file) return { error: "No file provided" };
+
+  const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    return { error: "Photo must be a JPEG, PNG, or WebP image" };
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    return { error: "Photo must be under 5MB" };
+  }
 
   const ext = file.name.split(".").pop();
   const path = `${user.id}/${Date.now()}.${ext}`;

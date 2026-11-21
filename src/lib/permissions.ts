@@ -93,10 +93,10 @@ export function authorize({
 
 export function canAccessHouse(user: SessionUser, houseId: string): boolean {
   if (user.role === "admin") {
-    // If workspace-scoped, only allow houses in the workspace
+    // Fail closed: an admin without a workspace can access nothing.
     return user.workspace_id
       ? user.workspace_house_ids.includes(houseId)
-      : true;
+      : false;
   }
   if (user.role === "manager")
     return user.assigned_house_ids.includes(houseId);
@@ -108,10 +108,9 @@ export function getAccessibleHouseFilter(
 ): string[] | null {
   // Admins see all houses in their workspace (not the entire DB).
   // workspace_house_ids is loaded at auth time from the houses table.
-  // Falls back to null (unfiltered) only if no workspace is set — this
-  // keeps backward compatibility for pre-migration data.
+  // Fails closed to an empty list when the admin has no workspace.
   if (user.role === "admin") {
-    return user.workspace_id ? user.workspace_house_ids : null;
+    return user.workspace_id ? user.workspace_house_ids : [];
   }
   if (user.role === "manager") return user.assigned_house_ids;
   return [];

@@ -23,12 +23,11 @@ export async function sendCheckIn(houseIds: string[]) {
     return err("Please select at least one house");
   }
 
-  // Managers can only send to their assigned houses
-  if (user.role === "manager") {
-    for (const houseId of houseIds) {
-      if (!canAccessHouse(user, houseId)) {
-        return err("You can only send check-ins to houses you manage");
-      }
+  // Every target house must be inside the caller's workspace (admins)
+  // or assigned houses (managers).
+  for (const houseId of houseIds) {
+    if (!canAccessHouse(user, houseId)) {
+      return err("You can only send check-ins to houses you manage");
     }
   }
 
@@ -224,10 +223,14 @@ export async function getCheckInBatches() {
     return ok({ batches: [] });
   }
 
-  const { data: responses } = await adminClient
+  let responsesQuery = adminClient
     .from("check_in_responses")
     .select("id, batch_id, status, resident_id, house_id, completed_at, form_data, resident:residents!check_in_responses_resident_id_fkey(full_name)")
     .in("batch_id", batchIds);
+  if (houseFilter) {
+    responsesQuery = responsesQuery.in("house_id", houseFilter);
+  }
+  const { data: responses } = await responsesQuery;
 
   // Get creator names
   const creatorIds = [...new Set((batches ?? []).map((b) => b.created_by))];

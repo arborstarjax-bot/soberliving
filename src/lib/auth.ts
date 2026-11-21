@@ -25,7 +25,6 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
 
   const [
     profileRes,
-    roleRes,
     workspaceMemberRes,
     assignmentsRes,
     pendingCommitmentRes,
@@ -39,16 +38,11 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
       )
       .eq("id", user.id)
       .single(),
-    supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .limit(1)
-      .single(),
     admin
       .from("workspace_members")
       .select("workspace_id, role, status")
       .eq("user_id", user.id)
+      .order("joined_at", { ascending: true })
       .limit(1)
       .maybeSingle(),
     // Manager assignments — harmlessly empty for non-managers
@@ -101,13 +95,22 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     .account_status;
   if (status && status !== "active") return null;
 
-  const role: UserRole = roleRes.data?.role ?? "resident";
+  // Role and workspace come exclusively from the workspace_members row
+  // (read through the service-role client), never from user_roles or
+  // users.workspace_id — both are reachable through the REST API.
+  const memberStatus = (workspaceMemberRes.data?.status as string) ?? null;
+  const memberRole = workspaceMemberRes.data?.role as WorkspaceRole | undefined;
+  const role: UserRole =
+    memberStatus === "active" && memberRole
+      ? memberRole === "owner"
+        ? "admin"
+        : memberRole
+      : "resident";
   const isResident = role === "resident" || profile.is_resident === true;
 
-  // Resolve workspace_id from profile or workspace_members lookup
-  const profileWsId = (profile as { workspace_id?: string | null }).workspace_id
-    ?? workspaceMemberRes.data?.workspace_id
-    ?? null;
+  // Fail closed: no membership row means no workspace, regardless of
+  // what users.workspace_id claims.
+  const profileWsId = workspaceMemberRes.data?.workspace_id ?? null;
 
   // Admin workspace house scoping — only needed for admins, fires as a
   // single follow-up query. Admins are a minority of users so the extra
@@ -138,7 +141,6 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     residentRows.every((r) => r.status !== "active");
 
   const workspaceId: string | null = profileWsId;
-  const memberStatus = (workspaceMemberRes.data?.status as string) ?? null;
   const workspaceRole: WorkspaceRole | null =
     memberStatus === "active"
       ? (workspaceMemberRes.data?.role as WorkspaceRole) ?? null

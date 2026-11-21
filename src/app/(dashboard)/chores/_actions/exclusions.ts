@@ -26,9 +26,17 @@ export async function addChoreExclusion(
     .maybeSingle();
 
   if (!chore) return { error: "Chore not found" };
-  if (user.role !== "admin" && !canAccessHouse(user, chore.house_id)) {
+  if (!canAccessHouse(user, chore.house_id)) {
     return { error: "Not authorized" };
   }
+
+  const { data: resident } = await supabase
+    .from("residents")
+    .select("full_name")
+    .eq("id", residentId)
+    .eq("house_id", chore.house_id)
+    .maybeSingle();
+  if (!resident) return { error: "Resident not found in this house" };
 
   const { error } = await supabase
     .from("chore_exclusions")
@@ -43,12 +51,6 @@ export async function addChoreExclusion(
     if (error.code === "23505") return { error: "This resident is already excluded from this chore" };
     return { error: error.message };
   }
-
-  const { data: resident } = await supabase
-    .from("residents")
-    .select("full_name")
-    .eq("id", residentId)
-    .single();
 
   await logActivity({
     houseId: chore.house_id,

@@ -76,6 +76,15 @@ export async function createBlocker(input: CreateBlockerInput) {
   if (input.attachmentPaths.length > MAX_FILES) {
     return err(`Too many attachments (max ${MAX_FILES})`);
   }
+  // Attachment paths must live under the caller's own upload prefix —
+  // callers may not reference another user's storage objects.
+  if (
+    input.attachmentPaths.some(
+      (path) => !path.startsWith(`${user.id}/`)
+    )
+  ) {
+    return err("Invalid attachment path");
+  }
 
   const admin = createAdminClient();
 
@@ -83,30 +92,28 @@ export async function createBlocker(input: CreateBlockerInput) {
   // target house is in their assigned set; for target_type='residents'
   // we resolve each resident's active house and require the manager
   // to have access to it.
-  if (user.role === "manager") {
-    if (input.targetType === "all") {
-      return err("Managers can only target specific houses or residents, not everyone.");
-    }
-    if (input.targetType === "house") {
-      for (const hid of input.targetHouseIds) {
-        if (!canAccessHouse(user, hid)) {
-          return err("You can't target a house you're not assigned to.");
-        }
+  if (input.targetType === "all" && user.role === "manager") {
+    return err("Managers can only target specific houses or residents, not everyone.");
+  }
+  if (input.targetType === "house") {
+    for (const hid of input.targetHouseIds) {
+      if (!canAccessHouse(user, hid)) {
+        return err("You can't target a house you're not assigned to.");
       }
     }
-    if (input.targetType === "residents") {
-      if (input.targetUserIds.length === 0) {
-        return err("Pick at least one resident.");
-      }
-      const { data: residents } = await admin
-        .from("residents")
-        .select("user_id, house_id")
-        .in("user_id", input.targetUserIds)
-        .eq("status", "active");
-      for (const r of residents ?? []) {
-        if (!canAccessHouse(user, r.house_id as string)) {
-          return err("One or more residents are not in your assigned houses.");
-        }
+  }
+  if (input.targetType === "residents") {
+    if (input.targetUserIds.length === 0) {
+      return err("Pick at least one resident.");
+    }
+    const { data: residents } = await admin
+      .from("residents")
+      .select("user_id, house_id")
+      .in("user_id", input.targetUserIds)
+      .eq("status", "active");
+    for (const r of residents ?? []) {
+      if (!canAccessHouse(user, r.house_id as string)) {
+        return err("One or more residents are not in your assigned houses.");
       }
     }
   }
@@ -174,6 +181,7 @@ export async function archiveBlocker(blockerId: string) {
     .from("blockers")
     .select("id, title, created_by, archived_at")
     .eq("id", blockerId)
+    .eq("workspace_id", user.workspace_id)
     .maybeSingle();
   if (!blocker) return err("Blocker not found");
   if (blocker.archived_at) return err("Already archived");
@@ -224,6 +232,7 @@ export async function deleteBlocker(blockerId: string) {
     .from("blockers")
     .select("id, title, created_by, attachment_paths")
     .eq("id", blockerId)
+    .eq("workspace_id", user.workspace_id)
     .maybeSingle();
   if (!blocker) return err("Notice not found");
   if (user.role !== "admin" && blocker.created_by !== user.id) {

@@ -65,7 +65,7 @@ export async function createPayment(
 
   if (!parsed.success) return err(parsed.error.issues[0].message);
 
-  if (user.role !== "admin" && !canAccessHouse(user, parsed.data.house_id)) {
+  if (!canAccessHouse(user, parsed.data.house_id)) {
     return err("Not authorized");
   }
 
@@ -77,7 +77,7 @@ export async function createPayment(
   const [{ data: resident }, { data: house }] = await Promise.all([
     supabase
       .from("residents")
-      .select("id, full_name, user_id")
+      .select("id, full_name, user_id, house_id")
       .eq("id", parsed.data.resident_id)
       .single(),
     supabase
@@ -89,6 +89,15 @@ export async function createPayment(
 
   if (!resident) return err("Resident not found");
   if (!house) return err("House not found");
+
+  // The resident must live in the house the payment is recorded
+  // against — otherwise a resident from another workspace/house could
+  // be attached to a charge here.
+  const residentHouseId = (resident as { house_id?: string | null })
+    .house_id;
+  if (residentHouseId !== parsed.data.house_id) {
+    return err("Resident not found in this house");
+  }
 
   // If a charge was selected, pull it and prefill period / due_date
   // from it so the receipt reflects which billing period this covers.
@@ -120,10 +129,17 @@ export async function createPayment(
   if (chargeIdForPayment) {
     const { data } = await supabase
       .from("payment_charges")
-      .select("id, due_date, period_start, period_end")
+      .select("id, due_date, period_start, period_end, house_id")
       .eq("id", chargeIdForPayment)
       .single();
     chargeRow = (data as unknown as ChargeRow | null) ?? null;
+    if (
+      chargeRow &&
+      (chargeRow as { house_id?: string }).house_id !==
+        parsed.data.house_id
+    ) {
+      return err("Charge not found in this house");
+    }
   }
 
   const paidAtIso =
@@ -305,6 +321,9 @@ export async function voidPayment(
     .single();
 
   if (!payment) return err("Payment not found");
+  if (!canAccessHouse(user, payment.house_id as string)) {
+    return err("Not authorized");
+  }
 
   if (payment.status === "void" || payment.status === "refunded") {
     return err("Payment cannot be voided");
@@ -381,6 +400,9 @@ export async function deletePayment(
     .single();
 
   if (!payment) return err("Payment not found");
+  if (!canAccessHouse(user, payment.house_id as string)) {
+    return err("Not authorized");
+  }
 
   // If the payment was applied to a charge, reverse the application
   // first (same atomic RPC the void path uses) so the charge's
@@ -535,11 +557,7 @@ export async function proposeAmendment(
 
   if (!active) return err("No active commitment to amend");
 
-  if (
-    user.role === "admin"
-      ? false
-      : !canAccessHouse(user, active.house_id as string)
-  ) {
+  if (!canAccessHouse(user, active.house_id as string)) {
     return err("Not authorized");
   }
 
@@ -698,6 +716,9 @@ export async function cancelPendingAmendment(
     .single();
 
   if (!row) return err("Amendment not found");
+  if (!canAccessHouse(user, row.house_id as string)) {
+    return err("Not authorized");
+  }
   if (row.status !== "pending_resident_signature" || !row.parent_commitment_id) {
     return err("Only pending amendments can be cancelled");
   }
@@ -768,6 +789,9 @@ export async function adjustChargeAmount(
     .single();
 
   if (!charge) return err("Charge not found");
+  if (!canAccessHouse(user, charge.house_id as string)) {
+    return err("Not authorized");
+  }
   if (charge.status !== "open" && charge.status !== "partial") {
     return err("Only open or partial charges can be adjusted");
   }
@@ -835,15 +859,24 @@ export async function addOneTimeCharge(
   });
   if (!parsed.success) return err(parsed.error.issues[0].message);
 
-  if (
-    user.role === "admin"
-      ? false
-      : !canAccessHouse(user, parsed.data.house_id)
-  ) {
+  if (!canAccessHouse(user, parsed.data.house_id)) {
     return err("Not authorized");
   }
 
   const admin = createAdminClient();
+
+  // The resident being charged must live in the same house.
+  const { data: chargeResident } = await admin
+    .from("residents")
+    .select("house_id")
+    .eq("id", parsed.data.resident_id)
+    .maybeSingle();
+  if (
+    !chargeResident ||
+    (chargeResident.house_id as string) !== parsed.data.house_id
+  ) {
+    return err("Resident not found in this house");
+  }
 
   const { data: inserted, error } = await admin
     .from("payment_charges")
@@ -912,6 +945,9 @@ export async function writeOffCharge(
     .single();
 
   if (!charge) return err("Charge not found");
+  if (!canAccessHouse(user, charge.house_id as string)) {
+    return err("Not authorized");
+  }
   if (charge.status !== "open" && charge.status !== "partial") {
     return err("Only open or partial charges can be written off");
   }
