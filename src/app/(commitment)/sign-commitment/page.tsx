@@ -1,5 +1,10 @@
 import { requireAuth } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/server";
+import {
+  getWorkspaceForUser,
+  getWorkspace,
+  getWorkspaceSettings,
+} from "@/lib/workspace";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CommitmentSigningForm } from "./commitment-signing-form";
 
@@ -40,6 +45,44 @@ export default async function SignCommitmentPage() {
   }
 
   const house = commitment.houses as { name: string; address: string | null } | null;
+
+  // Generic contract context: entity name, counter-signer name, and the
+  // printed property addresses all come from the workspace, not a
+  // hardcoded contract.
+  const member = await getWorkspaceForUser(user.id);
+  const [workspace, wsSettings, housesResult] = await Promise.all([
+    member ? getWorkspace(member.workspace_id) : Promise.resolve(null),
+    member
+      ? getWorkspaceSettings(member.workspace_id)
+      : Promise.resolve(null),
+    member
+      ? adminClient
+          .from("houses")
+          .select("name, address")
+          .eq("workspace_id", member.workspace_id)
+      : Promise.resolve({ data: [] as { name: string; address: string | null }[] }),
+  ]);
+  const entityName =
+    (workspace?.name as string | null) ?? house?.name ?? "the house";
+  const directorName =
+    (wsSettings?.director_name as string | null) ?? "the Executive Director";
+  const propertyAddresses = Array.from(
+    new Set(
+      ((housesResult.data ?? []) as { name: string; address: string | null }[])
+        .map((h) => h.address)
+        .filter((a): a is string => Boolean(a))
+    )
+  );
+  const assignedAddress =
+    (commitment.property_location as string | null) ?? house?.address ?? "";
+  if (
+    assignedAddress &&
+    !propertyAddresses.some((a) =>
+      assignedAddress.toLowerCase().includes(a.split(",")[0].toLowerCase())
+    )
+  ) {
+    propertyAddresses.push(assignedAddress);
+  }
 
   // If this is an amendment (parent_commitment_id set), fetch the
   // parent row so the signing form can show old-vs-new side by side.
@@ -198,6 +241,9 @@ export default async function SignCommitmentPage() {
         commitmentId={commitment.id}
         residentName={user.full_name}
         houseName={house?.name ?? ""}
+        entityName={entityName}
+        directorName={directorName}
+        propertyAddresses={propertyAddresses}
         propertyLocation={commitment.property_location ?? house?.address ?? ""}
         rentAmount={commitment.rent_amount}
         adminFee={commitment.admin_fee}
