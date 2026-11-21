@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sweepOpenChargesForActiveCommitments } from "@/lib/payments/charges";
+import {
+  sweepOpenChargesForActiveCommitments,
+  computeRentDueDate,
+  nextDueDate,
+  normalizePaymentFrequency,
+  parseIsoDate,
+  toIsoDate,
+} from "@/lib/payments/charges";
 import { createAdminClient } from "@/lib/supabase/server";
 import { sendWebPush } from "@/lib/push";
 
@@ -107,6 +114,82 @@ export async function GET(request: NextRequest) {
         url: "/payments",
       });
       remindersSent++;
+    }
+
+    // Day-before reminders: open charges for tomorrow can never exist
+    // (the sweep only opens due ≤ today), so compute each active
+    // commitment's next due date from its terms and remind when it
+    // lands tomorrow — only for workspaces set to `day_before`.
+    const { data: commitments } = await admin
+      .from("house_commitments")
+      .select(
+        "id, resident_id, commitment_start_date, billing_anchor_date, payment_frequency, rent_amount, residents!inner(user_id, house_id, houses!inner(workspace_id))"
+      )
+      .eq("status", "active")
+      .not("resident_id", "is", null)
+      .gt("rent_amount", 0);
+
+    const dayBeforeCommitments = (commitments ?? []).filter((c) => {
+      const res = c.residents as unknown as {
+        user_id: string | null;
+        houses: { workspace_id: string | null };
+      };
+      const wsId = res.houses?.workspace_id ?? null;
+      if (!res.user_id) return false;
+      const cfg = wsId ? reminderByWs.get(wsId) : undefined;
+      return cfg?.rent?.enabled !== false && cfg?.rent?.timing === "day_before";
+    });
+
+    if (dayBeforeCommitments.length > 0) {
+      // Only the LATEST anchor per commitment is needed (nextDueDate
+      // steps from the max), so order desc and keep the first row seen
+      // per commitment — newest-first also means a 1000-row API page
+      // can only truncate history that doesn't affect the result.
+      // period_start is null on legacy rows; fall back to due_date,
+      // same as sweepOpenChargesForActiveCommitments.
+      const { data: periodRows } = await admin
+        .from("payment_charges")
+        .select("commitment_id, period_start, due_date")
+        .in(
+          "commitment_id",
+          dayBeforeCommitments.map((c) => c.id)
+        )
+        .eq("charge_type", "rent")
+        .order("period_start", { ascending: false, nullsFirst: false })
+        .order("due_date", { ascending: false })
+        .limit(1000);
+      const latestByCommitment = new Map<string, string>();
+      for (const p of periodRows ?? []) {
+        const key = p.commitment_id as string;
+        if (latestByCommitment.has(key)) continue;
+        const anchor =
+          (p.period_start as string | null) ?? (p.due_date as string);
+        latestByCommitment.set(key, anchor);
+      }
+
+      for (const c of dayBeforeCommitments) {
+        const start = parseIsoDate(
+          (c.billing_anchor_date as string | null) ??
+            (c.commitment_start_date as string)
+        );
+        const latest = latestByCommitment.get(c.id);
+        const periods = latest ? [parseIsoDate(latest)] : [];
+        const nextDue = computeRentDueDate(
+          nextDueDate(
+            start,
+            periods,
+            normalizePaymentFrequency(c.payment_frequency as string)
+          )
+        );
+        if (toIsoDate(nextDue) !== tomorrowIso) continue;
+        const res = c.residents as unknown as { user_id: string };
+        await sendWebPush(res.user_id, "rent_reminder", {
+          title: "Rent Due",
+          body: `Rent of $${Number(c.rent_amount).toFixed(2)} is due tomorrow (${tomorrowIso}).`,
+          url: "/payments",
+        });
+        remindersSent++;
+      }
     }
 
     return NextResponse.json({
