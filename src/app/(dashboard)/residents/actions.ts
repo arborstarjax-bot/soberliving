@@ -607,13 +607,21 @@ export async function transferResident(
 
   const sourceHouseId: string = resident.house_id;
 
-  // Verify target house exists + is active.
+  // Verify target house exists + is active + belongs to the same
+  // workspace. Houses with no workspace_id are legacy and open to all.
   const { data: targetHouse } = await supabase
     .from("houses")
-    .select("id, name, is_active")
+    .select("id, name, is_active, workspace_id")
     .eq("id", targetHouseId)
     .maybeSingle();
   if (!targetHouse || !targetHouse.is_active) {
+    return { error: "Target house is not available" };
+  }
+  if (
+    user.workspace_id &&
+    targetHouse.workspace_id &&
+    targetHouse.workspace_id !== user.workspace_id
+  ) {
     return { error: "Target house is not available" };
   }
 

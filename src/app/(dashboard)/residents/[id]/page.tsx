@@ -319,11 +319,18 @@ export default async function ResidentDetailPage(
     residentRole = roleData?.role ?? null;
   }
 
-  // Fetch all houses + manager house assignments (for role editing)
-  const { data: allHouses } = await supabase
-    .from("houses")
-    .select("id, name")
-    .order("name");
+  // Fetch this workspace's houses + manager house assignments (for
+  // role editing). Scoped to the user's workspace — without it the
+  // Transfer House dialog offered every house in the database,
+  // including other workspaces'. Legacy houses with no workspace_id
+  // stay visible so pre-workspace installs keep working.
+  let allHousesQuery = supabase.from("houses").select("id, name").order("name");
+  if (user.workspace_id) {
+    allHousesQuery = allHousesQuery.or(
+      `workspace_id.eq.${user.workspace_id},workspace_id.is.null`
+    );
+  }
+  const { data: allHouses } = await allHousesQuery;
 
   let assignedHouseIds: string[] = [];
   if (resident.user_id) {
