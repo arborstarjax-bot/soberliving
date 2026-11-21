@@ -17,12 +17,14 @@ export function LogMeetingForm({ photoRequired }: Props) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
   const [signature, setSignature] = useState<string | null>(null);
+  const [padKey, setPadKey] = useState(0);
   const [state, action, pending] = useActionState(logMeeting, undefined);
 
   useEffect(() => {
     if (!pending && state && !state.error) {
       formRef.current?.reset();
       setSignature(null);
+      setPadKey((k) => k + 1);
       router.refresh();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -86,6 +88,7 @@ export function LogMeetingForm({ photoRequired }: Props) {
           <SignaturePad
             label="Facilitator Signature *"
             onSignatureChange={setSignature}
+            resetKey={padKey}
           />
 
           <div className="space-y-2">
