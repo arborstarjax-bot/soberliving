@@ -271,15 +271,3 @@ export async function deleteBlocker(blockerId: string) {
  * Staff-side signed URL for a blocker attachment, used to preview
  * uploads on the admin list.
  */
-export async function getBlockerAttachmentUrlAdmin(storagePath: string) {
-  const user = await requireAuth();
-  if (!canCreateBlockers(user.role)) {
-    return { error: "Not authorized" };
-  }
-  const admin = createAdminClient();
-  const { data, error } = await admin.storage
-    .from(BUCKET)
-    .createSignedUrl(storagePath, 60 * 10);
-  if (error || !data) return { error: error?.message ?? "Failed to sign URL" };
-  return { url: data.signedUrl };
-}

@@ -8,7 +8,6 @@ import type {
   WorkspaceSettings,
   WorkspacePaymentConfig,
   HouseCurfew,
-  WorkspaceInvite,
   WorkspaceMember,
 } from "@/lib/types";
 
@@ -133,19 +132,6 @@ export async function getEffectiveHouseCurfews(
   return [];
 }
 
-export async function getWorkspaceInvites(
-  workspaceId: string
-): Promise<WorkspaceInvite[]> {
-  const admin = createAdminClient();
-  const { data } = await admin
-    .from("workspace_invites")
-    .select("*")
-    .eq("workspace_id", workspaceId)
-    .is("accepted_at", null)
-    .gt("expires_at", new Date().toISOString())
-    .order("created_at", { ascending: false });
-  return (data ?? []) as WorkspaceInvite[];
-}
 
 export async function getWorkspaceMembers(
   workspaceId: string,

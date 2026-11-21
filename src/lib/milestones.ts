@@ -1,9 +1,5 @@
-import {
-  differenceInDays,
-  differenceInMonths,
-  differenceInYears,
-  format,
-} from "date-fns";
+import { differenceInDays, format } from "date-fns";
+
 
 export interface Milestone {
   label: string;
@@ -58,21 +54,6 @@ export function isSobrietyDateFuture(sobrietyDate: string): boolean {
   return differenceInDays(new Date(), new Date(sobrietyDate)) < 0;
 }
 
-export function getSobrietySummary(sobrietyDate: string): string {
-  const start = new Date(sobrietyDate);
-  const now = new Date();
-  const years = differenceInYears(now, start);
-  const months = differenceInMonths(now, start) % 12;
-  const days = differenceInDays(now, start);
-
-  if (years > 0) {
-    return `${years}y ${months}m`;
-  }
-  if (months > 0) {
-    return `${months}m ${days % 30}d`;
-  }
-  return `${days}d`;
-}
 
 export function getNextMilestone(
   sobrietyDate: string
