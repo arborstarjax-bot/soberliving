@@ -141,19 +141,30 @@ export async function GET(request: NextRequest) {
     });
 
     if (dayBeforeCommitments.length > 0) {
+      // Only the LATEST anchor per commitment is needed (nextDueDate
+      // steps from the max), so order desc and keep the first row seen
+      // per commitment — newest-first also means a 1000-row API page
+      // can only truncate history that doesn't affect the result.
+      // period_start is null on legacy rows; fall back to due_date,
+      // same as sweepOpenChargesForActiveCommitments.
       const { data: periodRows } = await admin
         .from("payment_charges")
-        .select("commitment_id, period_start")
+        .select("commitment_id, period_start, due_date")
         .in(
           "commitment_id",
           dayBeforeCommitments.map((c) => c.id)
         )
-        .eq("charge_type", "rent");
-      const periodsByCommitment = new Map<string, string[]>();
+        .eq("charge_type", "rent")
+        .order("period_start", { ascending: false, nullsFirst: false })
+        .order("due_date", { ascending: false })
+        .limit(1000);
+      const latestByCommitment = new Map<string, string>();
       for (const p of periodRows ?? []) {
-        const list = periodsByCommitment.get(p.commitment_id as string) ?? [];
-        list.push(p.period_start as string);
-        periodsByCommitment.set(p.commitment_id as string, list);
+        const key = p.commitment_id as string;
+        if (latestByCommitment.has(key)) continue;
+        const anchor =
+          (p.period_start as string | null) ?? (p.due_date as string);
+        latestByCommitment.set(key, anchor);
       }
 
       for (const c of dayBeforeCommitments) {
@@ -161,7 +172,8 @@ export async function GET(request: NextRequest) {
           (c.billing_anchor_date as string | null) ??
             (c.commitment_start_date as string)
         );
-        const periods = (periodsByCommitment.get(c.id) ?? []).map(parseIsoDate);
+        const latest = latestByCommitment.get(c.id);
+        const periods = latest ? [parseIsoDate(latest)] : [];
         const nextDue = computeRentDueDate(
           nextDueDate(
             start,
