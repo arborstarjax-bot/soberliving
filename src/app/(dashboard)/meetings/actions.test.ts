@@ -102,29 +102,28 @@ beforeEach(() => {
 describe("logMeeting", () => {
   it("rejects non-residents", async () => {
     authMock.mockResolvedValue(adminUser);
-    expect((await logMeeting(undefined, valid())).error).toMatch(
-      /only residents/i
-    );
+    const __r0 = await logMeeting(undefined, valid());
+    expect(__r0.ok === false && __r0.error).toMatch(/only residents/i);
   });
   it("requires a meeting name", async () => {
     const d = valid();
     d.set("meeting_name", "");
-    expect((await logMeeting(undefined, d)).error).toMatch(/name is required/i);
+    const __r = await logMeeting(undefined, d); expect(__r.ok === false && __r.error).toMatch(/name is required/i);
   });
   it("requires a location", async () => {
     const d = valid();
     d.set("location", " ");
-    expect((await logMeeting(undefined, d)).error).toMatch(/location/i);
+    const __r = await logMeeting(undefined, d); expect(__r.ok === false && __r.error).toMatch(/location/i);
   });
   it("requires a valid date", async () => {
     const d = valid();
     d.set("meeting_at", "not-a-date");
-    expect((await logMeeting(undefined, d)).error).toMatch(/date/i);
+    const __r = await logMeeting(undefined, d); expect(__r.ok === false && __r.error).toMatch(/date/i);
   });
   it("requires a drawn signature", async () => {
     const d = valid();
     d.set("facilitator_signature", "signed");
-    expect((await logMeeting(undefined, d)).error).toMatch(/signature pad/i);
+    const __r = await logMeeting(undefined, d); expect(__r.ok === false && __r.error).toMatch(/signature pad/i);
   });
   it("requires a photo when the workspace requires it", async () => {
     settingsMock.mockResolvedValue(wsSettings(true));
@@ -139,7 +138,7 @@ describe("logMeeting", () => {
     clientMock.mockResolvedValue(db);
     adminMock.mockReturnValue(db);
     const result = await logMeeting(undefined, valid());
-    expect(result).toEqual({});
+    expect(result.ok).toBe(true);
     expect(db.inserts.meetings).toHaveLength(1);
     expect(db.inserts.meetings[0]).toMatchObject({
       resident_id: "r1",
