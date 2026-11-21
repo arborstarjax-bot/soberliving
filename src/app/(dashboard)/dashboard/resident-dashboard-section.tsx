@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ListChecks } from "lucide-react";
@@ -60,6 +61,26 @@ export async function ResidentDashboardSection({
     .order("created_at", { ascending: false })
     .limit(5);
 
+  // Chores this resident covers while the assignee is on approved
+  // leave — admin client because RLS hides other residents' leaves.
+  const { data: coverRows } = await createAdminClient()
+    .from("leave_requests")
+    .select("resident_id")
+    .eq("covering_resident_id", resident.id)
+    .eq("status", "approved")
+    .lte("departure_date", getHouseToday(DEFAULT_TIMEZONE))
+    .gte("expected_return_date", getHouseToday(DEFAULT_TIMEZONE));
+  const coveredResidentIds = (coverRows ?? []).map((r) => r.resident_id);
+  const { data: coveredAssignments } = coveredResidentIds.length > 0
+    ? await supabase
+        .from("chore_rotation_assignments")
+        .select(
+          "*, chore:chores(name, days_of_week), rotation:chore_rotations(cycle_start_date, cycle_end_date, is_current), chore_signoffs(*)"
+        )
+        .in("resident_id", coveredResidentIds)
+        .limit(10)
+    : { data: [] };
+
   // Payment visibility is intentionally staff-only: residents no
   // longer see rent / admin-fee / balance info on their dashboard
   // ("payment is handled internally"). The /payments route is also
@@ -90,8 +111,9 @@ export async function ResidentDashboardSection({
 
   const todayStr = getHouseToday(DEFAULT_TIMEZONE);
   const rotationRows =
-    (myRotationAssignments ?? []) as unknown as Array<{
+    ([...(myRotationAssignments ?? []), ...(coveredAssignments ?? [])]) as unknown as Array<{
       id: string;
+      resident_id?: string;
       chore: { name: string; days_of_week: string[] | null } | null;
       rotation: { is_current: boolean } | null;
       chore_signoffs: Array<{
@@ -100,6 +122,8 @@ export async function ResidentDashboardSection({
         status: string;
       }> | null;
     }>;
+  const isCovered = (ra: { resident_id?: string }) =>
+    ra.resident_id !== undefined && ra.resident_id !== resident.id;
   let choresDueTodayCount = 0;
   const choreNames = new Set<string>();
   for (const ra of rotationRows) {
@@ -244,7 +268,14 @@ export async function ResidentDashboardSection({
                       className="flex items-center justify-between rounded-md border p-3"
                     >
                       <div>
-                        <p className="font-medium">{ra.chore?.name}</p>
+                        <p className="font-medium">
+                          {ra.chore?.name}
+                          {isCovered(ra) && (
+                            <Badge variant="secondary" className="ml-2">
+                              Covering
+                            </Badge>
+                          )}
+                        </p>
                         <p className="text-xs text-muted-foreground">
                           {approved}/{signoffs.length} completed · {pending}{" "}
                           pending
