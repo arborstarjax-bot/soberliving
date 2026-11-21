@@ -76,16 +76,43 @@ export default async function IntakeReviewPage({
   if (currentUser.workspace_id) {
     housesQuery = housesQuery.eq("workspace_id", currentUser.workspace_id);
   }
-  const [{ data: intakeUsersRaw }, { data: commitmentsRaw }, { data: housesRaw }] =
-    await Promise.all([
-      intakeUsersQuery,
-      adminClient
-        .from("house_commitments")
-        .select(
-          "user_id, status, commitment_start_date, house_id, payment_frequency, rent_amount, admin_fee, commitment_term, notes, parent_commitment_id"
-        ),
-      housesQuery,
+  // Discharged residents stay out of the queue entirely: their
+  // users row keeps intake_completed/is_active, but discharge is
+  // meant to end their review cycle. A user is only excluded when
+  // every resident record they have is discharged — reinstated
+  // residents get an 'active' record back, even when an older
+  // discharged record still exists. residents has no workspace_id,
+  // so the tenant scope is applied client-side via house_id below.
+  // Fire the independent fetches first; residentsQuery depends on
+  // the applicant ids, so it joins the batch once they resolve.
+  const intakeUsersPromise = intakeUsersQuery;
+  const commitmentsPromise = adminClient
+    .from("house_commitments")
+    .select(
+      "user_id, status, commitment_start_date, house_id, payment_frequency, rent_amount, admin_fee, commitment_term, notes, parent_commitment_id"
+    )
+    // Only live commitments count as "already approved" — a
+    // discharged/reinstated resident keeps their old cancelled row
+    // for history but must re-enter the pending queue.
+    .in("status", [
+      "active",
+      "pending_staff_signature",
+      "pending_resident_signature",
     ]);
+  const housesPromise = housesQuery;
+
+  const { data: intakeUsersRaw } = await intakeUsersPromise;
+
+  // Scoped to the applicants themselves — bounded by the queue size,
+  // never truncated by the PostgREST row cap.
+  const applicantIds = (intakeUsersRaw ?? []).map((u) => u.id);
+  const residentsQuery = adminClient
+    .from("residents")
+    .select("user_id, house_id, status")
+    .in("user_id", applicantIds.length ? applicantIds : ["00000000-0000-0000-0000-000000000000"]);
+
+  const [{ data: commitmentsRaw }, { data: housesRaw }, { data: dischargedRaw }] =
+    await Promise.all([commitmentsPromise, housesPromise, residentsQuery]);
 
   // Fetch workspace settings to determine if commitment is required
   const wsSettings = currentUser.workspace_id
@@ -105,12 +132,32 @@ export default async function IntakeReviewPage({
   );
   const houseById = new Map(houses.map((h) => [h.id, h]));
 
+  const dischargedUserIds = new Set<string>();
+  for (const r of dischargedRaw ?? []) {
+    if (currentUser.workspace_id && !houseById.has(r.house_id)) continue;
+    if (typeof r.user_id === "string" && r.status === "discharged") {
+      dischargedUserIds.add(r.user_id);
+    }
+  }
+  for (const r of dischargedRaw ?? []) {
+    if (
+      typeof r.user_id === "string" &&
+      r.status !== "discharged" &&
+      (!currentUser.workspace_id || houseById.has(r.house_id))
+    ) {
+      // An active/on-leave record means the user was reinstated —
+      // their older discharged rows must not hide the resubmission.
+      dischargedUserIds.delete(r.user_id);
+    }
+  }
+
   // Partition
   const pendingUsers = intakeUsers.filter(
     (u) =>
       (u.account_status ?? "active") !== "rejected" &&
       u.is_active !== false &&
-      !commitmentByUser.has(u.id)
+      !commitmentByUser.has(u.id) &&
+      !dischargedUserIds.has(u.id)
   );
   const approvedUsers = intakeUsers.filter(
     (u) =>
