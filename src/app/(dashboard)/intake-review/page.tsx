@@ -83,14 +83,18 @@ export default async function IntakeReviewPage({
   // residents get an 'active' record back, even when an older
   // discharged record still exists. residents has no workspace_id,
   // so the tenant scope is applied client-side via house_id below.
+  const { data: intakeUsersRaw } = await intakeUsersQuery;
+
+  // Scoped to the applicants themselves — bounded by the queue size,
+  // never truncated by the PostgREST row cap.
+  const applicantIds = (intakeUsersRaw ?? []).map((u) => u.id);
   const residentsQuery = adminClient
     .from("residents")
     .select("user_id, house_id, status")
-    .not("user_id", "is", null);
+    .in("user_id", applicantIds.length ? applicantIds : ["00000000-0000-0000-0000-000000000000"]);
 
-  const [{ data: intakeUsersRaw }, { data: commitmentsRaw }, { data: housesRaw }, { data: dischargedRaw }] =
+  const [{ data: commitmentsRaw }, { data: housesRaw }, { data: dischargedRaw }] =
     await Promise.all([
-      intakeUsersQuery,
       adminClient
         .from("house_commitments")
         .select(
