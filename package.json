@@ -42,6 +42,7 @@
     "@types/web-push": "^3.6.4",
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
+    "playwright-core": "^1.65.1",
     "server-only": "file:vendor/server-only",
     "supabase": "^2.90.0",
     "tailwindcss": "^4",

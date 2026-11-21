@@ -114,6 +114,9 @@ export function RotationBoard({
             while the resident/days columns horizontally scroll. The
             `min-w-[640px]` on the table guarantees the sticky column
             actually has something to scroll under on narrow screens. */}
+        <p className="border-b px-3 py-1.5 text-xs text-muted-foreground sm:hidden">
+          Swipe to see all days →
+        </p>
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm min-w-[640px]">
             <thead>
