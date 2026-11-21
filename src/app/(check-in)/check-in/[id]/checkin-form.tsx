@@ -62,7 +62,7 @@ export function CheckInForm({
     }
     if (!formData.jsl_feeling_rating) {
       setError(
-        "Please rate how you feel about being a resident at JSL (Question 8)."
+        "Please rate how you feel about being a resident here (Question 8)."
       );
       return;
     }
@@ -280,7 +280,7 @@ export function CheckInForm({
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            8. How are you feeling about being a resident at JSL?
+            8. How are you feeling about being a resident here?
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             1 = terrible, 10 = best
