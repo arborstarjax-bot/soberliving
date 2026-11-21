@@ -1,4 +1,5 @@
 "use server";
+import { err, ok, okVoid, type ActionResult } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
@@ -11,11 +12,11 @@ import { getHouseTimezone } from "@/lib/workspace";
 import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 
 export async function createDemerit(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
-  if (user.role === "resident") return { error: "Not authorized" };
+  if (user.role === "resident") return err("Not authorized");
   const parsed = createDemeritSchema.safeParse({
     resident_id: formData.get("resident_id"),
     house_id: formData.get("house_id"),
@@ -24,10 +25,10 @@ export async function createDemerit(
     category: formData.get("category") || undefined,
   });
 
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   if (user.role !== "admin" && !canAccessHouse(user, parsed.data.house_id)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const supabase = await createClient();
@@ -52,7 +53,7 @@ export async function createDemerit(
     .select("id")
     .single();
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: parsed.data.house_id,
@@ -101,7 +102,7 @@ export async function createDemerit(
 
   revalidatePath("/discipline");
   revalidatePath(`/residents/${parsed.data.resident_id}`);
-  return {};
+  return okVoid();
 }
 
 export async function editDemerit(
@@ -110,12 +111,12 @@ export async function editDemerit(
   notes?: string
 ) {
   const user = await requireAuth();
-  if (user.role === "resident") return { error: "Not authorized" };
+  if (user.role === "resident") return err("Not authorized");
 
-  if (!demeritId) return { error: "Demerit ID is required" };
+  if (!demeritId) return err("Demerit ID is required");
 
   const parsed = editDemeritSchema.safeParse({ reason, notes });
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   const supabase = await createClient();
 
@@ -125,9 +126,9 @@ export async function editDemerit(
     .eq("id", demeritId)
     .maybeSingle();
 
-  if (!demerit) return { error: "Demerit not found" };
+  if (!demerit) return err("Demerit not found");
   if (user.role !== "admin" && !canAccessHouse(user, demerit.house_id)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const updates: Record<string, unknown> = {};
@@ -141,15 +142,15 @@ export async function editDemerit(
     .update(updates)
     .eq("id", demeritId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   revalidatePath("/discipline");
-  return {};
+  return okVoid();
 }
 
 export async function deleteDemerit(demeritId: string) {
   const user = await requireAuth();
-  if (user.role === "resident") return { error: "Not authorized" };
+  if (user.role === "resident") return err("Not authorized");
 
   const supabase = await createClient();
 
@@ -159,9 +160,9 @@ export async function deleteDemerit(demeritId: string) {
     .eq("id", demeritId)
     .single();
 
-  if (!demerit) return { error: "Demerit not found" };
+  if (!demerit) return err("Demerit not found");
   if (user.role !== "admin" && !canAccessHouse(user, demerit.house_id)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const { error } = await supabase
@@ -169,7 +170,7 @@ export async function deleteDemerit(demeritId: string) {
     .delete()
     .eq("id", demeritId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: demerit.house_id,
@@ -182,7 +183,7 @@ export async function deleteDemerit(demeritId: string) {
   });
 
   revalidatePath("/discipline");
-  return {};
+  return okVoid();
 }
 
 export async function markDemeritWorkedOff(
@@ -190,9 +191,9 @@ export async function markDemeritWorkedOff(
   resolutionNote?: string
 ) {
   const user = await requireAuth();
-  if (user.role === "resident") return { error: "Not authorized" };
+  if (user.role === "resident") return err("Not authorized");
 
-  if (!demeritId) return { error: "Demerit ID is required" };
+  if (!demeritId) return err("Demerit ID is required");
 
   const supabase = await createClient();
 
@@ -202,9 +203,9 @@ export async function markDemeritWorkedOff(
     .eq("id", demeritId)
     .single();
 
-  if (!demerit) return { error: "Demerit not found" };
+  if (!demerit) return err("Demerit not found");
   if (user.role !== "admin" && !canAccessHouse(user, demerit.house_id)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const { error } = await supabase
@@ -218,7 +219,7 @@ export async function markDemeritWorkedOff(
     })
     .eq("id", demeritId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: demerit.house_id,
@@ -231,7 +232,7 @@ export async function markDemeritWorkedOff(
   });
 
   revalidatePath("/discipline");
-  return {};
+  return okVoid();
 }
 
 /**
@@ -247,9 +248,9 @@ export async function markDemeritWorkedOff(
  */
 export async function generateMissedChoreDemerits(houseId?: string) {
   const user = await requireAuth();
-  if (user.role === "resident") return { error: "Not authorized" };
+  if (user.role === "resident") return err("Not authorized");
   if (houseId && user.role !== "admin" && !canAccessHouse(user, houseId)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const supabase = await createClient();
@@ -267,7 +268,7 @@ export async function generateMissedChoreDemerits(houseId?: string) {
     }
     revalidatePath("/discipline");
     revalidatePath("/chores");
-    return { count: totalCount };
+    return ok({ count: totalCount });
   }
 
   const { data: houseRow } = await supabase
@@ -318,7 +319,7 @@ export async function generateMissedChoreDemerits(houseId?: string) {
     .lte("sign_off_date", yesterdayStr);
 
   if (!missedSignoffs || missedSignoffs.length === 0) {
-    return { count: 0 };
+    return ok({ count: 0 });
   }
 
   let count = 0;
@@ -447,7 +448,7 @@ export async function generateMissedChoreDemerits(houseId?: string) {
 
   revalidatePath("/discipline");
   revalidatePath("/chores");
-  return { count };
+  return ok({ count });
 }
 
 /**
@@ -460,11 +461,11 @@ export async function generateMissedChoreDemerits(houseId?: string) {
 // --- Restrictions ---
 
 export async function createRestriction(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
-  if (user.role === "resident") return { error: "Not authorized" };
+  if (user.role === "resident") return err("Not authorized");
 
   const residentId = formData.get("resident_id") as string;
   const houseId = formData.get("house_id") as string;
@@ -476,11 +477,11 @@ export async function createRestriction(
   const isHouseCommitment = formData.get("is_house_commitment") === "on";
 
   if (!residentId || !houseId || !description) {
-    return { error: "Resident, house, and description are required" };
+    return err("Resident, house, and description are required");
   }
 
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const supabase = await createClient();
@@ -507,7 +508,7 @@ export async function createRestriction(
     .select("id")
     .single();
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId,
@@ -541,12 +542,12 @@ export async function createRestriction(
   revalidatePath("/discipline");
   revalidatePath(`/residents/${residentId}`);
   revalidatePath("/dashboard");
-  return {};
+  return okVoid();
 }
 
 export async function liftRestriction(restrictionId: string) {
   const user = await requireAuth();
-  if (user.role === "resident") return { error: "Not authorized" };
+  if (user.role === "resident") return err("Not authorized");
 
   const supabase = await createClient();
 
@@ -556,9 +557,9 @@ export async function liftRestriction(restrictionId: string) {
     .eq("id", restrictionId)
     .single();
 
-  if (!restriction) return { error: "Restriction not found" };
+  if (!restriction) return err("Restriction not found");
   if (user.role !== "admin" && !canAccessHouse(user, restriction.house_id)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const { error } = await supabase
@@ -566,7 +567,7 @@ export async function liftRestriction(restrictionId: string) {
     .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq("id", restrictionId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: restriction.house_id,
@@ -599,12 +600,12 @@ export async function liftRestriction(restrictionId: string) {
   revalidatePath("/discipline");
   revalidatePath(`/residents/${restriction.resident_id}`);
   revalidatePath("/dashboard");
-  return {};
+  return okVoid();
 }
 
 export async function deleteRestriction(restrictionId: string) {
   const user = await requireAuth();
-  if (user.role === "resident") return { error: "Not authorized" };
+  if (user.role === "resident") return err("Not authorized");
 
   const supabase = await createClient();
 
@@ -614,9 +615,9 @@ export async function deleteRestriction(restrictionId: string) {
     .eq("id", restrictionId)
     .single();
 
-  if (!restriction) return { error: "Restriction not found" };
+  if (!restriction) return err("Restriction not found");
   if (user.role !== "admin" && !canAccessHouse(user, restriction.house_id)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const { error } = await supabase
@@ -624,7 +625,7 @@ export async function deleteRestriction(restrictionId: string) {
     .delete()
     .eq("id", restrictionId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: restriction.house_id,
@@ -639,18 +640,18 @@ export async function deleteRestriction(restrictionId: string) {
   revalidatePath("/discipline");
   revalidatePath(`/residents/${restriction.resident_id}`);
   revalidatePath("/dashboard");
-  return {};
+  return okVoid();
 }
 
 // Edit an existing restriction's type / description / dates / notes.
 // Admin / manager only. Logs an "restriction_updated" activity entry
 // so the audit trail captures every field change.
 export async function updateRestriction(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
-  if (user.role === "resident") return { error: "Not authorized" };
+  if (user.role === "resident") return err("Not authorized");
 
   const restrictionId = formData.get("restriction_id") as string;
   const restrictionType = formData.get("restriction_type") as string;
@@ -660,7 +661,7 @@ export async function updateRestriction(
   const endDate = formData.get("end_date") as string | null;
 
   if (!restrictionId || !description || !restrictionType) {
-    return { error: "Restriction id, type, and description are required" };
+    return err("Restriction id, type, and description are required");
   }
 
   const supabase = await createClient();
@@ -671,9 +672,9 @@ export async function updateRestriction(
     .eq("id", restrictionId)
     .single();
 
-  if (!existing) return { error: "Restriction not found" };
+  if (!existing) return err("Restriction not found");
   if (user.role !== "admin" && !canAccessHouse(user, existing.house_id)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const { error } = await supabase
@@ -688,7 +689,7 @@ export async function updateRestriction(
     })
     .eq("id", restrictionId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: existing.house_id,
@@ -707,16 +708,16 @@ export async function updateRestriction(
   revalidatePath("/discipline");
   revalidatePath(`/residents/${existing.resident_id}`);
   revalidatePath("/dashboard");
-  return {};
+  return okVoid();
 }
 
 
-export async function uploadDemeritPhoto(formData: FormData): Promise<{ url?: string; error?: string }> {
+export async function uploadDemeritPhoto(formData: FormData): Promise<ActionResult<{ url?: string }>> {
   const user = await requireAuth();
   const supabase = await createClient();
 
   const file = formData.get("file") as File;
-  if (!file) return { error: "No file provided" };
+  if (!file) return err("No file provided");
 
   const ext = file.name.split(".").pop();
   const path = `demerits/${user.id}/${Date.now()}.${ext}`;
@@ -725,11 +726,11 @@ export async function uploadDemeritPhoto(formData: FormData): Promise<{ url?: st
     .from("chore-photos")
     .upload(path, file, { upsert: false });
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   const { data: publicUrl } = supabase.storage
     .from("chore-photos")
     .getPublicUrl(path);
 
-  return { url: publicUrl.publicUrl };
+  return ok({ url: publicUrl.publicUrl });
 }

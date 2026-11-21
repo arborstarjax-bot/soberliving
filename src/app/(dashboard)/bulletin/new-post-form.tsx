@@ -1,5 +1,6 @@
 "use client";
 
+import type { ActionResult } from "@/lib/action-result";
 import { useActionState } from "react";
 import { useState, useRef } from "react";
 import { createBulletinPost, uploadBulletinPhoto } from "./actions";
@@ -82,7 +83,7 @@ export function NewPostForm({ houses, userRole, singleHouse }: NewPostFormProps)
   const maxPhotos = isStaff ? 4 : 1;
 
   const [state, action, isPending] = useActionState(
-    async (prev: { error?: string } | undefined, formData: FormData) => {
+    async (prev: ActionResult | undefined, formData: FormData) => {
       // Append house_ids and photo_url to the form data
       for (const hid of selectedHouses) {
         formData.append("house_ids", hid);
@@ -122,8 +123,8 @@ export function NewPostForm({ houses, userRole, singleHouse }: NewPostFormProps)
       const result = await uploadBulletinPhoto(fd);
       if (result.error) {
         setUploadError(result.error);
-      } else if (result.url) {
-        setPhotoUrls((prev) => [...prev, result.url!]);
+      } else if (result.ok && result.url) {
+        setPhotoUrls((prev) => [...prev, result.url]);
       }
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "Upload failed");

@@ -1,4 +1,5 @@
 "use server";
+import { err, ok, okVoid, type ActionResult } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -35,7 +36,7 @@ type BedAssignmentWithBed = {
 // --- Residents ---
 
 export async function createResident(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
@@ -55,14 +56,14 @@ export async function createResident(
   });
 
   if (!parsed.success) {
-    return { error: parsed.error.issues[0].message };
+    return err(parsed.error.issues[0].message);
   }
 
   if (
     user.role !== "admin" &&
     !canAccessHouse(user, parsed.data.house_id)
   ) {
-    return { error: "Not authorized for this house" };
+    return err("Not authorized for this house");
   }
 
   const supabase = await createClient();
@@ -75,7 +76,7 @@ export async function createResident(
     .select("id")
     .single();
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: parsed.data.house_id,
@@ -102,12 +103,12 @@ export async function updateResident(residentId: string, formData: FormData) {
     .eq("id", residentId)
     .maybeSingle();
 
-  if (!resident) return { error: "Resident not found" };
+  if (!resident) return err("Resident not found");
   if (
     user.role !== "admin" &&
     !canAccessHouse(user, resident.house_id)
   ) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   // Use null for cleared fields (empty string) vs undefined for absent fields
@@ -134,7 +135,7 @@ export async function updateResident(residentId: string, formData: FormData) {
   });
 
   if (!parsed.success) {
-    return { error: parsed.error.issues[0].message };
+    return err(parsed.error.issues[0].message);
   }
 
   const { error } = await supabase
@@ -142,7 +143,7 @@ export async function updateResident(residentId: string, formData: FormData) {
     .update({ ...parsed.data, updated_at: new Date().toISOString() })
     .eq("id", residentId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: resident.house_id,
@@ -155,7 +156,7 @@ export async function updateResident(residentId: string, formData: FormData) {
   });
 
   revalidatePath(`/residents/${residentId}`);
-  return {};
+  return okVoid();
 }
 
 export async function dischargeResident(
@@ -172,12 +173,12 @@ export async function dischargeResident(
     .eq("id", residentId)
     .maybeSingle();
 
-  if (!resident) return { error: "Resident not found" };
+  if (!resident) return err("Resident not found");
   if (
     user.role !== "admin" &&
     !canAccessHouse(user, resident.house_id)
   ) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const dischargeDate = getHouseToday(await getHouseTimezone(resident.house_id));
@@ -214,7 +215,7 @@ export async function dischargeResident(
     })
     .eq("id", residentId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   // End all active bed assignments
   await supabase
@@ -381,13 +382,13 @@ export async function dischargeResident(
   revalidatePath(`/residents/${residentId}`);
   revalidatePath(`/houses/${resident.house_id}`);
   revalidatePath("/residents");
-  return {};
+  return okVoid();
 }
 
 export async function deleteResident(residentId: string) {
   const user = await requireAuth();
   if (user.role !== "admin") {
-    return { error: "Only admins can delete residents" };
+    return err("Only admins can delete residents");
   }
 
   const supabase = await createClient();
@@ -398,7 +399,7 @@ export async function deleteResident(residentId: string) {
     .eq("id", residentId)
     .maybeSingle();
 
-  if (!resident) return { error: "Resident not found" };
+  if (!resident) return err("Resident not found");
 
   // Block hard-delete if the resident has any real history. We check
   // the tables where a cascade would destroy compliance-relevant
@@ -443,17 +444,11 @@ export async function deleteResident(residentId: string) {
   // destroy compliance records.
   const hasError = historyChecks.some((r) => r.error);
   if (hasError) {
-    return {
-      error:
-        "Unable to verify resident history right now. Please try again.",
-    };
+    return err("Unable to verify resident history right now. Please try again.");
   }
   const hasHistory = historyChecks.some((r) => (r.count ?? 0) > 0);
   if (hasHistory) {
-    return {
-      error:
-        "This resident has discipline, payment, or activity history. Use Discharge to preserve records instead of deleting.",
-    };
+    return err("This resident has discipline, payment, or activity history. Use Discharge to preserve records instead of deleting.");
   }
 
   // End all active bed assignments
@@ -469,7 +464,7 @@ export async function deleteResident(residentId: string) {
     .delete()
     .eq("id", residentId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: resident.house_id,
@@ -482,16 +477,16 @@ export async function deleteResident(residentId: string) {
 
   revalidatePath("/residents");
   revalidatePath(`/houses/${resident.house_id}`);
-  return {};
+  return okVoid();
 }
 
 export async function deleteIntakeUser(userId: string) {
   const currentUser = await requireAuth();
   if (currentUser.role !== "admin") {
-    return { error: "Only admins can delete intake entries" };
+    return err("Only admins can delete intake entries");
   }
   if (!currentUser.workspace_id) {
-    return { error: "No workspace context" };
+    return err("No workspace context");
   }
 
   const adminClient = createAdminClient();
@@ -503,9 +498,9 @@ export async function deleteIntakeUser(userId: string) {
     .eq("workspace_id", currentUser.workspace_id)
     .maybeSingle();
 
-  if (!target) return { error: "User not found" };
+  if (!target) return err("User not found");
   if (target.commitment_signed) {
-    return { error: "Cannot delete a user who has already signed their commitment. Use discharge instead." };
+    return err("Cannot delete a user who has already signed their commitment. Use discharge instead.");
   }
 
   // Remove workspace membership
@@ -529,7 +524,7 @@ export async function deleteIntakeUser(userId: string) {
 
   // Delete the users row (which also cascades the auth user via trigger)
   const { error } = await adminClient.from("users").delete().eq("id", userId);
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     actorId: currentUser.id,
@@ -540,7 +535,7 @@ export async function deleteIntakeUser(userId: string) {
   });
 
   revalidatePath("/residents");
-  return {};
+  return okVoid();
 }
 
 // --- Transfer resident to another house ---
@@ -578,7 +573,7 @@ export async function transferResident(
 ) {
   const user = await requireAuth();
   if (user.role !== "admin") {
-    return { error: "Only admins can transfer residents between houses" };
+    return err("Only admins can transfer residents between houses");
   }
 
   const parsed = transferResidentSchema.safeParse({
@@ -587,7 +582,7 @@ export async function transferResident(
     target_bed_id: targetBedId || undefined,
   });
   if (!parsed.success) {
-    return { error: parsed.error.issues[0].message };
+    return err(parsed.error.issues[0].message);
   }
 
   const supabase = await createClient();
@@ -598,12 +593,12 @@ export async function transferResident(
     .eq("id", residentId)
     .maybeSingle();
 
-  if (!resident) return { error: "Resident not found" };
+  if (!resident) return err("Resident not found");
   if (resident.status !== "active") {
-    return { error: "Only active residents can be transferred" };
+    return err("Only active residents can be transferred");
   }
   if (resident.house_id === targetHouseId) {
-    return { error: "Resident is already in that house" };
+    return err("Resident is already in that house");
   }
 
   const sourceHouseId: string = resident.house_id;
@@ -616,14 +611,14 @@ export async function transferResident(
     .eq("id", targetHouseId)
     .maybeSingle();
   if (!targetHouse || !targetHouse.is_active) {
-    return { error: "Target house is not available" };
+    return err("Target house is not available");
   }
   if (
     user.workspace_id &&
     targetHouse.workspace_id &&
     targetHouse.workspace_id !== user.workspace_id
   ) {
-    return { error: "Target house is not available" };
+    return err("Target house is not available");
   }
 
   // Verify source house name for the activity log description.
@@ -647,7 +642,7 @@ export async function transferResident(
     const bed = rawBed as unknown as BedWithRoom;
     const bedHouseId = bed?.room?.house_id;
     if (!bed || bedHouseId !== targetHouseId) {
-      return { error: "Selected bed does not belong to the target house" };
+      return err("Selected bed does not belong to the target house");
     }
 
     const { data: occupied } = await supabase
@@ -657,7 +652,7 @@ export async function transferResident(
       .is("end_date", null)
       .maybeSingle();
     if (occupied) {
-      return { error: "That bed is already occupied" };
+      return err("That bed is already occupied");
     }
   }
 
@@ -745,7 +740,7 @@ export async function transferResident(
     })
     .eq("id", residentId);
 
-  if (moveError) return { error: moveError.message };
+  if (moveError) return err(moveError.message);
 
   // 8. If a target bed was chosen, insert the new assignment.
   //    Uses insert-first pattern (mirrors changeResidentBed) so a
@@ -770,16 +765,16 @@ export async function transferResident(
       // caller can pick another bed without retrying the whole
       // transfer.
       if (bedError.code === "23505") {
-        return {
+        return ok({
           warning:
             "Resident transferred, but that bed was just taken. Assign a bed from the new house page.",
           newHouseId: targetHouseId,
-        };
+        });
       }
-      return {
+      return ok({
         warning: `Resident transferred, but bed assignment failed: ${bedError.message}`,
         newHouseId: targetHouseId,
-      };
+      });
     }
     newBedAssignmentId = inserted?.id ?? null;
   }
@@ -829,7 +824,7 @@ export async function transferResident(
   revalidatePath(`/houses/${sourceHouseId}`);
   revalidatePath(`/houses/${targetHouseId}`);
   revalidatePath(`/activity`);
-  return { newHouseId: targetHouseId };
+  return ok({ newHouseId: targetHouseId });
 }
 
 // --- Force Photo Toggle ---
@@ -847,9 +842,9 @@ export async function updateResidentForcePhoto(
     .eq("id", residentId)
     .maybeSingle();
 
-  if (!resident) return { error: "Resident not found" };
+  if (!resident) return err("Resident not found");
   if (user.role !== "admin" && !canAccessHouse(user, resident.house_id)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const { error } = await supabase
@@ -857,7 +852,7 @@ export async function updateResidentForcePhoto(
     .update({ force_photo: forcePhoto, updated_at: new Date().toISOString() })
     .eq("id", residentId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: resident.house_id,
@@ -870,7 +865,7 @@ export async function updateResidentForcePhoto(
   });
 
   revalidatePath(`/residents/${residentId}`);
-  return {};
+  return okVoid();
 }
 
 // --- Bed Assignments ---
@@ -883,7 +878,7 @@ export async function assignBed(
   const user = await requireAuth();
 
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const supabase = await createClient();
@@ -899,7 +894,7 @@ export async function assignBed(
     .maybeSingle();
 
   if (existingAssignment) {
-    return { error: "This bed is already occupied" };
+    return err("This bed is already occupied");
   }
 
   // Check resident doesn't already have 2 active assignments
@@ -910,7 +905,7 @@ export async function assignBed(
     .is("end_date", null);
 
   if (residentAssignments && residentAssignments.length >= 2) {
-    return { error: "Resident already has 2 bed assignments (max for private room)" };
+    return err("Resident already has 2 bed assignments (max for private room)");
   }
 
   const { data, error } = await supabase
@@ -926,9 +921,9 @@ export async function assignBed(
 
   if (error) {
     if (error.code === "23505") {
-      return { error: "This bed is already occupied" };
+      return err("This bed is already occupied");
     }
-    return { error: error.message };
+    return err(error.message);
   }
 
   // Get bed details for logging
@@ -977,7 +972,7 @@ export async function assignBed(
 
   revalidatePath(`/houses/${houseId}`);
   revalidatePath(`/residents/${residentId}`);
-  return {};
+  return okVoid();
 }
 
 /**
@@ -996,7 +991,7 @@ export async function changeResidentBed(
   const user = await requireAuth();
 
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const supabase = await createClient();
@@ -1012,11 +1007,11 @@ export async function changeResidentBed(
       .maybeSingle();
 
     if (occupied && occupied.resident_id !== residentId) {
-      return { error: "This bed is already occupied" };
+      return err("This bed is already occupied");
     }
     if (occupied && occupied.resident_id === residentId) {
       // Resident is already in that bed — nothing to do.
-      return {};
+      return okVoid();
     }
   }
 
@@ -1047,9 +1042,9 @@ export async function changeResidentBed(
 
     if (error) {
       if (error.code === "23505") {
-        return { error: "This bed is already occupied" };
+        return err("This bed is already occupied");
       }
-      return { error: error.message };
+      return err(error.message);
     }
 
     // New row is committed; now close the resident's other active
@@ -1064,7 +1059,7 @@ export async function changeResidentBed(
       .is("end_date", null)
       .neq("id", data.id);
 
-    if (vacateError) return { error: vacateError.message };
+    if (vacateError) return err(vacateError.message);
 
     const { data: rawBed } = await supabase
       .from("beds")
@@ -1110,7 +1105,7 @@ export async function changeResidentBed(
       .eq("resident_id", residentId)
       .is("end_date", null);
 
-    if (vacateError) return { error: vacateError.message };
+    if (vacateError) return err(vacateError.message);
 
     await logActivity({
       houseId,
@@ -1125,7 +1120,7 @@ export async function changeResidentBed(
 
   revalidatePath(`/houses/${houseId}`);
   revalidatePath(`/residents/${residentId}`);
-  return {};
+  return okVoid();
 }
 
 export async function vacateBed(assignmentId: string) {
@@ -1139,11 +1134,11 @@ export async function vacateBed(assignmentId: string) {
     .maybeSingle();
 
   const assignment = rawAssignment as unknown as BedAssignmentWithBed;
-  if (!assignment) return { error: "Assignment not found" };
+  if (!assignment) return err("Assignment not found");
 
   const houseId = assignment.bed?.room?.house_id ?? "";
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const { error } = await supabase
@@ -1151,7 +1146,7 @@ export async function vacateBed(assignmentId: string) {
     .update({ end_date: getHouseToday(await getHouseTimezone(houseId)) })
     .eq("id", assignmentId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId,
@@ -1165,13 +1160,13 @@ export async function vacateBed(assignmentId: string) {
 
   revalidatePath(`/houses/${houseId}`);
   revalidatePath(`/residents/${assignment.resident_id}`);
-  return {};
+  return okVoid();
 }
 
 // --- Notes ---
 
 export async function createNote(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
@@ -1181,7 +1176,7 @@ export async function createNote(
   });
 
   if (!parsed.success) {
-    return { error: parsed.error.issues[0].message };
+    return err(parsed.error.issues[0].message);
   }
 
   const supabase = await createClient();
@@ -1192,12 +1187,12 @@ export async function createNote(
     .eq("id", parsed.data.resident_id)
     .maybeSingle();
 
-  if (!resident) return { error: "Resident not found" };
+  if (!resident) return err("Resident not found");
   if (
     user.role !== "admin" &&
     !canAccessHouse(user, resident.house_id)
   ) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const { data, error } = await supabase
@@ -1210,7 +1205,7 @@ export async function createNote(
     .select("id")
     .single();
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: resident.house_id,
@@ -1223,7 +1218,7 @@ export async function createNote(
   });
 
   revalidatePath(`/residents/${parsed.data.resident_id}`);
-  return {};
+  return okVoid();
 }
 
 // ── Reinstate a discharged resident ─────────────────────────────
@@ -1236,7 +1231,7 @@ export async function reinstateResident(
 ) {
   const user = await requireAuth();
   if (user.role !== "admin") {
-    return { error: "Only admins can reinstate residents" };
+    return err("Only admins can reinstate residents");
   }
 
   const supabase = await createClient();
@@ -1248,9 +1243,9 @@ export async function reinstateResident(
     .eq("id", residentId)
     .maybeSingle();
 
-  if (!resident) return { error: "Resident not found" };
+  if (!resident) return err("Resident not found");
   if (resident.status !== "discharged") {
-    return { error: "Only discharged residents can be reinstated" };
+    return err("Only discharged residents can be reinstated");
   }
 
   const residentUserId = resident.user_id as string | null;
@@ -1271,7 +1266,7 @@ export async function reinstateResident(
     })
     .eq("id", residentId);
 
-  if (updateError) return { error: updateError.message };
+  if (updateError) return err(updateError.message);
 
   // Reset intake/commitment on the user record so they go through
   // the full onboarding flow again (the intake page checks these).
@@ -1344,7 +1339,7 @@ export async function reinstateResident(
   revalidatePath(`/residents/${residentId}`);
   revalidatePath(`/houses/${houseId}`);
   revalidatePath("/residents");
-  return {};
+  return okVoid();
 }
 
 // ── Resend application / intake packet to an existing resident ──
@@ -1355,7 +1350,7 @@ export async function reinstateResident(
 export async function resendApplicationToResident(residentId: string) {
   const currentUser = await requireAuth();
   if (currentUser.role !== "admin") {
-    return { error: "Only admins can resend applications" };
+    return err("Only admins can resend applications");
   }
 
   const supabase = await createClient();
@@ -1367,14 +1362,14 @@ export async function resendApplicationToResident(residentId: string) {
     .eq("id", residentId)
     .maybeSingle();
 
-  if (!resident) return { error: "Resident not found" };
+  if (!resident) return err("Resident not found");
   if (resident.status !== "active") {
-    return { error: "Can only resend applications to active residents" };
+    return err("Can only resend applications to active residents");
   }
 
   const residentUserId = resident.user_id as string | null;
   if (!residentUserId) {
-    return { error: "Resident has no linked user account" };
+    return err("Resident has no linked user account");
   }
 
   // Reset intake so the resident is routed to the intake wizard.
@@ -1437,7 +1432,7 @@ export async function resendApplicationToResident(residentId: string) {
 
   revalidatePath(`/residents/${residentId}`);
   revalidatePath("/residents");
-  return {};
+  return okVoid();
 }
 
 // ── Admin sign-off on a resent application ──
@@ -1455,7 +1450,7 @@ export async function signOffResendApplication(
 ) {
   const currentUser = await requireAuth();
   if (currentUser.role !== "admin") {
-    return { error: "Only admins can sign off on resent applications" };
+    return err("Only admins can sign off on resent applications");
   }
 
   const adminClient = createAdminClient();
@@ -1466,9 +1461,9 @@ export async function signOffResendApplication(
     .eq("id", userId)
     .maybeSingle();
 
-  if (!userRow) return { error: "User not found" };
+  if (!userRow) return err("User not found");
   if (!userRow.application_resent) {
-    return { error: "No pending resent application for this user" };
+    return err("No pending resent application for this user");
   }
 
   // Store the staff signature on the intake form
@@ -1537,7 +1532,7 @@ export async function signOffResendApplication(
     });
 
   if (uploadErr) {
-    return { error: `Could not upload signed packet: ${uploadErr.message}` };
+    return err(`Could not upload signed packet: ${uploadErr.message}`);
   }
 
   if (existingDoc) {
@@ -1572,5 +1567,5 @@ export async function signOffResendApplication(
   });
 
   revalidatePath("/residents");
-  return {};
+  return okVoid();
 }

@@ -263,7 +263,7 @@ function AttachmentRow({
     let cancelled = false;
     getBlockerAttachmentUrl(blockerId, storagePath).then((r) => {
       if (cancelled) return;
-      if (r.error) setError(r.error);
+      if (!r.ok) setError(r.error);
       else setUrl(r.url ?? null);
     });
     return () => {

@@ -1,4 +1,5 @@
 "use server";
+import { err, ok, okVoid } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth";
@@ -26,17 +27,14 @@ function canCreateBlockers(role: string): boolean {
 export async function uploadBlockerAttachment(formData: FormData) {
   const user = await requireAuth();
   if (!canCreateBlockers(user.role)) {
-    return { error: "Not authorized", path: null };
+    return err("Not authorized");
   }
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
-    return { error: "No file provided", path: null };
+    return err("No file provided");
   }
   if (file.size > MAX_BYTES) {
-    return {
-      error: `File too large (max ${MAX_BYTES / (1024 * 1024)}MB)`,
-      path: null,
-    };
+    return err(`File too large (max ${MAX_BYTES / (1024 * 1024)}MB)`);
   }
 
   const admin = createAdminClient();
@@ -47,8 +45,8 @@ export async function uploadBlockerAttachment(formData: FormData) {
     contentType: file.type || "application/octet-stream",
     upsert: false,
   });
-  if (error) return { error: error.message, path: null };
-  return { path };
+  if (error) return err(error.message);
+  return ok({ path });
 }
 
 interface CreateBlockerInput {
@@ -65,18 +63,18 @@ interface CreateBlockerInput {
 export async function createBlocker(input: CreateBlockerInput) {
   const user = await requireAuth();
   if (!canCreateBlockers(user.role)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const title = input.title.trim();
   const body = input.body.trim();
-  if (!title) return { error: "Title is required" };
-  if (!body) return { error: "Message body is required" };
+  if (!title) return err("Title is required");
+  if (!body) return err("Message body is required");
   if (!ALLOWED_TARGETS.includes(input.targetType)) {
-    return { error: "Invalid target" };
+    return err("Invalid target");
   }
   if (input.attachmentPaths.length > MAX_FILES) {
-    return { error: `Too many attachments (max ${MAX_FILES})` };
+    return err(`Too many attachments (max ${MAX_FILES})`);
   }
 
   const admin = createAdminClient();
@@ -87,21 +85,18 @@ export async function createBlocker(input: CreateBlockerInput) {
   // to have access to it.
   if (user.role === "manager") {
     if (input.targetType === "all") {
-      return {
-        error:
-          "Managers can only target specific houses or residents, not everyone.",
-      };
+      return err("Managers can only target specific houses or residents, not everyone.");
     }
     if (input.targetType === "house") {
       for (const hid of input.targetHouseIds) {
         if (!canAccessHouse(user, hid)) {
-          return { error: "You can't target a house you're not assigned to." };
+          return err("You can't target a house you're not assigned to.");
         }
       }
     }
     if (input.targetType === "residents") {
       if (input.targetUserIds.length === 0) {
-        return { error: "Pick at least one resident." };
+        return err("Pick at least one resident.");
       }
       const { data: residents } = await admin
         .from("residents")
@@ -110,10 +105,7 @@ export async function createBlocker(input: CreateBlockerInput) {
         .eq("status", "active");
       for (const r of residents ?? []) {
         if (!canAccessHouse(user, r.house_id as string)) {
-          return {
-            error:
-              "One or more residents are not in your assigned houses.",
-          };
+          return err("One or more residents are not in your assigned houses.");
         }
       }
     }
@@ -127,10 +119,10 @@ export async function createBlocker(input: CreateBlockerInput) {
     input.targetType === "residents" ? input.targetUserIds : [];
 
   if (input.targetType === "house" && houseIds.length === 0) {
-    return { error: "Pick at least one house." };
+    return err("Pick at least one house.");
   }
   if (input.targetType === "residents" && userIds.length === 0) {
-    return { error: "Pick at least one resident." };
+    return err("Pick at least one resident.");
   }
 
   const { data: inserted, error } = await admin
@@ -151,7 +143,7 @@ export async function createBlocker(input: CreateBlockerInput) {
     .maybeSingle();
 
   if (error || !inserted) {
-    return { error: error?.message ?? "Failed to create blocker" };
+    return err(error?.message ?? "Failed to create blocker");
   }
 
   await logActivity({
@@ -166,13 +158,13 @@ export async function createBlocker(input: CreateBlockerInput) {
   // Any targeted resident's next navigation should trip the gate;
   // invalidate the dashboard layout cache so it re-evaluates.
   revalidatePath("/", "layout");
-  return { id: inserted.id as string };
+  return ok({ id: inserted.id as string });
 }
 
 export async function archiveBlocker(blockerId: string) {
   const user = await requireAuth();
   if (!canCreateBlockers(user.role)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
   const admin = createAdminClient();
 
@@ -183,10 +175,10 @@ export async function archiveBlocker(blockerId: string) {
     .select("id, title, created_by, archived_at")
     .eq("id", blockerId)
     .maybeSingle();
-  if (!blocker) return { error: "Blocker not found" };
-  if (blocker.archived_at) return { error: "Already archived" };
+  if (!blocker) return err("Blocker not found");
+  if (blocker.archived_at) return err("Already archived");
   if (user.role !== "admin" && blocker.created_by !== user.id) {
-    return { error: "You can only archive blockers you created." };
+    return err("You can only archive blockers you created.");
   }
 
   const { error } = await admin
@@ -196,7 +188,7 @@ export async function archiveBlocker(blockerId: string) {
       updated_at: new Date().toISOString(),
     })
     .eq("id", blockerId);
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     actorId: user.id,
@@ -208,7 +200,7 @@ export async function archiveBlocker(blockerId: string) {
 
   revalidatePath("/bulletin/blockers");
   revalidatePath("/", "layout");
-  return {};
+  return okVoid();
 }
 
 /**
@@ -224,7 +216,7 @@ export async function archiveBlocker(blockerId: string) {
 export async function deleteBlocker(blockerId: string) {
   const user = await requireAuth();
   if (!canCreateBlockers(user.role)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
   const admin = createAdminClient();
 
@@ -233,9 +225,9 @@ export async function deleteBlocker(blockerId: string) {
     .select("id, title, created_by, attachment_paths")
     .eq("id", blockerId)
     .maybeSingle();
-  if (!blocker) return { error: "Notice not found" };
+  if (!blocker) return err("Notice not found");
   if (user.role !== "admin" && blocker.created_by !== user.id) {
-    return { error: "You can only delete notices you created." };
+    return err("You can only delete notices you created.");
   }
 
   const attachmentPaths = (blocker.attachment_paths as string[] | null) ?? [];
@@ -244,7 +236,7 @@ export async function deleteBlocker(blockerId: string) {
     .from("blockers")
     .delete()
     .eq("id", blockerId);
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   if (attachmentPaths.length > 0) {
     try {
@@ -264,7 +256,7 @@ export async function deleteBlocker(blockerId: string) {
 
   revalidatePath("/bulletin/blockers");
   revalidatePath("/", "layout");
-  return {};
+  return okVoid();
 }
 
 /**

@@ -1,4 +1,5 @@
 "use server";
+import { err, okVoid } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -29,7 +30,7 @@ export async function signCommitment(
     .single();
 
   if (!commitment) {
-    return { error: "Commitment not found or already signed" };
+    return err("Commitment not found or already signed");
   }
 
   // Mark commitment_signed on user FIRST — if this fails the commitment
@@ -43,7 +44,7 @@ export async function signCommitment(
     .eq("id", user.id);
 
   if (userError) {
-    return { error: userError.message };
+    return err(userError.message);
   }
 
   // Update commitment with resident signature
@@ -66,7 +67,7 @@ export async function signCommitment(
     if (revertError) {
       console.error("CRITICAL: Failed to revert commitment_signed flag for user", user.id, revertError.message);
     }
-    return { error: updateError.message };
+    return err(updateError.message);
   }
 
   // Defense-in-depth: supersede any OTHER pending commitments for
@@ -171,5 +172,5 @@ export async function signCommitment(
   revalidatePath("/dashboard");
   revalidatePath("/sign-commitment");
   revalidatePath("/payments");
-  return {};
+  return okVoid();
 }

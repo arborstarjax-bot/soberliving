@@ -1,4 +1,5 @@
 "use server";
+import { err, ok, okVoid, type ActionResult } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
@@ -9,7 +10,7 @@ import { createIncidentSchema } from "@/lib/validations";
 import { sendNotification, notifyHouseStaff } from "@/lib/notifications";
 
 export async function createIncident(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
@@ -22,10 +23,10 @@ export async function createIncident(
     occurred_at: formData.get("occurred_at"),
   });
 
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   if (user.role !== "admin" && !canAccessHouse(user, parsed.data.house_id)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const supabase = await createClient();
@@ -44,7 +45,7 @@ export async function createIncident(
     .select("id")
     .single();
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: parsed.data.house_id,
@@ -78,15 +79,15 @@ export async function createIncident(
 
   revalidatePath("/incidents");
   revalidatePath(`/residents/${parsed.data.resident_id}`);
-  return {};
+  return okVoid();
 }
 
-export async function uploadIncidentPhoto(formData: FormData): Promise<{ url?: string; error?: string }> {
+export async function uploadIncidentPhoto(formData: FormData): Promise<ActionResult<{ url?: string }>> {
   const user = await requireAuth();
   const supabase = await createClient();
 
   const file = formData.get("file") as File;
-  if (!file) return { error: "No file provided" };
+  if (!file) return err("No file provided");
 
   const ext = file.name.split(".").pop();
   const path = `incidents/${user.id}/${Date.now()}.${ext}`;
@@ -95,11 +96,11 @@ export async function uploadIncidentPhoto(formData: FormData): Promise<{ url?: s
     .from("chore-photos")
     .upload(path, file, { upsert: false });
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   const { data: publicUrl } = supabase.storage
     .from("chore-photos")
     .getPublicUrl(path);
 
-  return { url: publicUrl.publicUrl };
+  return ok({ url: publicUrl.publicUrl });
 }

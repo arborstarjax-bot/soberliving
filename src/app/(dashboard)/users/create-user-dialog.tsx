@@ -38,7 +38,7 @@ export function CreateUserDialog({ houses = [] }: { houses?: House[] }) {
   }
 
   async function handleCopyLink() {
-    const link = state?.inviteLink;
+    const link = state?.ok ? state.inviteLink : undefined;
     if (!link) return;
     let ok = false;
     // navigator.clipboard.writeText only works in secure contexts
@@ -76,7 +76,7 @@ export function CreateUserDialog({ houses = [] }: { houses?: House[] }) {
   }
 
   async function handleShare() {
-    const link = state?.inviteLink;
+    const link = state?.ok ? state.inviteLink : undefined;
     if (!link) return;
     try {
       await navigator.share({
@@ -98,11 +98,11 @@ export function CreateUserDialog({ houses = [] }: { houses?: House[] }) {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {state?.inviteLink ? "Invite Sent!" : "Add Resident"}
+            {state?.ok && state.inviteLink ? "Invite Sent!" : "Add Resident"}
           </DialogTitle>
         </DialogHeader>
 
-        {state?.inviteLink ? (
+        {state?.ok && state.inviteLink ? (
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-sm text-green-600">
               <Mail className="h-4 w-4" />
@@ -116,7 +116,7 @@ export function CreateUserDialog({ houses = [] }: { houses?: House[] }) {
               <input
                 ref={inputRef}
                 readOnly
-                value={state.inviteLink}
+                value={state.ok ? state.inviteLink : ""}
                 onFocus={(e) => e.currentTarget.select()}
                 onClick={(e) => e.currentTarget.select()}
                 className={cn(

@@ -1,4 +1,5 @@
 "use server";
+import { err, okVoid, type ActionResult } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
@@ -79,7 +80,7 @@ const createLeaveRequestSchema = z.object({
 });
 
 export async function createLeaveRequest(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
@@ -95,7 +96,7 @@ export async function createLeaveRequest(
     destination_address: formData.get("destination_address") || undefined,
   });
 
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   const supabase = await createClient();
 
@@ -106,7 +107,7 @@ export async function createLeaveRequest(
     .eq("id", parsed.data.resident_id)
     .maybeSingle();
 
-  if (!resident) return { error: "Resident not found" };
+  if (!resident) return err("Resident not found");
 
   const coveringResidentId = parsed.data.covering_resident_id || null;
 
@@ -138,12 +139,12 @@ export async function createLeaveRequest(
       .eq("id", coveringResidentId)
       .maybeSingle();
 
-    if (!cover) return { error: "Covering resident not found" };
+    if (!cover) return err("Covering resident not found");
     if (cover.house_id !== resident.house_id) {
-      return { error: "Covering resident must be from the same house" };
+      return err("Covering resident must be from the same house");
     }
     if (coveringResidentId === parsed.data.resident_id) {
-      return { error: "You cannot select yourself as the covering resident" };
+      return err("You cannot select yourself as the covering resident");
     }
     coverResident = cover;
 
@@ -171,16 +172,11 @@ export async function createLeaveRequest(
         (r) => !busyIds.has(r.id)
       );
       if (hasEligibleCover && busyIds.has(coveringResidentId)) {
-        return {
-          error:
-            "That resident already has chore assignments this rotation — pick a resident who is free to cover",
-        };
+        return err("That resident already has chore assignments this rotation — pick a resident who is free to cover");
       }
     }
   } else if (!soloInHouse) {
-    return {
-      error: "You must select a covering resident from your house",
-    };
+    return err("You must select a covering resident from your house");
   }
 
   // Authorization
@@ -193,10 +189,10 @@ export async function createLeaveRequest(
       .eq("status", "active")
       .maybeSingle();
     if (!myResident || myResident.id !== parsed.data.resident_id) {
-      return { error: "Not authorized" };
+      return err("Not authorized");
     }
   } else if (user.role !== "admin" && !canAccessHouse(user, resident.house_id)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   // Derive the date-only columns from the datetimes so the rest of the
@@ -235,7 +231,7 @@ export async function createLeaveRequest(
     .select("id")
     .single();
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: resident.house_id,
@@ -291,7 +287,7 @@ export async function createLeaveRequest(
   }
 
   revalidatePath("/leave-requests");
-  return {};
+  return okVoid();
 }
 
 export async function approveCoverRequest(requestId: string) {
@@ -308,8 +304,8 @@ export async function approveCoverRequest(requestId: string) {
     .maybeSingle();
 
   const request = rawRequest as unknown as LeaveRequestRow | null;
-  if (!request) return { error: "Request not found" };
-  if (request.status !== "pending_cover") return { error: "Request is not pending cover approval" };
+  if (!request) return err("Request not found");
+  if (request.status !== "pending_cover") return err("Request is not pending cover approval");
 
   const resident = request.resident;
   const houseId = resident?.house_id ?? "";
@@ -317,10 +313,10 @@ export async function approveCoverRequest(requestId: string) {
   // Verify the current user is the covering resident, or authorized staff
   const coverResident = request.covering_resident;
   if (user.role === "resident" && coverResident?.user_id !== user.id) {
-    return { error: "Only the covering resident can approve this" };
+    return err("Only the covering resident can approve this");
   }
   if (user.role !== "resident" && user.role !== "admin" && !canAccessHouse(user, houseId)) {
-    return { error: "Not authorized for this house" };
+    return err("Not authorized for this house");
   }
 
   // Workspace decides who reviews after the cover: 'both' and 'manager'
@@ -339,7 +335,7 @@ export async function approveCoverRequest(requestId: string) {
     })
     .eq("id", requestId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId,
@@ -373,7 +369,7 @@ export async function approveCoverRequest(requestId: string) {
   }
 
   revalidatePath("/leave-requests");
-  return {};
+  return okVoid();
 }
 
 export async function denyCoverRequest(requestId: string, note?: string) {
@@ -390,8 +386,8 @@ export async function denyCoverRequest(requestId: string, note?: string) {
     .maybeSingle();
 
   const request = rawRequest as unknown as LeaveRequestRow | null;
-  if (!request) return { error: "Request not found" };
-  if (request.status !== "pending_cover") return { error: "Request is not pending cover approval" };
+  if (!request) return err("Request not found");
+  if (request.status !== "pending_cover") return err("Request is not pending cover approval");
 
   const residentInfo = request.resident;
   const houseId = residentInfo?.house_id ?? "";
@@ -399,10 +395,10 @@ export async function denyCoverRequest(requestId: string, note?: string) {
   // Verify the current user is the covering resident, or authorized staff
   const coverResident = request.covering_resident;
   if (user.role === "resident" && coverResident?.user_id !== user.id) {
-    return { error: "Only the covering resident can deny this" };
+    return err("Only the covering resident can deny this");
   }
   if (user.role !== "resident" && user.role !== "admin" && !canAccessHouse(user, houseId)) {
-    return { error: "Not authorized for this house" };
+    return err("Not authorized for this house");
   }
 
   const { error } = await adminClient
@@ -415,7 +411,7 @@ export async function denyCoverRequest(requestId: string, note?: string) {
     })
     .eq("id", requestId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: residentInfo?.house_id,
@@ -441,12 +437,12 @@ export async function denyCoverRequest(requestId: string, note?: string) {
   }
 
   revalidatePath("/leave-requests");
-  return {};
+  return okVoid();
 }
 
 export async function approveManagerRequest(requestId: string) {
   const user = await requireAuth();
-  if (user.role === "resident") return { error: "Not authorized" };
+  if (user.role === "resident") return err("Not authorized");
 
   const supabase = await createClient();
 
@@ -457,14 +453,14 @@ export async function approveManagerRequest(requestId: string) {
     .maybeSingle();
 
   const request = rawRequest as unknown as LeaveRequestRow | null;
-  if (!request) return { error: "Request not found" };
-  if (request.status !== "pending_manager") return { error: "Request is not pending manager approval" };
+  if (!request) return err("Request not found");
+  if (request.status !== "pending_manager") return err("Request is not pending manager approval");
 
   const resident = request.resident;
   const houseId = resident?.house_id ?? "";
 
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
-    return { error: "Not authorized for this house" };
+    return err("Not authorized for this house");
   }
 
   // When the workspace lets managers give the final approval, this
@@ -486,7 +482,7 @@ export async function approveManagerRequest(requestId: string) {
     })
     .eq("id", requestId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId,
@@ -528,12 +524,12 @@ export async function approveManagerRequest(requestId: string) {
   }
 
   revalidatePath("/leave-requests");
-  return {};
+  return okVoid();
 }
 
 export async function denyManagerRequest(requestId: string, note?: string) {
   const user = await requireAuth();
-  if (user.role === "resident") return { error: "Not authorized" };
+  if (user.role === "resident") return err("Not authorized");
 
   const supabase = await createClient();
 
@@ -544,14 +540,14 @@ export async function denyManagerRequest(requestId: string, note?: string) {
     .maybeSingle();
 
   const request = rawRequest as unknown as LeaveRequestRow | null;
-  if (!request) return { error: "Request not found" };
-  if (request.status !== "pending_manager") return { error: "Request is not pending manager approval" };
+  if (!request) return err("Request not found");
+  if (request.status !== "pending_manager") return err("Request is not pending manager approval");
 
   const resident = request.resident;
   const houseId = resident?.house_id ?? "";
 
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
-    return { error: "Not authorized for this house" };
+    return err("Not authorized for this house");
   }
 
   const { error } = await supabase
@@ -566,7 +562,7 @@ export async function denyManagerRequest(requestId: string, note?: string) {
     })
     .eq("id", requestId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId,
@@ -591,12 +587,12 @@ export async function denyManagerRequest(requestId: string, note?: string) {
   }
 
   revalidatePath("/leave-requests");
-  return {};
+  return okVoid();
 }
 
 export async function approveAdminRequest(requestId: string) {
   const user = await requireAuth();
-  if (user.role !== "admin") return { error: "Not authorized — only admins can give final approval" };
+  if (user.role !== "admin") return err("Not authorized — only admins can give final approval");
 
   const supabase = await createClient();
 
@@ -607,13 +603,13 @@ export async function approveAdminRequest(requestId: string) {
     .maybeSingle();
 
   const request = rawRequest as unknown as LeaveRequestRow | null;
-  if (!request) return { error: "Request not found" };
+  if (!request) return err("Request not found");
   // Admin trumps manager: allow final approval at either the manager or
   // admin stage. If the admin is short-circuiting the manager step, we
   // still stamp the manager_approved_at fields to the admin so the
   // approval timeline reads sanely.
   if (request.status !== "pending_admin" && request.status !== "pending_manager") {
-    return { error: "Request cannot be approved from its current status" };
+    return err("Request cannot be approved from its current status");
   }
 
   const nowIso = new Date().toISOString();
@@ -637,7 +633,7 @@ export async function approveAdminRequest(requestId: string) {
     .update(updates)
     .eq("id", requestId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   const resident = request.resident;
 
@@ -666,12 +662,12 @@ export async function approveAdminRequest(requestId: string) {
   }
 
   revalidatePath("/leave-requests");
-  return {};
+  return okVoid();
 }
 
 export async function denyAdminRequest(requestId: string, note?: string) {
   const user = await requireAuth();
-  if (user.role !== "admin") return { error: "Not authorized — only admins can deny at final approval" };
+  if (user.role !== "admin") return err("Not authorized — only admins can deny at final approval");
 
   const supabase = await createClient();
 
@@ -682,11 +678,11 @@ export async function denyAdminRequest(requestId: string, note?: string) {
     .maybeSingle();
 
   const request = rawRequest as unknown as LeaveRequestRow | null;
-  if (!request) return { error: "Request not found" };
+  if (!request) return err("Request not found");
   // Mirror the admin-trumps-manager approval path: admins can deny at
   // either the manager or admin stage.
   if (request.status !== "pending_admin" && request.status !== "pending_manager") {
-    return { error: "Request cannot be denied from its current status" };
+    return err("Request cannot be denied from its current status");
   }
 
   const resident = request.resident;
@@ -703,7 +699,7 @@ export async function denyAdminRequest(requestId: string, note?: string) {
     })
     .eq("id", requestId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: resident?.house_id,
@@ -728,12 +724,12 @@ export async function denyAdminRequest(requestId: string, note?: string) {
   }
 
   revalidatePath("/leave-requests");
-  return {};
+  return okVoid();
 }
 
 export async function markLeaveReturned(requestId: string) {
   const user = await requireAuth();
-  if (user.role === "resident") return { error: "Not authorized" };
+  if (user.role === "resident") return err("Not authorized");
 
   const supabase = await createClient();
 
@@ -744,15 +740,15 @@ export async function markLeaveReturned(requestId: string) {
     .maybeSingle();
 
   const request = rawRequest as unknown as LeaveRequestRow | null;
-  if (!request) return { error: "Request not found" };
+  if (!request) return err("Request not found");
 
   // Only approved requests can be marked as returned
-  if (request.status !== "approved") return { error: "Only approved requests can be marked as returned" };
+  if (request.status !== "approved") return err("Only approved requests can be marked as returned");
 
   const resident = request.resident;
   const houseId = resident?.house_id ?? "";
   if (user.role !== "admin" && !canAccessHouse(user, houseId)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const { error } = await supabase
@@ -764,7 +760,7 @@ export async function markLeaveReturned(requestId: string) {
     })
     .eq("id", requestId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId,
@@ -777,5 +773,5 @@ export async function markLeaveReturned(requestId: string) {
   });
 
   revalidatePath("/leave-requests");
-  return {};
+  return okVoid();
 }

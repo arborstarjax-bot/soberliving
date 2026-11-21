@@ -88,7 +88,7 @@ export function PaymentTermsCard({
     setDownloading(true);
     try {
       const res = await getDocumentUrl(terms.pdf_storage_path);
-      if (res.url) {
+      if (res.ok && res.url) {
         if (w) w.location.href = res.url;
         else window.location.href = res.url;
       } else if (w) {

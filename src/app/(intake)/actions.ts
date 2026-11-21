@@ -1,4 +1,5 @@
 "use server";
+import { err, ok, okVoid } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
@@ -24,8 +25,8 @@ export async function saveIntakeProgress(formData: Record<string, unknown>, sign
       { onConflict: "user_id" }
     );
 
-  if (error) return { error: error.message };
-  return {};
+  if (error) return err(error.message);
+  return okVoid();
 }
 
 export async function submitIntakeForm(
@@ -51,7 +52,7 @@ export async function submitIntakeForm(
       { onConflict: "user_id" }
     );
 
-  if (formError) return { error: formError.message };
+  if (formError) return err(formError.message);
 
   // Upload PDF to Supabase Storage
   const pdfBuffer = Buffer.from(pdfBase64, "base64");
@@ -140,7 +141,7 @@ export async function submitIntakeForm(
 
   revalidatePath("/dashboard");
   revalidatePath("/intake-review");
-  return {};
+  return okVoid();
 }
 
 interface QuickSignupState {
@@ -164,9 +165,9 @@ export async function submitQuickSignup(
   const emergencyRelationship = (formData.get("emergency_relationship") as string)?.trim() || null;
   const moveInDate = (formData.get("move_in_date") as string)?.trim() ?? new Date().toISOString().split("T")[0];
 
-  if (!firstName || !lastName) return { error: "Name is required" };
-  if (!phone) return { error: "Phone number is required" };
-  if (!emergencyName || !emergencyPhone) return { error: "Emergency contact is required" };
+  if (!firstName || !lastName) return err("Name is required");
+  if (!phone) return err("Phone number is required");
+  if (!emergencyName || !emergencyPhone) return err("Emergency contact is required");
 
   const fullName = `${firstName} ${lastName}`;
 
@@ -182,7 +183,7 @@ export async function submitQuickSignup(
     })
     .eq("id", user.id);
 
-  if (updateError) return { error: updateError.message };
+  if (updateError) return err(updateError.message);
 
   // Store the quick-signup data in intake_forms for record-keeping
   await adminClient.from("intake_forms").upsert(
@@ -235,7 +236,7 @@ export async function submitQuickSignup(
 
   // redirect happens via the layout — intake_completed is now true
   // so the (intake) layout will redirect to /dashboard.
-  return {};
+  return okVoid();
 }
 
 // --- Intake document vault ---
@@ -253,10 +254,10 @@ export async function uploadIntakeDocument(formData: FormData) {
   const user = await requireAuth();
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
-    return { error: "Choose a file to upload" };
+    return err("Choose a file to upload");
   }
   if (file.size > INTAKE_DOC_MAX_BYTES) {
-    return { error: "File must be under 10 MB" };
+    return err("File must be under 10 MB");
   }
 
   const label =
@@ -270,7 +271,7 @@ export async function uploadIntakeDocument(formData: FormData) {
     .from("documents")
     .upload(storagePath, buffer, { contentType: file.type || undefined });
 
-  if (uploadError) return { error: uploadError.message };
+  if (uploadError) return err(uploadError.message);
 
   const { error: docError } = await adminClient.from("documents").insert({
     user_id: user.id,
@@ -279,9 +280,9 @@ export async function uploadIntakeDocument(formData: FormData) {
     storage_path: storagePath,
     file_size: file.size,
   });
-  if (docError) return { error: docError.message };
+  if (docError) return err(docError.message);
 
-  return {};
+  return okVoid();
 }
 
 export async function getDocumentUrl(storagePath: string) {
@@ -295,17 +296,17 @@ export async function getDocumentUrl(storagePath: string) {
     .eq("storage_path", storagePath)
     .single();
 
-  if (!doc) return { error: "Document not found" };
+  if (!doc) return err("Document not found");
 
   if (doc.user_id !== user.id && user.role !== "admin" && user.role !== "manager") {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const { data } = await adminClient.storage
     .from("documents")
     .createSignedUrl(storagePath, 3600); // 1 hour
 
-  if (!data?.signedUrl) return { error: "Failed to generate URL" };
+  if (!data?.signedUrl) return err("Failed to generate URL");
 
-  return { url: data.signedUrl };
+  return ok({ url: data.signedUrl });
 }

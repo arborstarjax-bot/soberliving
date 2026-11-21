@@ -34,7 +34,7 @@ export function MembersSection({
 
   useEffect(() => {
     getWorkspaceInviteLink().then((result) => {
-      if (result.inviteUrl) setInviteUrl(result.inviteUrl);
+      if (result.ok && result.inviteUrl) setInviteUrl(result.inviteUrl);
     });
   }, []);
 

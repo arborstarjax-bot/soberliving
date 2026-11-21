@@ -1,4 +1,5 @@
 "use server";
+import { err, ok, okVoid, type ActionResult } from "@/lib/action-result";
 
 import { requireAuth } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -10,7 +11,7 @@ export async function drawUaTest(
   formData: FormData
 ) {
   const user = await requireAuth();
-  if (user.role !== "admin") return { error: "Not authorized" };
+  if (user.role !== "admin") return err("Not authorized");
 
   const houseId = String(formData.get("house_id") ?? "");
   const count = Math.max(1, Math.min(50, Number(formData.get("count")) || 0));
@@ -19,7 +20,7 @@ export async function drawUaTest(
     .split(",")
     .map((x) => x.trim())
     .filter(Boolean);
-  if (!houseId) return { error: "Pick a house" };
+  if (!houseId) return err("Pick a house");
 
   const admin = createAdminClient();
   const { data: residents } = await admin
@@ -28,13 +29,13 @@ export async function drawUaTest(
     .eq("house_id", houseId)
     .eq("status", "active");
   const pool = (residents ?? []).map((r) => r.id as string);
-  if (pool.length === 0) return { error: "No active residents in this house" };
+  if (pool.length === 0) return err("No active residents in this house");
 
   let picked: string[];
   if (manualIds.length > 0) {
     picked = pool.filter((id) => manualIds.includes(id));
     if (picked.length === 0)
-      return { error: "No selected residents are active in this house" };
+      return err("No selected residents are active in this house");
   } else {
     // Fisher-Yates shuffle, take `count`
     for (let i = pool.length - 1; i > 0; i--) {
@@ -55,7 +56,7 @@ export async function drawUaTest(
     })
     .select("id")
     .single();
-  if (tErr || !test) return { error: tErr?.message ?? "Draw failed" };
+  if (tErr || !test) return err(tErr?.message ?? "Draw failed");
 
   await admin
     .from("ua_results")
@@ -71,20 +72,20 @@ export async function drawUaTest(
   });
 
   revalidatePath("/ua");
-  return { testId: test.id };
+  return ok({ testId: test.id });
 }
 
 export async function setUaResult(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
-  if (user.role !== "admin") return { error: "Not authorized" };
+  if (user.role !== "admin") return err("Not authorized");
 
   const resultId = String(formData.get("result_id") ?? "");
   const result = String(formData.get("result") ?? "");
   if (!["pending", "pass", "fail"].includes(result)) {
-    return { error: "Invalid result" };
+    return err("Invalid result");
   }
 
   const admin = createAdminClient();
@@ -98,25 +99,25 @@ export async function setUaResult(
     status: string;
   } | null;
   if (!row || !test || test.workspace_id !== user.workspace_id || test.status !== "open") {
-    return { error: "Test not found" };
+    return err("Test not found");
   }
 
   await admin.from("ua_results").update({ result }).eq("id", resultId);
   revalidatePath("/ua");
-  return {};
+  return okVoid();
 }
 
 export async function uploadUaPhoto(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
-  if (user.role !== "admin") return { error: "Not authorized" };
+  if (user.role !== "admin") return err("Not authorized");
 
   const resultId = String(formData.get("result_id") ?? "");
   const file = formData.get("photo") as File | null;
-  if (!file || file.size === 0) return { error: "No photo" };
-  if (file.size > 10 * 1024 * 1024) return { error: "Photo too large (10MB)" };
+  if (!file || file.size === 0) return err("No photo");
+  if (file.size > 10 * 1024 * 1024) return err("Photo too large (10MB)");
 
   const admin = createAdminClient();
   const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -124,19 +125,19 @@ export async function uploadUaPhoto(
   const { error: upErr } = await admin.storage
     .from("documents")
     .upload(path, file, { upsert: false });
-  if (upErr) return { error: upErr.message };
+  if (upErr) return err(upErr.message);
 
   await admin.from("ua_results").update({ photo_path: path }).eq("id", resultId);
   revalidatePath("/ua");
-  return {};
+  return okVoid();
 }
 
 export async function archiveUaTest(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
-  if (user.role !== "admin") return { error: "Not authorized" };
+  if (user.role !== "admin") return err("Not authorized");
 
   const testId = String(formData.get("test_id") ?? "");
   const admin = createAdminClient();
@@ -146,5 +147,5 @@ export async function archiveUaTest(
     .eq("id", testId)
     .eq("workspace_id", user.workspace_id);
   revalidatePath("/ua");
-  return {};
+  return okVoid();
 }

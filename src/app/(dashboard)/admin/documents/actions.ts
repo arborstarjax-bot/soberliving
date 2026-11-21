@@ -1,4 +1,5 @@
 "use server";
+import { err, ok, type ActionResult } from "@/lib/action-result";
 
 import { requireAuth } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -9,17 +10,17 @@ const BUCKET = "documents";
 const MAX_SIZE = 10 * 1024 * 1024;
 
 export async function uploadVaultDocument(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
-  if (user.role !== "admin") return { error: "Not authorized" };
+  if (user.role !== "admin") return err("Not authorized");
 
   const file = formData.get("file") as File | null;
   const name = String(formData.get("doc_name") ?? "").trim() || file?.name;
-  if (!file || file.size === 0) return { error: "No file selected" };
-  if (file.size > MAX_SIZE) return { error: "File too large (max 10MB)" };
-  if (!name) return { error: "Name is required" };
+  if (!file || file.size === 0) return err("No file selected");
+  if (file.size > MAX_SIZE) return err("File too large (max 10MB)");
+  if (!name) return err("Name is required");
 
   const admin = createAdminClient();
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -28,7 +29,7 @@ export async function uploadVaultDocument(
   const { error: upErr } = await admin.storage
     .from(BUCKET)
     .upload(path, file, { upsert: false });
-  if (upErr) return { error: upErr.message };
+  if (upErr) return err(upErr.message);
 
   const { error: insErr } = await admin.from("documents").insert({
     user_id: user.id,
@@ -39,7 +40,7 @@ export async function uploadVaultDocument(
     file_size: file.size,
     requires_intake_ack: formData.get("requires_ack") === "on",
   });
-  if (insErr) return { error: insErr.message };
+  if (insErr) return err(insErr.message);
 
   await logActivity({
     actorId: user.id,
@@ -50,15 +51,15 @@ export async function uploadVaultDocument(
   });
 
   revalidatePath("/admin/documents");
-  return { success: true };
+  return ok({ success: true });
 }
 
 export async function deleteVaultDocument(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
-  if (user.role !== "admin") return { error: "Not authorized" };
+  if (user.role !== "admin") return err("Not authorized");
 
   const id = String(formData.get("document_id") ?? "");
   const admin = createAdminClient();
@@ -69,27 +70,27 @@ export async function deleteVaultDocument(
     .eq("document_type", "vault")
     .maybeSingle();
   if (!doc || doc.workspace_id !== user.workspace_id) {
-    return { error: "Document not found" };
+    return err("Document not found");
   }
 
   await admin.storage.from(BUCKET).remove([doc.storage_path]);
   await admin.from("documents").delete().eq("id", doc.id);
   revalidatePath("/admin/documents");
-  return { success: true };
+  return ok({ success: true });
 }
 
 export async function emailVaultDocument(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
-  if (user.role !== "admin") return { error: "Not authorized" };
+  if (user.role !== "admin") return err("Not authorized");
 
   const id = String(formData.get("document_id") ?? "");
   const to = String(formData.get("email") ?? "").trim();
   const message = String(formData.get("message") ?? "").trim();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {
-    return { error: "Enter a valid email address" };
+    return err("Enter a valid email address");
   }
 
   const admin = createAdminClient();
@@ -100,13 +101,13 @@ export async function emailVaultDocument(
     .eq("document_type", "vault")
     .maybeSingle();
   if (!doc || doc.workspace_id !== user.workspace_id) {
-    return { error: "Document not found" };
+    return err("Document not found");
   }
 
   const { data: fileData, error: dlErr } = await admin.storage
     .from(BUCKET)
     .download(doc.storage_path);
-  if (dlErr || !fileData) return { error: "Could not read file" };
+  if (dlErr || !fileData) return err("Could not read file");
 
   const { sendEmail } = await import("@/lib/email");
   const buffer = Buffer.from(await fileData.arrayBuffer());
@@ -123,7 +124,7 @@ export async function emailVaultDocument(
       },
     ],
   });
-  if (result?.error) return { error: result.error };
+  if (result?.error) return err(result.error);
 
   await logActivity({
     actorId: user.id,
@@ -132,5 +133,5 @@ export async function emailVaultDocument(
     entityId: doc.id,
     description: `${user.full_name} emailed "${doc.name}" to ${to}`,
   });
-  return { success: true };
+  return ok({ success: true });
 }

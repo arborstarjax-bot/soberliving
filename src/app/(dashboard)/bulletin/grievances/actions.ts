@@ -1,4 +1,5 @@
 "use server";
+import { err, ok } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth";
@@ -21,7 +22,7 @@ const ALLOWED_STATUSES: GrievanceStatus[] = [
 async function authorizeGrievanceAccess(grievanceId: string) {
   const user = await requireAuth();
   if (user.role !== "admin" && user.role !== "manager") {
-    return { error: "Not authorized" as const, user: null };
+    return err("Not authorized");
   }
   const admin = createAdminClient();
   const { data: row } = await admin
@@ -29,15 +30,15 @@ async function authorizeGrievanceAccess(grievanceId: string) {
     .select("id, house_id")
     .eq("id", grievanceId)
     .maybeSingle();
-  if (!row) return { error: "Grievance not found" as const, user: null };
+  if (!row) return err("Grievance not found");
 
   if (user.role === "manager") {
     const houseId = (row.house_id as string | null) ?? null;
     if (!houseId || !canAccessHouse(user, houseId)) {
-      return { error: "Not authorized" as const, user: null };
+      return err("Not authorized");
     }
   }
-  return { error: null, user, admin };
+  return ok({ user, admin });
 }
 
 export async function updateGrievanceStatus(
@@ -45,10 +46,10 @@ export async function updateGrievanceStatus(
   status: GrievanceStatus
 ) {
   if (!ALLOWED_STATUSES.includes(status)) {
-    return { error: "Invalid status" };
+    return err("Invalid status");
   }
   const auth = await authorizeGrievanceAccess(grievanceId);
-  if (auth.error) return { error: auth.error };
+  if (!auth.ok) return err(auth.error);
 
   const update: {
     status: GrievanceStatus;
@@ -69,11 +70,11 @@ export async function updateGrievanceStatus(
     .admin!.from("grievances")
     .update(update)
     .eq("id", grievanceId);
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   revalidatePath("/bulletin/grievances");
   revalidatePath(`/bulletin/grievances/${grievanceId}`);
-  return { ok: true };
+  return ok({ ok: true });
 }
 
 export async function updateGrievanceNotes(
@@ -81,7 +82,7 @@ export async function updateGrievanceNotes(
   notes: string
 ) {
   const auth = await authorizeGrievanceAccess(grievanceId);
-  if (auth.error) return { error: auth.error };
+  if (!auth.ok) return err(auth.error);
 
   const trimmed = notes.trim();
   const { error } = await auth
@@ -91,10 +92,10 @@ export async function updateGrievanceNotes(
       updated_at: new Date().toISOString(),
     })
     .eq("id", grievanceId);
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   revalidatePath(`/bulletin/grievances/${grievanceId}`);
-  return { ok: true };
+  return ok({ ok: true });
 }
 
 /**
@@ -108,7 +109,7 @@ export async function getGrievanceAttachmentUrl(
   path: string
 ) {
   const auth = await authorizeGrievanceAccess(grievanceId);
-  if (auth.error) return { error: auth.error, url: null };
+  if (!auth.ok) return err(auth.error);
 
   const { data: row } = await auth
     .admin!.from("grievances")
@@ -117,14 +118,14 @@ export async function getGrievanceAttachmentUrl(
     .maybeSingle();
   const paths = (row?.attachment_paths as string[] | null) ?? [];
   if (!paths.includes(path)) {
-    return { error: "Attachment not found on this grievance", url: null };
+    return err("Attachment not found on this grievance");
   }
 
   const { data, error } = await auth
     .admin!.storage.from("grievance-attachments")
     .createSignedUrl(path, 3600);
   if (error || !data?.signedUrl) {
-    return { error: error?.message ?? "Sign failed", url: null };
+    return err(error?.message ?? "Sign failed");
   }
-  return { url: data.signedUrl };
+  return ok({ url: data.signedUrl });
 }

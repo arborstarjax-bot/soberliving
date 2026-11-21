@@ -1,4 +1,5 @@
 "use server";
+import { err, ok } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth";
@@ -29,13 +30,10 @@ export async function uploadGrievanceAttachment(formData: FormData) {
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
-    return { error: "No file provided", path: null };
+    return err("No file provided");
   }
   if (file.size > MAX_BYTES) {
-    return {
-      error: `File too large (max ${MAX_BYTES / (1024 * 1024)}MB)`,
-      path: null,
-    };
+    return err(`File too large (max ${MAX_BYTES / (1024 * 1024)}MB)`);
   }
 
   const admin = createAdminClient();
@@ -47,8 +45,8 @@ export async function uploadGrievanceAttachment(formData: FormData) {
     contentType: file.type || "application/octet-stream",
     upsert: false,
   });
-  if (error) return { error: error.message, path: null };
-  return { path };
+  if (error) return err(error.message);
+  return ok({ path });
 }
 
 interface SubmitGrievanceInput {
@@ -71,13 +69,13 @@ export async function submitGrievance(input: SubmitGrievanceInput) {
 
   const subject = input.subject.trim();
   const description = input.description.trim();
-  if (!subject) return { error: "Subject is required" };
-  if (!description) return { error: "Description is required" };
+  if (!subject) return err("Subject is required");
+  if (!description) return err("Description is required");
   if (input.reportType !== "grievance" && input.reportType !== "problem") {
-    return { error: "Invalid report type" };
+    return err("Invalid report type");
   }
   if (input.attachmentPaths.length > MAX_FILES) {
-    return { error: `Too many attachments (max ${MAX_FILES})` };
+    return err(`Too many attachments (max ${MAX_FILES})`);
   }
 
   const admin = createAdminClient();
@@ -112,11 +110,11 @@ export async function submitGrievance(input: SubmitGrievanceInput) {
     status: "open",
   });
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   // Not awaited / not called for anonymous submissions — activity_log
   // rows carry actor_id and would otherwise tie an anonymous report
   // back to the submitter.
   revalidatePath("/bulletin/grievances");
-  return { ok: true };
+  return ok({ ok: true });
 }

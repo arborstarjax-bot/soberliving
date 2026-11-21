@@ -1,4 +1,5 @@
 "use server";
+import { err, okVoid } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -9,7 +10,7 @@ export async function setSobrietyDate(sobrietyDate: string) {
   const user = await requireAuth();
   const adminClient = createAdminClient();
 
-  if (!sobrietyDate) return { error: "Sobriety date is required" };
+  if (!sobrietyDate) return err("Sobriety date is required");
 
   // Reject future dates. Residents shouldn't be able to set a sobriety
   // start date that hasn't happened yet.
@@ -17,7 +18,7 @@ export async function setSobrietyDate(sobrietyDate: string) {
   const endOfToday = new Date();
   endOfToday.setHours(23, 59, 59, 999);
   if (isNaN(entered.getTime()) || entered.getTime() > endOfToday.getTime()) {
-    return { error: "Sobriety date cannot be in the future" };
+    return err("Sobriety date cannot be in the future");
   }
 
   // Verify the user is a resident with a residents record
@@ -28,11 +29,11 @@ export async function setSobrietyDate(sobrietyDate: string) {
     .eq("status", "active")
     .maybeSingle();
 
-  if (!resident) return { error: "Resident profile not found" };
+  if (!resident) return err("Resident profile not found");
 
   // Only allow setting if not already set
   if (resident.sobriety_date) {
-    return { error: "Sobriety date is already set and cannot be changed" };
+    return err("Sobriety date is already set and cannot be changed");
   }
 
   const { error } = await adminClient
@@ -43,7 +44,7 @@ export async function setSobrietyDate(sobrietyDate: string) {
     })
     .eq("id", resident.id);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     actorId: user.id,
@@ -55,5 +56,5 @@ export async function setSobrietyDate(sobrietyDate: string) {
   });
 
   revalidatePath("/dashboard");
-  return {};
+  return okVoid();
 }

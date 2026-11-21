@@ -5,7 +5,7 @@ import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { getWorkspaceSettings } from "@/lib/workspace";
-import { okVoid, err, type ActionResult } from "@/lib/action-result";
+import { err, okVoid, type ActionResult } from "@/lib/action-result";
 
 const MEETING_PHOTO_MAX_BYTES = 10 * 1024 * 1024;
 

@@ -1,4 +1,5 @@
 "use server";
+import { err, ok, okVoid, type ActionResult } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
@@ -19,10 +20,9 @@ import { materializeNextRentCharge } from "@/lib/payments/charges";
 import { sendNotification } from "@/lib/notifications";
 import { getWorkspace } from "@/lib/workspace";
 
-async function allocateReceiptNumber(): Promise<{
-  number: string;
-  year: number;
-}> {
+async function allocateReceiptNumber(): Promise<
+  ActionResult<{ number: string; year: number }>
+> {
   const admin = createAdminClient();
   const year = new Date().getFullYear();
   const { data, error } = await admin.rpc("next_receipt_number", {
@@ -33,15 +33,15 @@ async function allocateReceiptNumber(): Promise<{
       `Could not allocate receipt number: ${error?.message ?? "empty response"}`
     );
   }
-  return { number: data as unknown as string, year };
+  return ok({ number: data as unknown as string, year });
 }
 
 export async function createPayment(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
-  if (user.role === "resident") return { error: "Not authorized" };
+  if (user.role === "resident") return err("Not authorized");
 
   const ws = user.workspace_id ? await getWorkspace(user.workspace_id) : null;
   const facilityName = ws?.name ?? "Sober Living";
@@ -61,10 +61,10 @@ export async function createPayment(
     note: formData.get("note") || undefined,
   });
 
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   if (user.role !== "admin" && !canAccessHouse(user, parsed.data.house_id)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const supabase = await createClient();
@@ -85,8 +85,8 @@ export async function createPayment(
       .single(),
   ]);
 
-  if (!resident) return { error: "Resident not found" };
-  if (!house) return { error: "House not found" };
+  if (!resident) return err("Resident not found");
+  if (!house) return err("House not found");
 
   // If a charge was selected, pull it and prefill period / due_date
   // from it so the receipt reflects which billing period this covers.
@@ -110,7 +110,7 @@ export async function createPayment(
   if (!chargeIdForPayment && parsed.data.commitment_id) {
     const next = await materializeNextRentCharge(parsed.data.commitment_id);
     if (!next) {
-      return { error: "No active commitment found for upcoming rent" };
+      return err("No active commitment found for upcoming rent");
     }
     chargeIdForPayment = next.id;
   }
@@ -134,7 +134,7 @@ export async function createPayment(
   let receiptNumber: string | null = null;
   try {
     const alloc = await allocateReceiptNumber();
-    receiptNumber = alloc.number;
+    if (alloc.ok) receiptNumber = alloc.number;
   } catch (e) {
     // Allocation failure is not fatal; log and continue without a
     // receipt number. Admin can re-run generation later.
@@ -168,7 +168,7 @@ export async function createPayment(
     .single();
 
   if (error || !inserted) {
-    return { error: error?.message ?? "Failed to record payment" };
+    return err(error?.message ?? "Failed to record payment");
   }
 
   // Update the charge atomically via RPC. Doing the read-modify-write
@@ -272,7 +272,7 @@ export async function createPayment(
   revalidatePath("/dashboard");
   revalidatePath("/admin");
   revalidatePath(`/residents/${parsed.data.resident_id}`);
-  return {};
+  return okVoid();
 }
 
 export async function voidPayment(
@@ -282,14 +282,14 @@ export async function voidPayment(
   const user = await requireAuth();
   // Admin-only per owner spec. Managers can record payments but only
   // admins void or refund.
-  if (user.role !== "admin") return { error: "Not authorized" };
+  if (user.role !== "admin") return err("Not authorized");
 
   const parsed = voidPaymentSchema.safeParse({
     payment_id: formData.get("payment_id"),
     reason: formData.get("reason"),
   });
 
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   const supabase = await createClient();
   const admin = createAdminClient();
@@ -302,10 +302,10 @@ export async function voidPayment(
     .eq("id", parsed.data.payment_id)
     .single();
 
-  if (!payment) return { error: "Payment not found" };
+  if (!payment) return err("Payment not found");
 
   if (payment.status === "void" || payment.status === "refunded") {
-    return { error: "Payment cannot be voided" };
+    return err("Payment cannot be voided");
   }
 
   const { error } = await admin
@@ -313,7 +313,7 @@ export async function voidPayment(
     .update({ status: "void", updated_at: new Date().toISOString() })
     .eq("id", parsed.data.payment_id);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   // If this payment was applied to a charge, unwind the application
   // atomically. The RPC does a single UPDATE that subtracts the
@@ -350,7 +350,7 @@ export async function voidPayment(
   revalidatePath("/payments");
   revalidatePath("/dashboard");
   revalidatePath(`/residents/${payment.resident_id}`);
-  return {};
+  return okVoid();
 }
 
 export async function deletePayment(
@@ -360,12 +360,12 @@ export async function deletePayment(
   const user = await requireAuth();
   // Admin-only — delete is more destructive than void because it
   // removes the audit row. Managers can record and void but not wipe.
-  if (user.role !== "admin") return { error: "Not authorized" };
+  if (user.role !== "admin") return err("Not authorized");
 
   const parsed = deletePaymentSchema.safeParse({
     payment_id: formData.get("payment_id"),
   });
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   const supabase = await createClient();
   const admin = createAdminClient();
@@ -378,7 +378,7 @@ export async function deletePayment(
     .eq("id", parsed.data.payment_id)
     .single();
 
-  if (!payment) return { error: "Payment not found" };
+  if (!payment) return err("Payment not found");
 
   // If the payment was applied to a charge, reverse the application
   // first (same atomic RPC the void path uses) so the charge's
@@ -412,7 +412,7 @@ export async function deletePayment(
     .from("payments")
     .delete()
     .eq("id", parsed.data.payment_id);
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   const residentRel = Array.isArray(payment.resident)
     ? payment.resident[0]
@@ -437,15 +437,15 @@ export async function deletePayment(
   revalidatePath("/payments");
   revalidatePath("/dashboard");
   revalidatePath(`/residents/${payment.resident_id}`);
-  return {};
+  return okVoid();
 }
 
 export async function upsertRentConfig(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
-  if (user.role === "resident") return { error: "Not authorized" };
+  if (user.role === "resident") return err("Not authorized");
 
   const parsed = upsertRentConfigSchema.safeParse({
     house_id: formData.get("house_id"),
@@ -453,10 +453,10 @@ export async function upsertRentConfig(
     due_day_of_month: formData.get("due_day_of_month"),
   });
 
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   if (user.role !== "admin" && !canAccessHouse(user, parsed.data.house_id)) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const supabase = await createClient();
@@ -477,7 +477,7 @@ export async function upsertRentConfig(
     .select("id")
     .single();
 
-  if (insertError) return { error: insertError.message };
+  if (insertError) return err(insertError.message);
 
   await supabase
     .from("rent_configs")
@@ -510,7 +510,7 @@ export async function upsertRentConfig(
 
   revalidatePath("/payments");
   revalidatePath(`/houses/${parsed.data.house_id}`);
-  return {};
+  return okVoid();
 }
 
 // ──────────────────────────────────────────────────────────
@@ -524,12 +524,12 @@ export async function upsertRentConfig(
 // ──────────────────────────────────────────────────────────
 
 export async function proposeAmendment(
-  _prev: { error?: string } | undefined,
+  _prev: ActionResult | undefined,
   formData: FormData
-): Promise<{ error?: string }> {
+): Promise<ActionResult> {
   const user = await requireAuth();
   if (user.role !== "admin") {
-    return { error: "Only admins can propose amendments" };
+    return err("Only admins can propose amendments");
   }
 
   const userId = String(formData.get("user_id") ?? "");
@@ -572,19 +572,19 @@ export async function proposeAmendment(
       ? rawStaffSignature
       : null;
 
-  if (!userId) return { error: "Resident is required" };
+  if (!userId) return err("Resident is required");
   if (!Number.isFinite(newRent) || newRent < 0) {
-    return { error: "Rent must be a non-negative number" };
+    return err("Rent must be a non-negative number");
   }
   if (hasAdminFee && (!Number.isFinite(newAdminFee) || (newAdminFee ?? 0) < 0)) {
-    return { error: "Admin fee must be a non-negative number" };
+    return err("Admin fee must be a non-negative number");
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
-    return { error: "Effective date is required" };
+    return err("Effective date is required");
   }
-  if (!reason) return { error: "Reason for the change is required" };
+  if (!reason) return err("Reason for the change is required");
   if (rawFrequency && !newFrequency) {
-    return { error: "Payment frequency must be weekly or monthly" };
+    return err("Payment frequency must be weekly or monthly");
   }
 
   const admin = createAdminClient();
@@ -604,14 +604,14 @@ export async function proposeAmendment(
     .limit(1)
     .maybeSingle();
 
-  if (!active) return { error: "No active commitment to amend" };
+  if (!active) return err("No active commitment to amend");
 
   if (
     user.role === "admin"
       ? false
       : !canAccessHouse(user, active.house_id as string)
   ) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   // Guard: unique partial index uq_house_commitments_one_pending_per_user
@@ -624,10 +624,7 @@ export async function proposeAmendment(
     .eq("status", "pending_resident_signature")
     .maybeSingle();
   if (pending) {
-    return {
-      error:
-        "An amendment is already awaiting the resident's signature. Cancel it first before proposing a new one.",
-    };
+    return err("An amendment is already awaiting the resident's signature. Cancel it first before proposing a new one.");
   }
 
   const { data: inserted, error: insertError } = await admin
@@ -724,7 +721,7 @@ export async function proposeAmendment(
     .select("id")
     .single();
 
-  if (insertError) return { error: insertError.message };
+  if (insertError) return err(insertError.message);
 
   await sendNotification({
     userId,
@@ -755,14 +752,14 @@ export async function proposeAmendment(
   revalidatePath("/payments");
   revalidatePath(`/residents/${active.resident_id}`);
   revalidatePath("/sign-commitment");
-  return {};
+  return okVoid();
 }
 
 export async function cancelPendingAmendment(
   commitmentId: string
-): Promise<{ error?: string }> {
+): Promise<ActionResult> {
   const user = await requireAuth();
-  if (user.role !== "admin") return { error: "Not authorized" };
+  if (user.role !== "admin") return err("Not authorized");
 
   const admin = createAdminClient();
   const { data: row } = await admin
@@ -771,16 +768,16 @@ export async function cancelPendingAmendment(
     .eq("id", commitmentId)
     .single();
 
-  if (!row) return { error: "Amendment not found" };
+  if (!row) return err("Amendment not found");
   if (row.status !== "pending_resident_signature" || !row.parent_commitment_id) {
-    return { error: "Only pending amendments can be cancelled" };
+    return err("Only pending amendments can be cancelled");
   }
 
   const { error } = await admin
     .from("house_commitments")
     .update({ status: "cancelled", updated_at: new Date().toISOString() })
     .eq("id", commitmentId);
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   // Tell the resident the amendment was withdrawn so they don't keep
   // hunting for a non-existent /sign-commitment redirect. Also clears
@@ -811,7 +808,7 @@ export async function cancelPendingAmendment(
   revalidatePath(`/residents/${row.resident_id}`);
   revalidatePath("/sign-commitment");
   revalidatePath("/dashboard");
-  return {};
+  return okVoid();
 }
 
 // ──────────────────────────────────────────────────────────
@@ -822,16 +819,16 @@ export async function cancelPendingAmendment(
 export async function adjustChargeAmount(
   _prev: { error?: string } | null | undefined,
   formData: FormData
-): Promise<{ error?: string }> {
+): Promise<ActionResult> {
   const user = await requireAuth();
-  if (user.role !== "admin") return { error: "Only admins can adjust charges" };
+  if (user.role !== "admin") return err("Only admins can adjust charges");
 
   const parsed = adjustChargeAmountSchema.safeParse({
     charge_id: formData.get("charge_id"),
     new_amount: formData.get("new_amount"),
     reason: formData.get("reason"),
   });
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   const admin = createAdminClient();
 
@@ -841,15 +838,13 @@ export async function adjustChargeAmount(
     .eq("id", parsed.data.charge_id)
     .single();
 
-  if (!charge) return { error: "Charge not found" };
+  if (!charge) return err("Charge not found");
   if (charge.status !== "open" && charge.status !== "partial") {
-    return { error: "Only open or partial charges can be adjusted" };
+    return err("Only open or partial charges can be adjusted");
   }
 
   if (parsed.data.new_amount < Number(charge.paid_amount)) {
-    return {
-      error: `New amount cannot be less than already-paid amount ($${Number(charge.paid_amount).toFixed(2)})`,
-    };
+    return err(`New amount cannot be less than already-paid amount ($${Number(charge.paid_amount).toFixed(2)})`);
   }
 
   const oldAmount = Number(charge.amount);
@@ -871,7 +866,7 @@ export async function adjustChargeAmount(
     })
     .eq("id", parsed.data.charge_id);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: charge.house_id as string,
@@ -891,15 +886,15 @@ export async function adjustChargeAmount(
   revalidatePath("/payments");
   revalidatePath("/dashboard");
   revalidatePath(`/residents/${charge.resident_id}`);
-  return {};
+  return okVoid();
 }
 
 export async function addOneTimeCharge(
   _prev: { error?: string } | null | undefined,
   formData: FormData
-): Promise<{ error?: string }> {
+): Promise<ActionResult> {
   const user = await requireAuth();
-  if (user.role !== "admin") return { error: "Only admins can add charges" };
+  if (user.role !== "admin") return err("Only admins can add charges");
 
   const parsed = addOneTimeChargeSchema.safeParse({
     resident_id: formData.get("resident_id"),
@@ -909,14 +904,14 @@ export async function addOneTimeCharge(
     description: formData.get("description"),
     due_date: formData.get("due_date"),
   });
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   if (
     user.role === "admin"
       ? false
       : !canAccessHouse(user, parsed.data.house_id)
   ) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const admin = createAdminClient();
@@ -936,7 +931,7 @@ export async function addOneTimeCharge(
     .select("id")
     .single();
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   const { data: resident } = await admin
     .from("residents")
@@ -963,21 +958,21 @@ export async function addOneTimeCharge(
   revalidatePath("/payments");
   revalidatePath("/dashboard");
   revalidatePath(`/residents/${parsed.data.resident_id}`);
-  return {};
+  return okVoid();
 }
 
 export async function writeOffCharge(
   _prev: { error?: string } | null | undefined,
   formData: FormData
-): Promise<{ error?: string }> {
+): Promise<ActionResult> {
   const user = await requireAuth();
-  if (user.role !== "admin") return { error: "Only admins can write off charges" };
+  if (user.role !== "admin") return err("Only admins can write off charges");
 
   const parsed = writeOffChargeSchema.safeParse({
     charge_id: formData.get("charge_id"),
     reason: formData.get("reason"),
   });
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   const admin = createAdminClient();
 
@@ -987,9 +982,9 @@ export async function writeOffCharge(
     .eq("id", parsed.data.charge_id)
     .single();
 
-  if (!charge) return { error: "Charge not found" };
+  if (!charge) return err("Charge not found");
   if (charge.status !== "open" && charge.status !== "partial") {
-    return { error: "Only open or partial charges can be written off" };
+    return err("Only open or partial charges can be written off");
   }
 
   const remaining = Number(charge.amount) - Number(charge.paid_amount);
@@ -1002,7 +997,7 @@ export async function writeOffCharge(
     })
     .eq("id", parsed.data.charge_id);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     houseId: charge.house_id as string,
@@ -1022,5 +1017,5 @@ export async function writeOffCharge(
   revalidatePath("/payments");
   revalidatePath("/dashboard");
   revalidatePath(`/residents/${charge.resident_id}`);
-  return {};
+  return okVoid();
 }

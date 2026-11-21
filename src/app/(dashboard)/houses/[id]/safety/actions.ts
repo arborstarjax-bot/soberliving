@@ -1,4 +1,5 @@
 "use server";
+import { err, ok } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth";
@@ -38,19 +39,19 @@ export async function submitSafetyAssessment(
 ) {
   const user = await requireAuth();
   if (user.role !== "admin" && user.role !== "manager") {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
   if (user.role !== "admin" && !canAccessHouse(user, input.houseId)) {
-    return { error: "Not authorized for this house" };
+    return err("Not authorized for this house");
   }
 
   const personName = input.personCompletingName.trim();
-  if (!personName) return { error: "Person completing is required" };
+  if (!personName) return err("Person completing is required");
   if (!ISO_DATE.test(input.assessmentDate)) {
-    return { error: "Invalid assessment date" };
+    return err("Invalid assessment date");
   }
   if (!input.signature || !input.signature.startsWith("data:image/")) {
-    return { error: "Signature is required" };
+    return err("Signature is required");
   }
 
   const admin = createAdminClient();
@@ -60,7 +61,7 @@ export async function submitSafetyAssessment(
     .select("id, name, address")
     .eq("id", input.houseId)
     .maybeSingle();
-  if (!house) return { error: "House not found" };
+  if (!house) return err("House not found");
 
   const pdfBytes = await generateSafetyAssessmentPdf({
     houseName: (house.name as string) ?? "",
@@ -84,7 +85,7 @@ export async function submitSafetyAssessment(
       contentType: "application/pdf",
       upsert: false,
     });
-  if (uploadError) return { error: uploadError.message };
+  if (uploadError) return err(uploadError.message);
 
   const docName = `Safety Assessment — ${formatDateOnly(input.assessmentDate)}`;
   const { data: doc, error: docError } = await admin
@@ -102,7 +103,7 @@ export async function submitSafetyAssessment(
     .single();
   if (docError || !doc) {
     await admin.storage.from(HOUSE_DOCS_BUCKET).remove([objectPath]);
-    return { error: docError?.message ?? "Failed to save document" };
+    return err(docError?.message ?? "Failed to save document");
   }
 
   const { data: assessment, error: assessmentError } = await admin
@@ -122,7 +123,7 @@ export async function submitSafetyAssessment(
   if (assessmentError || !assessment) {
     await admin.from("house_documents").delete().eq("id", doc.id);
     await admin.storage.from(HOUSE_DOCS_BUCKET).remove([objectPath]);
-    return { error: assessmentError?.message ?? "Failed to save assessment" };
+    return err(assessmentError?.message ?? "Failed to save assessment");
   }
 
   await logActivity({
@@ -136,5 +137,5 @@ export async function submitSafetyAssessment(
 
   revalidatePath(`/houses/${input.houseId}`);
   revalidatePath("/dashboard");
-  return { ok: true };
+  return ok({ ok: true });
 }

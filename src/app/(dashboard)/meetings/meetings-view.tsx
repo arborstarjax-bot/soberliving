@@ -78,7 +78,7 @@ function houseName(m: MeetingRow): string {
 
 async function openPhoto(path: string) {
   const res = await getDocumentUrl(path);
-  if (res.url) window.open(res.url, "_blank");
+  if (res.ok && res.url) window.open(res.url, "_blank");
 }
 
 function MeetingCard({
