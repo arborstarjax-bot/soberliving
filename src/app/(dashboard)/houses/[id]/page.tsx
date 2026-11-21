@@ -81,6 +81,7 @@ export default async function HouseDetailPage(props: PageProps<"/houses/[id]">) 
                   currentName={house.name}
                   currentAddress={house.address}
                   currentPhone={house.phone}
+                  currentTimezone={houseTimezone ?? null}
                 />
                 <DeleteHouseDialog houseId={house.id} houseName={house.name} />
               </>

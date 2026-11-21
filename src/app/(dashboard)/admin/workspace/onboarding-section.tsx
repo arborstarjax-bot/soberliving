@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { updateWorkspaceSettings } from "./actions";
 import { WORKSPACE_MODULES } from "@/lib/modules";
 import { REMINDER_TYPES } from "@/lib/reminders";
+import { TIMEZONE_OPTIONS } from "@/lib/timezone";
 import type { WorkspaceSettings } from "@/lib/types";
 
 function Toggle({
@@ -127,6 +128,9 @@ export function OnboardingSection({
   const [passApprover, setPassApprover] = useState<
     "manager" | "admin" | "both"
   >(settings?.pass_approver ?? "both");
+  const [timezone, setTimezone] = useState(
+    settings?.timezone ?? "America/New_York"
+  );
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
 
@@ -151,6 +155,7 @@ export function OnboardingSection({
       rules_text: rulesText || null,
       require_rule_checkoff: requireRuleCheckoff,
       director_name: directorName || null,
+      timezone,
       check_in_schedules: schedules,
       resident_modules: residentModules,
       reminder_settings: reminders,
@@ -241,8 +246,31 @@ export function OnboardingSection({
           />
         </div>
 
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <Label htmlFor="workspace-timezone">Workspace Timezone</Label>
+            <p className="text-sm text-muted-foreground">
+              Dates and times across the workspace (due dates, reminders,
+              receipts). New houses inherit this; each house can override it
+              on its own page.
+            </p>
+          </div>
+          <select
+            id="workspace-timezone"
+            value={timezone}
+            onChange={(e) => setTimezone(e.target.value)}
+            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
+          >
+            {TIMEZONE_OPTIONS.map((tz) => (
+              <option key={tz} value={tz}>
+                {tz.replace(/_/g, " ")}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="flex items-center gap-3">
-          <Button onClick={() => handleSave(["require_application", "require_commitment", "enable_payments"])} disabled={pending}>
+          <Button onClick={() => handleSave(["require_application", "require_commitment", "enable_payments", "timezone"])} disabled={pending}>
             {pending ? "Saving..." : "Save Changes"}
           </Button>
           {message && (

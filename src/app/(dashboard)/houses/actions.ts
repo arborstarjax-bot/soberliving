@@ -7,7 +7,7 @@ import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { requireAuth, requireRole } from "@/lib/auth";
 import { canAccessHouse } from "@/lib/permissions";
 import { logActivity } from "@/lib/activity";
-import { getHouseToday } from "@/lib/timezone";
+import { DEFAULT_TIMEZONE, getHouseToday } from "@/lib/timezone";
 import {
   createHouseSchema,
   updateHouseSchema,
@@ -35,12 +35,26 @@ export async function createHouse(
   }
 
   const adminClient = createAdminClient();
+  // New houses take the workspace timezone — per-house overrides happen in
+  // the house edit dialog.
+  let houseTimezone = DEFAULT_TIMEZONE;
+  if (user.workspace_id) {
+    const { data: ws } = await adminClient
+      .from("workspace_settings")
+      .select("timezone")
+      .eq("workspace_id", user.workspace_id)
+      .maybeSingle();
+    if (typeof ws?.timezone === "string" && ws.timezone) {
+      houseTimezone = ws.timezone;
+    }
+  }
   const { data, error } = await adminClient
     .from("houses")
     .insert({
       ...parsed.data,
       capacity: 0,
       workspace_id: user.workspace_id,
+      timezone: houseTimezone,
     })
     .select("id")
     .single();
@@ -70,6 +84,7 @@ export async function updateHouse(houseId: string, formData: FormData) {
     name: formData.get("name") || undefined,
     address: formData.has("address") ? (formData.get("address") || null) : undefined,
     phone: formData.has("phone") ? (formData.get("phone") || null) : undefined,
+    timezone: formData.get("timezone") || undefined,
   });
 
   if (!parsed.success) {

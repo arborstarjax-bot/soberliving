@@ -246,3 +246,16 @@ export function addCalendarDays(dateStr: string, days: number): string {
   const dd = String(next.getUTCDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
+
+/** Common IANA zones offered in workspace/house settings pickers. */
+export const TIMEZONE_OPTIONS = [
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Phoenix",
+  "America/Los_Angeles",
+  "America/Anchorage",
+  "Pacific/Honolulu",
+  "America/Puerto_Rico",
+  "UTC",
+] as const;
