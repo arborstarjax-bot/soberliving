@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getAccessibleHouseFilter } from "@/lib/permissions";
 import type { SessionUser } from "@/lib/types";
 import { CreateLeaveRequestDialog } from "../leave-requests/create-leave-request-dialog";
@@ -17,10 +17,19 @@ export async function CreateLeaveRequestSection({ user }: { user: SessionUser })
       .eq("status", "active")
       .maybeSingle();
     userResidentId = myResident?.id;
-    userHouseId = myResident?.house_id ?? undefined;
+    // Only true residents get house-scoped pickers — staff who also have
+    // a resident record keep their staff-wide resident list.
+    if (user.role === "resident") {
+      userHouseId = myResident?.house_id ?? undefined;
+    }
   }
 
-  let residentsQuery = supabase
+  // Resident-role RLS only returns the resident's own row, but the form
+  // legitimately needs same-house housemates as cover candidates — use
+  // the admin client for those lookups when scoped to a resident's house.
+  const residentsDb = userHouseId ? createAdminClient() : supabase;
+
+  let residentsQuery = residentsDb
     .from("residents")
     .select("id, full_name, house_id")
     .eq("status", "active")
@@ -36,7 +45,7 @@ export async function CreateLeaveRequestSection({ user }: { user: SessionUser })
   // Residents already carrying chore assignments in their house's current
   // rotation can't be picked as covering residents — they'd be covering
   // someone else's chores while doing their own.
-  let rotationQuery = supabase
+  let rotationQuery = residentsDb
     .from("chore_rotations")
     .select("id")
     .eq("is_current", true);

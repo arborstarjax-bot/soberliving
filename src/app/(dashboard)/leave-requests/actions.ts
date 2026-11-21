@@ -111,7 +111,11 @@ export async function createLeaveRequest(
 
   // Look up the other active residents in this house — needed both for
   // the cover checks and to know whether skipping the cover is allowed.
-  const { data: otherHouseResidents } = await supabase
+  // Resident-role RLS returns only the resident's own row, which would
+  // make every shared house look solo and bypass cover approval — so
+  // housemate lookups always go through the admin client.
+  const adminDb = createAdminClient();
+  const { data: otherHouseResidents } = await adminDb
     .from("residents")
     .select("id")
     .eq("house_id", resident.house_id)
@@ -127,7 +131,7 @@ export async function createLeaveRequest(
 
   if (coveringResidentId) {
     // Verify covering resident is in the same house
-    const { data: cover } = await supabase
+    const { data: cover } = await adminDb
       .from("residents")
       .select("house_id, full_name, user_id")
       .eq("id", coveringResidentId)
@@ -147,7 +151,7 @@ export async function createLeaveRequest(
     // while doing theirs. Only enforced when an eligible (chore-free)
     // resident exists, matching the picker; if everyone is busy we still
     // accept the request rather than blocking leave entirely.
-    const { data: currentRotation } = await supabase
+    const { data: currentRotation } = await adminDb
       .from("chore_rotations")
       .select("id")
       .eq("house_id", resident.house_id)
@@ -155,7 +159,7 @@ export async function createLeaveRequest(
       .maybeSingle();
 
     if (currentRotation) {
-      const { data: rotationAssignments } = await supabase
+      const { data: rotationAssignments } = await adminDb
         .from("chore_rotation_assignments")
         .select("resident_id")
         .eq("rotation_id", currentRotation.id);
