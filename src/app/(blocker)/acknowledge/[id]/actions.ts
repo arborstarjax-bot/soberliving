@@ -1,4 +1,5 @@
 "use server";
+import { err, ok, okVoid } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -21,7 +22,7 @@ export async function acknowledgeBlocker(
 ) {
   const user = await requireAuth();
   if (user.role !== "resident") {
-    return { error: "Only residents can acknowledge blockers" };
+    return err("Only residents can acknowledge blockers");
   }
 
   const admin = createAdminClient();
@@ -37,8 +38,8 @@ export async function acknowledgeBlocker(
     )
     .eq("id", blockerId)
     .maybeSingle();
-  if (!blocker) return { error: "Blocker not found" };
-  if (blocker.archived_at) return { error: "Blocker is no longer active" };
+  if (!blocker) return err("Blocker not found");
+  if (blocker.archived_at) return err("Blocker is no longer active");
 
   // Signature handling depends on the blocker's configuration. When
   // require_signature is true (default), we require a valid data-url
@@ -47,7 +48,7 @@ export async function acknowledgeBlocker(
   const mustSign = blocker.require_signature !== false;
   if (mustSign) {
     if (!signatureDataUrl || !signatureDataUrl.startsWith("data:image/")) {
-      return { error: "Signature required" };
+      return err("Signature required");
     }
   }
   const signatureToStore = mustSign ? signatureDataUrl : null;
@@ -62,7 +63,7 @@ export async function acknowledgeBlocker(
     admin
   );
   if (!applicable) {
-    return { error: "Blocker is not applicable to this user" };
+    return err("Blocker is not applicable to this user");
   }
 
   // Upsert the ack row. PK is (blocker_id, user_id) so a retry from
@@ -78,7 +79,7 @@ export async function acknowledgeBlocker(
       },
       { onConflict: "blocker_id,user_id" }
     );
-  if (ackError) return { error: ackError.message };
+  if (ackError) return err(ackError.message);
 
   // Optional: save the signed ack as a PDF to this user's Documents.
   // Mirrors the /sign-commitment pattern so residents have a durable
@@ -142,7 +143,7 @@ export async function acknowledgeBlocker(
   // pinned to /acknowledge/[id] even after the ack has landed.
   revalidatePath("/", "layout");
 
-  return {};
+  return okVoid();
 }
 
 /**
@@ -213,11 +214,11 @@ export async function getBlockerAttachmentUrl(
     .select("attachment_paths, archived_at, target_type, target_house_ids, target_user_ids")
     .eq("id", blockerId)
     .maybeSingle();
-  if (!blocker) return { error: "Blocker not found" };
+  if (!blocker) return err("Blocker not found");
 
   const paths = (blocker.attachment_paths as string[] | null) ?? [];
   if (!paths.includes(storagePath)) {
-    return { error: "Attachment not found" };
+    return err("Attachment not found");
   }
 
   // Residents who are NOT the target of this blocker shouldn't be
@@ -226,7 +227,7 @@ export async function getBlockerAttachmentUrl(
     const targetType = blocker.target_type as string;
     if (targetType === "residents") {
       const arr = (blocker.target_user_ids as string[] | null) ?? [];
-      if (!arr.includes(user.id)) return { error: "Not authorized" };
+      if (!arr.includes(user.id)) return err("Not authorized");
     } else if (targetType === "house") {
       const { data: residentRow } = await admin
         .from("residents")
@@ -237,7 +238,7 @@ export async function getBlockerAttachmentUrl(
       const houseId = (residentRow?.house_id as string | null) ?? null;
       const arr = (blocker.target_house_ids as string[] | null) ?? [];
       if (!houseId || !arr.includes(houseId)) {
-        return { error: "Not authorized" };
+        return err("Not authorized");
       }
     }
   }
@@ -245,6 +246,6 @@ export async function getBlockerAttachmentUrl(
   const { data, error } = await admin.storage
     .from("blocker-attachments")
     .createSignedUrl(storagePath, 60 * 10);
-  if (error || !data) return { error: error?.message ?? "Failed to sign URL" };
-  return { url: data.signedUrl };
+  if (error || !data) return err(error?.message ?? "Failed to sign URL");
+  return ok({ url: data.signedUrl });
 }

@@ -57,7 +57,7 @@ export function SendCheckInDialog({ houses }: SendCheckInDialogProps) {
       const result = await sendCheckIn(selectedHouseIds);
       if (result.error) {
         setError(result.error);
-      } else {
+      } else if (result.ok) {
         setSuccess(
           `Check-in sent to ${result.count} resident(s). They will be required to complete it before accessing the app.`
         );

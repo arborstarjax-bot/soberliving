@@ -56,14 +56,14 @@ export function NewGrievanceForm() {
         const fd = new FormData();
         fd.set("file", file);
         const result = await uploadGrievanceAttachment(fd);
-        if (result.error || !result.path) {
-          setUploadError(result.error ?? "Upload failed");
+        if (!result.ok || !result.path) {
+          setUploadError(result.ok === false ? result.error : "Upload failed");
           continue;
         }
-        setAttachments((prev) => [...prev, result.path as string]);
+        setAttachments((prev) => [...prev, result.path]);
         setAttachmentNames((prev) => ({
           ...prev,
-          [result.path as string]: file.name,
+          [result.path]: file.name,
         }));
       }
     } finally {

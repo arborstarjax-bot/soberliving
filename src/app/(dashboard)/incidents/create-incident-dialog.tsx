@@ -46,7 +46,7 @@ export function CreateIncidentDialog({ houses, residents }: Props) {
         setUploadError(result.error);
         setPhotoUrl(null);
       } else {
-        setPhotoUrl(result.url ?? null);
+        setPhotoUrl(result.ok ? result.url ?? null : null);
       }
     } finally {
       setUploading(false);

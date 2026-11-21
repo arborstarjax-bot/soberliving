@@ -64,7 +64,7 @@ export function DownloadReceiptButton({
         setPending(true);
         startTransition(async () => {
           const res = await getDocumentUrl(storagePath);
-          if (res.url) window.open(res.url, "_blank");
+          if (res.ok && res.url) window.open(res.url, "_blank");
           setPending(false);
         });
       }}

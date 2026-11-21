@@ -1,4 +1,5 @@
 "use server";
+import { err, ok, okVoid, type ActionResult } from "@/lib/action-result";
 
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
@@ -52,7 +53,7 @@ const createPostSchema = z.object({
 });
 
 export async function createBulletinPost(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
@@ -62,7 +63,7 @@ export async function createBulletinPost(
     content: formData.get("content"),
   });
 
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  if (!parsed.success) return err(parsed.error.issues[0].message);
 
   const houseIds = formData.getAll("house_ids") as string[];
   const photoUrl = (formData.get("photo_url") as string) || null;
@@ -80,12 +81,12 @@ export async function createBulletinPost(
         .maybeSingle();
       const myHouseId = myResident?.house_id as string | null;
       for (const hid of houseIds) {
-        if (hid !== myHouseId) return { error: "You can only post to your own house" };
+        if (hid !== myHouseId) return err("You can only post to your own house");
       }
     } else if (user.role === "manager") {
       for (const hid of houseIds) {
         if (!user.assigned_house_ids.includes(hid)) {
-          return { error: "You can only post to your assigned houses" };
+          return err("You can only post to your assigned houses");
         }
       }
     }
@@ -108,7 +109,7 @@ export async function createBulletinPost(
     .insert(rows)
     .select("id");
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   for (const row of inserted ?? []) {
     await logActivity({
@@ -162,7 +163,7 @@ export async function createBulletinPost(
   }
 
   revalidatePath("/bulletin");
-  return {};
+  return okVoid();
 }
 
 export async function deleteBulletinPost(postId: string) {
@@ -179,11 +180,11 @@ export async function deleteBulletinPost(postId: string) {
     .eq("id", postId)
     .maybeSingle();
 
-  if (!post) return { error: "Post not found" };
+  if (!post) return err("Post not found");
   // Workspace boundary: never let a user act on another workspace's post.
   const postWorkspaceId = (post.workspace_id as string | null) ?? null;
   if (user.workspace_id && postWorkspaceId && postWorkspaceId !== user.workspace_id) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
   const isAuthor = post.author_id === user.id;
   const isAdmin = user.role === "admin";
@@ -193,7 +194,7 @@ export async function deleteBulletinPost(postId: string) {
     postHouseId !== null &&
     canAccessHouse(user, postHouseId);
   if (!isAuthor && !isAdmin && !isManagerForHouse) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   const { error } = await adminClient
@@ -201,7 +202,7 @@ export async function deleteBulletinPost(postId: string) {
     .delete()
     .eq("id", postId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     actorId: user.id,
@@ -212,7 +213,7 @@ export async function deleteBulletinPost(postId: string) {
   });
 
   revalidatePath("/bulletin");
-  return {};
+  return okVoid();
 }
 
 export async function togglePinPost(postId: string) {
@@ -225,12 +226,12 @@ export async function togglePinPost(postId: string) {
     .eq("id", postId)
     .maybeSingle();
 
-  if (!post) return { error: "Post not found" };
+  if (!post) return err("Post not found");
 
   // Workspace boundary: never pin/unpin another workspace's post.
   const postWorkspaceId = (post.workspace_id as string | null) ?? null;
   if (user.workspace_id && postWorkspaceId && postWorkspaceId !== user.workspace_id) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   // Managers can only pin/unpin within their assigned houses. Admin
@@ -238,7 +239,7 @@ export async function togglePinPost(postId: string) {
   const postHouseId = (post.house_id as string | null) ?? null;
   if (user.role === "manager") {
     if (!postHouseId || !canAccessHouse(user, postHouseId)) {
-      return { error: "Not authorized" };
+      return err("Not authorized");
     }
   }
 
@@ -249,7 +250,7 @@ export async function togglePinPost(postId: string) {
     .update({ is_pinned: newPinned, updated_at: new Date().toISOString() })
     .eq("id", postId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     actorId: user.id,
@@ -260,7 +261,7 @@ export async function togglePinPost(postId: string) {
   });
 
   revalidatePath("/bulletin");
-  return {};
+  return okVoid();
 }
 
 // ─── Likes ──────────────────────────────────────────────────
@@ -276,13 +277,13 @@ export async function toggleLike(postId: string) {
     .select("id, house_id, workspace_id")
     .eq("id", postId)
     .maybeSingle();
-  if (!post) return { error: "Post not found" };
+  if (!post) return err("Post not found");
   const canSee = await canSeeBulletinHouse(
     user,
     (post.house_id as string | null) ?? null,
     (post.workspace_id as string | null) ?? null
   );
-  if (!canSee) return { error: "Not authorized" };
+  if (!canSee) return err("Not authorized");
 
   const { data: existing } = await adminClient
     .from("bulletin_likes")
@@ -301,21 +302,21 @@ export async function toggleLike(postId: string) {
   }
 
   revalidatePath("/bulletin");
-  return {};
+  return okVoid();
 }
 
 // ─── Comments ───────────────────────────────────────────────
 
 export async function addComment(
-  _prevState: { error?: string } | undefined,
+  _prevState: ActionResult | undefined,
   formData: FormData
 ) {
   const user = await requireAuth();
   const postId = formData.get("post_id") as string;
   const content = (formData.get("content") as string)?.trim();
 
-  if (!postId || !content) return { error: "Comment cannot be empty" };
-  if (content.length > 2000) return { error: "Comment too long (max 2000 chars)" };
+  if (!postId || !content) return err("Comment cannot be empty");
+  if (content.length > 2000) return err("Comment too long (max 2000 chars)");
 
   const adminClient = createAdminClient();
 
@@ -327,13 +328,13 @@ export async function addComment(
     .select("id, house_id, workspace_id")
     .eq("id", postId)
     .maybeSingle();
-  if (!post) return { error: "Post not found" };
+  if (!post) return err("Post not found");
   const canSee = await canSeeBulletinHouse(
     user,
     (post.house_id as string | null) ?? null,
     (post.workspace_id as string | null) ?? null
   );
-  if (!canSee) return { error: "Not authorized" };
+  if (!canSee) return err("Not authorized");
 
   const { error } = await adminClient.from("bulletin_comments").insert({
     post_id: postId,
@@ -341,10 +342,10 @@ export async function addComment(
     content,
   });
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   revalidatePath("/bulletin");
-  return {};
+  return okVoid();
 }
 
 export async function deleteComment(commentId: string) {
@@ -360,7 +361,7 @@ export async function deleteComment(commentId: string) {
     .eq("id", commentId)
     .maybeSingle();
 
-  if (!comment) return { error: "Comment not found" };
+  if (!comment) return err("Comment not found");
   const postRow =
     (comment.post as unknown as {
       house_id: string | null;
@@ -369,7 +370,7 @@ export async function deleteComment(commentId: string) {
   // Workspace boundary: never delete a comment on another workspace's post.
   const postWorkspaceId = postRow?.workspace_id ?? null;
   if (user.workspace_id && postWorkspaceId && postWorkspaceId !== user.workspace_id) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
   const isAuthor = comment.user_id === user.id;
   const isAdmin = user.role === "admin";
@@ -379,13 +380,13 @@ export async function deleteComment(commentId: string) {
     postHouseId !== null &&
     canAccessHouse(user, postHouseId);
   if (!isAuthor && !isAdmin && !isManagerForHouse) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   await adminClient.from("bulletin_comments").delete().eq("id", commentId);
 
   revalidatePath("/bulletin");
-  return {};
+  return okVoid();
 }
 
 // ─── Photo Upload ───────────────────────────────────────────
@@ -393,15 +394,15 @@ export async function deleteComment(commentId: string) {
 export async function uploadBulletinPhoto(formData: FormData) {
   await requireAuth();
   const file = formData.get("file") as File;
-  if (!file || file.size === 0) return { error: "No file provided", url: null };
+  if (!file || file.size === 0) return err("No file provided");
 
-  if (file.size > 5 * 1024 * 1024) return { error: "File too large (max 5MB)", url: null };
+  if (file.size > 5 * 1024 * 1024) return err("File too large (max 5MB)");
 
   const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-  if (!allowedTypes.includes(file.type)) return { error: "Only image files are allowed", url: null };
+  if (!allowedTypes.includes(file.type)) return err("Only image files are allowed");
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
   const allowedExts = ["jpg", "jpeg", "png", "gif", "webp"];
-  if (!allowedExts.includes(ext)) return { error: "Invalid file extension", url: null };
+  if (!allowedExts.includes(ext)) return err("Invalid file extension");
 
   const adminClient = createAdminClient();
   const path = `bulletin/${Date.now()}.${ext}`;
@@ -410,9 +411,9 @@ export async function uploadBulletinPhoto(formData: FormData) {
     .from("uploads")
     .upload(path, file, { contentType: file.type, upsert: false });
 
-  if (error) return { error: error.message, url: null };
+  if (error) return err(error.message);
 
   const { data: urlData } = adminClient.storage.from("uploads").getPublicUrl(path);
 
-  return { url: urlData.publicUrl };
+  return ok({ url: urlData.publicUrl });
 }

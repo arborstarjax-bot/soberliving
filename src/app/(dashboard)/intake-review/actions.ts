@@ -1,4 +1,5 @@
 "use server";
+import { err, ok, okVoid, type ActionResult } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
@@ -104,7 +105,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
 
   const parsed = completeIntakeReviewSchema.safeParse(formData);
   if (!parsed.success) {
-    return { error: parsed.error.issues[0].message };
+    return err(parsed.error.issues[0].message);
   }
 
   const data = parsed.data;
@@ -116,8 +117,8 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     .eq("id", data.userId)
     .maybeSingle();
 
-  if (!targetUser) return { error: "User not found" };
-  if (!targetUser.intake_completed) return { error: "User has not completed intake form" };
+  if (!targetUser) return err("User not found");
+  if (!targetUser.intake_completed) return err("User has not completed intake form");
 
   // Get intake form data to populate resident profile
   const { data: intakeForm } = await adminClient
@@ -181,7 +182,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
       .insert(residentPayload)
       .select("id")
       .single();
-    if (resError || !newResident) return { error: resError?.message || "Failed to create resident record" };
+    if (resError || !newResident) return err(resError?.message || "Failed to create resident record");
     residentId = newResident.id;
   }
 
@@ -206,7 +207,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     });
 
   if (bedError) {
-    return { error: `Bed assignment failed: ${bedError.message}` };
+    return err(`Bed assignment failed: ${bedError.message}`);
   }
 
   // Check workspace commitment setting — auto-sign if not required
@@ -258,7 +259,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
     .single();
 
   if (commitError || !commitmentRow) {
-    return { error: `Commitment creation failed: ${commitError?.message ?? "unknown"}` };
+    return err(`Commitment creation failed: ${commitError?.message ?? "unknown"}`);
   }
 
   const commitmentId = commitmentRow.id as string;
@@ -549,7 +550,7 @@ export async function completeIntakeReview(formData: z.infer<typeof completeInta
   revalidatePath("/residents");
   revalidatePath("/discipline");
   revalidatePath("/admin/workspace");
-  return {};
+  return okVoid();
 }
 
 export async function markIntakeComplete(userId: string) {
@@ -562,7 +563,7 @@ export async function markIntakeComplete(userId: string) {
     .eq("id", userId)
     .maybeSingle();
 
-  if (!targetUser) return { error: "User not found" };
+  if (!targetUser) return err("User not found");
 
   // Mark commitment as active (resident signed). We select the row
   // back so we can seed the initial charges — without this call the
@@ -589,7 +590,7 @@ export async function markIntakeComplete(userId: string) {
     .update({ commitment_signed: true })
     .eq("id", userId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   // Seed admin_fee + first rent charge immediately so the Payments
   // views have something to show as soon as the admin finishes
@@ -620,7 +621,7 @@ export async function markIntakeComplete(userId: string) {
   if (activated?.resident_id) {
     revalidatePath(`/residents/${activated.resident_id}`);
   }
-  return {};
+  return okVoid();
 }
 
 // ──────────────────────────────────────────────────────────
@@ -651,7 +652,7 @@ export async function updatePendingCommitment(
 
   const parsed = updatePendingCommitmentSchema.safeParse(formData);
   if (!parsed.success) {
-    return { error: parsed.error.issues[0].message };
+    return err(parsed.error.issues[0].message);
   }
   const data = parsed.data;
 
@@ -668,10 +669,7 @@ export async function updatePendingCommitment(
     .maybeSingle();
 
   if (!pending) {
-    return {
-      error:
-        "No pending commitment found for this user. It may already be signed or cancelled.",
-    };
+    return err("No pending commitment found for this user. It may already be signed or cancelled.");
   }
 
   const { error: updErr } = await adminClient
@@ -689,7 +687,7 @@ export async function updatePendingCommitment(
     .eq("id", pending.id);
 
   if (updErr) {
-    return { error: `Update failed: ${updErr.message}` };
+    return err(`Update failed: ${updErr.message}`);
   }
 
   // Notify the resident again — the prior notification may have been
@@ -716,7 +714,7 @@ export async function updatePendingCommitment(
   revalidatePath("/intake-review");
   revalidatePath(`/residents/${pending.resident_id}`);
   revalidatePath("/sign-commitment");
-  return {};
+  return okVoid();
 }
 
 export async function resendPendingCommitmentNotification(userId: string) {
@@ -732,10 +730,7 @@ export async function resendPendingCommitmentNotification(userId: string) {
     .maybeSingle();
 
   if (!pending) {
-    return {
-      error:
-        "No pending commitment found for this user. It may already be signed.",
-    };
+    return err("No pending commitment found for this user. It may already be signed.");
   }
 
   await sendNotification({
@@ -757,7 +752,7 @@ export async function resendPendingCommitmentNotification(userId: string) {
     description: `${currentUser.full_name} resent the pending commitment signature request`,
   });
 
-  return {};
+  return okVoid();
 }
 
 export async function denyIntakeApplication(userId: string, reason: string) {
@@ -768,7 +763,7 @@ export async function denyIntakeApplication(userId: string, reason: string) {
   const adminClient = createAdminClient();
 
   const trimmedReason = (reason ?? "").trim();
-  if (!trimmedReason) return { error: "A denial reason is required" };
+  if (!trimmedReason) return err("A denial reason is required");
 
   const { data: targetUser } = await adminClient
     .from("users")
@@ -776,9 +771,9 @@ export async function denyIntakeApplication(userId: string, reason: string) {
     .eq("id", userId)
     .maybeSingle();
 
-  if (!targetUser) return { error: "User not found" };
+  if (!targetUser) return err("User not found");
   if ((targetUser as { account_status?: string }).account_status === "rejected") {
-    return { error: "Application is already denied" };
+    return err("Application is already denied");
   }
 
   // Soft delete: flip account_status so login routes them to the
@@ -795,7 +790,7 @@ export async function denyIntakeApplication(userId: string, reason: string) {
     })
     .eq("id", userId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     actorId: currentUser.id,
@@ -806,7 +801,7 @@ export async function denyIntakeApplication(userId: string, reason: string) {
   });
 
   revalidatePath("/intake-review");
-  return {};
+  return okVoid();
 }
 
 export async function reopenIntakeApplication(userId: string) {
@@ -822,9 +817,9 @@ export async function reopenIntakeApplication(userId: string) {
     .eq("id", userId)
     .maybeSingle();
 
-  if (!targetUser) return { error: "User not found" };
+  if (!targetUser) return err("User not found");
   if ((targetUser as { account_status?: string }).account_status !== "rejected") {
-    return { error: "Application is not in the denied state" };
+    return err("Application is not in the denied state");
   }
 
   const { error } = await adminClient
@@ -838,7 +833,7 @@ export async function reopenIntakeApplication(userId: string) {
     })
     .eq("id", userId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
 
   await logActivity({
     actorId: currentUser.id,
@@ -862,7 +857,7 @@ export async function reopenIntakeApplication(userId: string) {
   });
 
   revalidatePath("/intake-review");
-  return {};
+  return okVoid();
 }
 
 const staffSignoffSchema = z.object({
@@ -897,7 +892,7 @@ export async function submitStaffSignoff(
 
   const parsed = staffSignoffSchema.safeParse(input);
   if (!parsed.success) {
-    return { error: parsed.error.issues[0].message };
+    return err(parsed.error.issues[0].message);
   }
   const { userId, signature, printedName, date, pdfBase64 } = parsed.data;
 
@@ -907,8 +902,8 @@ export async function submitStaffSignoff(
     .eq("user_id", userId)
     .eq("status", "completed")
     .maybeSingle();
-  if (intakeErr) return { error: intakeErr.message };
-  if (!intakeRow) return { error: "Intake form not found for this applicant" };
+  if (intakeErr) return err(intakeErr.message);
+  if (!intakeRow) return err("Intake form not found for this applicant");
 
   const formData = { ...(intakeRow.form_data as Record<string, unknown>) };
   const signatures = { ...(intakeRow.signatures as Record<string, string>) };
@@ -943,7 +938,7 @@ export async function submitStaffSignoff(
       updated_at: new Date().toISOString(),
     })
     .eq("user_id", userId);
-  if (updateErr) return { error: updateErr.message };
+  if (updateErr) return err(updateErr.message);
 
   // Replace the intake packet in storage with the regenerated PDF
   // that includes the staff sign-off. Keep the original storage
@@ -970,7 +965,7 @@ export async function submitStaffSignoff(
     });
   if (uploadErr) {
     console.error("[submitStaffSignoff] PDF upload failed:", uploadErr.message);
-    return { error: `Could not upload signed packet: ${uploadErr.message}` };
+    return err(`Could not upload signed packet: ${uploadErr.message}`);
   }
 
   if (existingDoc) {
@@ -1001,7 +996,7 @@ export async function submitStaffSignoff(
   });
 
   revalidatePath("/intake-review");
-  return { ok: true as const };
+  return ok({ ok: true as const });
 }
 
 export type RoomWithAvailability = {
@@ -1010,9 +1005,7 @@ export type RoomWithAvailability = {
   beds: { id: string; label: string; is_active: boolean }[];
 };
 
-export type GetRoomsForHouseResult =
-  | { ok: true; rooms: RoomWithAvailability[] }
-  | { ok: false; error: string };
+export type GetRoomsForHouseResult = ActionResult<{ rooms: RoomWithAvailability[] }>;
 
 // Returns a structured result instead of throwing. Next.js scrubs
 // thrown Error messages in production (“The specific message is
@@ -1083,12 +1076,12 @@ export async function getRoomsForHouse(
       }))
       .filter((room) => room.beds.length > 0);
 
-    return { ok: true, rooms: roomsWithAvailability };
-  } catch (err) {
-    console.error("[getRoomsForHouse] unexpected throw:", err);
+    return ok({ rooms: roomsWithAvailability });
+  } catch (e) {
+    console.error("[getRoomsForHouse] unexpected throw:", e);
     const message =
-      err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-    return { ok: false, error: `Unexpected error: ${message}` };
+      e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+    return err(`Unexpected error: ${message}`);
   }
 }
 
@@ -1100,7 +1093,7 @@ export async function setStaffIntakeCheckoff(
 ) {
   const user = await requireAuth();
   if (user.role === "resident" || !user.workspace_id) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
   const admin = createAdminClient();
   if (checked) {
@@ -1112,7 +1105,7 @@ export async function setStaffIntakeCheckoff(
       },
       { onConflict: "user_id,workspace_id,step_id" }
     );
-    if (error) return { error: error.message };
+    if (error) return err(error.message);
   } else {
     const { error } = await admin
       .from("intake_checkoffs")
@@ -1120,7 +1113,7 @@ export async function setStaffIntakeCheckoff(
       .eq("user_id", residentUserId)
       .eq("workspace_id", user.workspace_id)
       .eq("step_id", stepId);
-    if (error) return { error: error.message };
+    if (error) return err(error.message);
   }
-  return {};
+  return okVoid();
 }

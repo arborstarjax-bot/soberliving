@@ -19,7 +19,7 @@ export function AttachmentLink({
     setLoading(true);
     try {
       const result = await getGrievanceAttachmentUrl(grievanceId, path);
-      if (result.url) {
+      if (result.ok && result.url) {
         window.open(result.url, "_blank", "noopener,noreferrer");
       }
     } finally {

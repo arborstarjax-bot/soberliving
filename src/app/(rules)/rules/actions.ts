@@ -1,4 +1,5 @@
 "use server";
+import { err, okVoid } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -17,7 +18,7 @@ export async function submitRulesAcknowledgment(signatureDataUrl: string) {
   const adminClient = createAdminClient();
 
   if (!signatureDataUrl) {
-    return { error: "Signature is required" };
+    return err("Signature is required");
   }
 
   // Rebuild the same deck the resident saw so the signed acknowledgment
@@ -50,7 +51,7 @@ export async function submitRulesAcknowledgment(signatureDataUrl: string) {
 
   if (uploadError) {
     console.error("[submitRulesAcknowledgment] PDF upload failed:", uploadError.message);
-    return { error: "Failed to save acknowledgment document" };
+    return err("Failed to save acknowledgment document");
   }
 
   // Create document record for the rules acknowledgment
@@ -76,7 +77,7 @@ export async function submitRulesAcknowledgment(signatureDataUrl: string) {
     .eq("id", user.id);
 
   if (updateError) {
-    return { error: updateError.message };
+    return err(updateError.message);
   }
 
   await logActivity({
@@ -88,5 +89,5 @@ export async function submitRulesAcknowledgment(signatureDataUrl: string) {
   });
 
   revalidatePath("/dashboard");
-  return {};
+  return okVoid();
 }

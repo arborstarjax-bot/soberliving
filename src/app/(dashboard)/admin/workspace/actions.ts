@@ -1,4 +1,5 @@
 "use server";
+import { err, ok, okVoid } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -12,7 +13,7 @@ import type { PaymentFrequencyOption, PaymentMethod } from "@/lib/types";
 export async function updateWorkspaceName(workspaceId: string, name: string) {
   const user = await requireRole("admin");
   if (!user.workspace_id || user.workspace_id !== workspaceId) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
   const admin = createAdminClient();
   const { error } = await admin
@@ -20,9 +21,9 @@ export async function updateWorkspaceName(workspaceId: string, name: string) {
     .update({ name, updated_at: new Date().toISOString() })
     .eq("id", workspaceId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
   revalidatePath("/admin/workspace");
-  return {};
+  return okVoid();
 }
 
 // --- Onboarding Settings ---
@@ -71,10 +72,10 @@ export async function updateWorkspaceSettings(
 ) {
   const user = await requireRole("admin");
   if (!user.workspace_id || user.workspace_id !== workspaceId) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
   if (settings.timezone !== undefined && !isValidTimezone(settings.timezone)) {
-    return { error: "Unknown timezone" };
+    return err("Unknown timezone");
   }
   const admin = createAdminClient();
   const { error } = await admin
@@ -153,9 +154,9 @@ export async function updateWorkspaceSettings(
     })
     .eq("workspace_id", workspaceId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
   revalidatePath("/admin/workspace");
-  return {};
+  return okVoid();
 }
 
 // --- Payment Config ---
@@ -174,7 +175,7 @@ export async function updatePaymentConfig(
 ) {
   const user = await requireRole("admin");
   if (!user.workspace_id || user.workspace_id !== workspaceId) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
   const admin = createAdminClient();
   const { error } = await admin
@@ -185,9 +186,9 @@ export async function updatePaymentConfig(
     })
     .eq("workspace_id", workspaceId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
   revalidatePath("/admin/workspace");
-  return {};
+  return okVoid();
 }
 
 // --- House Curfews ---
@@ -197,7 +198,7 @@ export async function updateHouseCurfews(
   curfews: { day_of_week: string; curfew_time: string; curfew_start_time?: string | null }[]
 ) {
   const user = await requireRole("admin");
-  if (!user.workspace_id) return { error: "Not authorized" };
+  if (!user.workspace_id) return err("Not authorized");
 
   const admin = createAdminClient();
 
@@ -209,7 +210,7 @@ export async function updateHouseCurfews(
     .maybeSingle();
 
   if (!house || house.workspace_id !== user.workspace_id) {
-    return { error: "House not found in your workspace" };
+    return err("House not found in your workspace");
   }
 
   const submittedDays = curfews.map((c) => c.day_of_week);
@@ -224,7 +225,7 @@ export async function updateHouseCurfews(
     const { error } = await admin
       .from("house_curfews")
       .upsert(rows, { onConflict: "house_id,day_of_week" });
-    if (error) return { error: error.message };
+    if (error) return err(error.message);
   }
 
   const allDays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -235,18 +236,18 @@ export async function updateHouseCurfews(
       .delete()
       .eq("house_id", houseId)
       .in("day_of_week", removedDays);
-    if (deleteError) return { error: deleteError.message };
+    if (deleteError) return err(deleteError.message);
   }
 
   revalidatePath("/admin/workspace");
-  return {};
+  return okVoid();
 }
 
 // --- Workspace Invite Link ---
 
 export async function getWorkspaceInviteLink() {
   const user = await requireRole("admin");
-  if (!user.workspace_id) return { error: "Not authorized", inviteUrl: "" };
+  if (!user.workspace_id) return err("Not authorized");
 
   const admin = createAdminClient();
   const { data: ws } = await admin
@@ -255,10 +256,10 @@ export async function getWorkspaceInviteLink() {
     .eq("id", user.workspace_id)
     .single();
 
-  if (!ws) return { error: "Workspace not found", inviteUrl: "" };
+  if (!ws) return err("Workspace not found");
 
   const appUrl = await getAppOrigin();
-  return { inviteUrl: `${appUrl}/register?workspace=${ws.invite_code}` };
+  return ok({ inviteUrl: `${appUrl}/register?workspace=${ws.invite_code}` });
 }
 
 
@@ -266,7 +267,7 @@ export async function getWorkspaceInviteLink() {
 
 export async function approvePendingMember(memberId: string) {
   const user = await requireRole("admin");
-  if (!user.workspace_id) return { error: "Not authorized" };
+  if (!user.workspace_id) return err("Not authorized");
 
   const admin = createAdminClient();
 
@@ -277,22 +278,22 @@ export async function approvePendingMember(memberId: string) {
     .eq("workspace_id", user.workspace_id)
     .maybeSingle();
 
-  if (!member) return { error: "Member not found" };
-  if (member.status !== "pending") return { error: "Member is not pending approval" };
+  if (!member) return err("Member not found");
+  if (member.status !== "pending") return err("Member is not pending approval");
 
   const { error } = await admin
     .from("workspace_members")
     .update({ status: "active" })
     .eq("id", memberId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
   revalidatePath("/admin/workspace");
-  return {};
+  return okVoid();
 }
 
 export async function denyPendingMember(memberId: string) {
   const user = await requireRole("admin");
-  if (!user.workspace_id) return { error: "Not authorized" };
+  if (!user.workspace_id) return err("Not authorized");
 
   const admin = createAdminClient();
 
@@ -303,24 +304,24 @@ export async function denyPendingMember(memberId: string) {
     .eq("workspace_id", user.workspace_id)
     .maybeSingle();
 
-  if (!member) return { error: "Member not found" };
-  if (member.status !== "pending") return { error: "Member is not pending approval" };
+  if (!member) return err("Member not found");
+  if (member.status !== "pending") return err("Member is not pending approval");
 
   const { error } = await admin
     .from("workspace_members")
     .update({ status: "denied" })
     .eq("id", memberId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
   revalidatePath("/admin/workspace");
-  return {};
+  return okVoid();
 }
 
 // --- Remove Members ---
 
 export async function removeWorkspaceMember(memberId: string) {
   const user = await requireRole("admin");
-  if (!user.workspace_id) return { error: "Not authorized" };
+  if (!user.workspace_id) return err("Not authorized");
 
   const admin = createAdminClient();
 
@@ -331,16 +332,16 @@ export async function removeWorkspaceMember(memberId: string) {
     .eq("workspace_id", user.workspace_id)
     .maybeSingle();
 
-  if (!member) return { error: "Member not found" };
-  if (member.role === "owner") return { error: "Cannot remove the workspace owner" };
-  if (member.user_id === user.id) return { error: "Cannot remove yourself" };
+  if (!member) return err("Member not found");
+  if (member.role === "owner") return err("Cannot remove the workspace owner");
+  if (member.user_id === user.id) return err("Cannot remove yourself");
 
   const { error } = await admin
     .from("workspace_members")
     .delete()
     .eq("id", memberId);
 
-  if (error) return { error: error.message };
+  if (error) return err(error.message);
   revalidatePath("/admin/workspace");
-  return {};
+  return okVoid();
 }

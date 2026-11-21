@@ -1,4 +1,5 @@
 "use server";
+import { err, ok, okVoid } from "@/lib/action-result";
 
 import { revalidatePath } from "next/cache";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -15,18 +16,18 @@ export async function sendCheckIn(houseIds: string[]) {
   const user = await requireAuth();
 
   if (user.role !== "admin" && user.role !== "manager") {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   if (houseIds.length === 0) {
-    return { error: "Please select at least one house" };
+    return err("Please select at least one house");
   }
 
   // Managers can only send to their assigned houses
   if (user.role === "manager") {
     for (const houseId of houseIds) {
       if (!canAccessHouse(user, houseId)) {
-        return { error: "You can only send check-ins to houses you manage" };
+        return err("You can only send check-ins to houses you manage");
       }
     }
   }
@@ -44,7 +45,7 @@ export async function sendCheckIn(houseIds: string[]) {
     .single();
 
   if (batchError || !batch) {
-    return { error: batchError?.message ?? "Failed to create check-in batch" };
+    return err(batchError?.message ?? "Failed to create check-in batch");
   }
 
   // Get all active residents in the selected houses
@@ -56,11 +57,11 @@ export async function sendCheckIn(houseIds: string[]) {
     .not("user_id", "is", null);
 
   if (residentsError) {
-    return { error: residentsError.message };
+    return err(residentsError.message);
   }
 
   if (!residents || residents.length === 0) {
-    return { error: "No active residents found in the selected houses" };
+    return err("No active residents found in the selected houses");
   }
 
   // Create one pending response per resident
@@ -77,7 +78,7 @@ export async function sendCheckIn(houseIds: string[]) {
     .insert(responses);
 
   if (insertError) {
-    return { error: insertError.message };
+    return err(insertError.message);
   }
 
   // Log activity for each house
@@ -94,7 +95,7 @@ export async function sendCheckIn(houseIds: string[]) {
   }
 
   revalidatePath("/residents");
-  return { batchId: batch.id, count: residents.length };
+  return ok({ batchId: batch.id, count: residents.length });
 }
 
 /**
@@ -116,15 +117,15 @@ export async function submitCheckIn(
     .single();
 
   if (fetchError || !response) {
-    return { error: "Check-in not found" };
+    return err("Check-in not found");
   }
 
   if (response.user_id !== user.id) {
-    return { error: "Not authorized" };
+    return err("Not authorized");
   }
 
   if (response.status !== "pending") {
-    return { error: "This check-in has already been completed" };
+    return err("This check-in has already been completed");
   }
 
   // Upload PDF to Supabase Storage
@@ -167,7 +168,7 @@ export async function submitCheckIn(
     .eq("id", responseId);
 
   if (updateError) {
-    return { error: updateError.message };
+    return err(updateError.message);
   }
 
   await logActivity({
@@ -182,7 +183,7 @@ export async function submitCheckIn(
 
   revalidatePath("/residents");
   revalidatePath("/dashboard");
-  return {};
+  return okVoid();
 }
 
 
@@ -193,7 +194,7 @@ export async function getCheckInBatches() {
   const user = await requireAuth();
 
   if (user.role !== "admin" && user.role !== "manager") {
-    return { error: "Not authorized", batches: [] };
+    return err("Not authorized");
   }
 
   const adminClient = createAdminClient();
@@ -213,14 +214,14 @@ export async function getCheckInBatches() {
   const { data: batches, error } = await batchesQuery;
 
   if (error) {
-    return { error: error.message, batches: [] };
+    return err(error.message);
   }
 
   // For each batch, get response counts
   const batchIds = (batches ?? []).map((b) => b.id);
 
   if (batchIds.length === 0) {
-    return { batches: [] };
+    return ok({ batches: [] });
   }
 
   const { data: responses } = await adminClient
@@ -279,10 +280,10 @@ export async function getCheckInBatches() {
     const filtered = enrichedBatches.filter((b) =>
       b.houseIds.some((hid) => user.assigned_house_ids.includes(hid))
     );
-    return { batches: filtered };
+    return ok({ batches: filtered });
   }
 
-  return { batches: enrichedBatches };
+  return ok({ batches: enrichedBatches });
 }
 
 /**
