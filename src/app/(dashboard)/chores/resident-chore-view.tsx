@@ -122,7 +122,7 @@ export function ResidentChoreView({ rotations, userResidentId, forcePhoto, house
                     )}
                     {!assignment.coveringFor && coveredByName && (
                       <Badge variant="outline" className="mt-1">
-                        Covered by {coveredByName} while you're out
+                        Covered by {coveredByName} while you&apos;re out
                       </Badge>
                     )}
                     <p className="text-sm text-muted-foreground">
