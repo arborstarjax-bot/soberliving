@@ -45,6 +45,7 @@
     "@types/react-dom": "^19",
     "@types/web-push": "^3.6.4",
     "eslint": "^9",
+    "server-only": "file:vendor/server-only",
     "eslint-config-next": "16.2.3",
     "supabase": "^2.90.0",
     "tailwindcss": "^4",
