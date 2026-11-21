@@ -8,14 +8,16 @@ export async function CreateLeaveRequestSection({ user }: { user: SessionUser })
   const houseFilter = getAccessibleHouseFilter(user);
 
   let userResidentId: string | undefined;
+  let userHouseId: string | undefined;
   if (user.role === "resident" || user.is_resident) {
     const { data: myResident } = await supabase
       .from("residents")
-      .select("id")
+      .select("id, house_id")
       .eq("user_id", user.id)
       .eq("status", "active")
       .maybeSingle();
     userResidentId = myResident?.id;
+    userHouseId = myResident?.house_id ?? undefined;
   }
 
   let residentsQuery = supabase
@@ -23,7 +25,12 @@ export async function CreateLeaveRequestSection({ user }: { user: SessionUser })
     .select("id, full_name, house_id")
     .eq("status", "active")
     .order("full_name");
-  if (houseFilter) residentsQuery = residentsQuery.in("house_id", houseFilter);
+  if (userHouseId) {
+    // Residents can only pick themselves + same-house covering residents.
+    residentsQuery = residentsQuery.eq("house_id", userHouseId);
+  } else if (houseFilter) {
+    residentsQuery = residentsQuery.in("house_id", houseFilter);
+  }
   const { data: residents } = await residentsQuery;
 
   // Residents already carrying chore assignments in their house's current
@@ -33,7 +40,11 @@ export async function CreateLeaveRequestSection({ user }: { user: SessionUser })
     .from("chore_rotations")
     .select("id")
     .eq("is_current", true);
-  if (houseFilter) rotationQuery = rotationQuery.in("house_id", houseFilter);
+  if (userHouseId) {
+    rotationQuery = rotationQuery.eq("house_id", userHouseId);
+  } else if (houseFilter) {
+    rotationQuery = rotationQuery.in("house_id", houseFilter);
+  }
   const { data: rotations } = await rotationQuery;
 
   const rotationIds = (rotations ?? []).map((r) => r.id);
