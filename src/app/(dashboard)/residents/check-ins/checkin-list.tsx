@@ -226,7 +226,7 @@ function ResponseDetail({
           <span className="font-medium">{get("work_rating")}/10</span>
         </div>
         <div>
-          <span className="text-muted-foreground">7. JSL feeling:</span>{" "}
+          <span className="text-muted-foreground">7. House feeling:</span>{" "}
           <span className="font-medium">{get("jsl_feeling_rating")}/10</span>
         </div>
         <div>
