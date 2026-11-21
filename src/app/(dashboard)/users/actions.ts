@@ -53,35 +53,35 @@ export async function createUser(
 
   const authUserId = linkData.user.id;
 
-  // Check if user record already exists (e.g. re-inviting an existing email).
-  // Service client — the RLS-scoped client can't see users rows outside the
-  // caller's workspace, which made a cross-tenant auth user look "new" and the
-  // insert below die on users_pkey.
-  const { data: existingUser } = await adminClient
-    .from("users")
-    .select("id")
-    .eq("id", authUserId)
-    .maybeSingle();
-
-  // Memberships in ANY workspace. This is the tenant-isolation gate: an
-  // account that already belongs to another workspace must never gain a
-  // membership here — including when its users row appears between the
-  // read above and the upsert below (concurrent invites).
-  const { data: otherMemberships } = await adminClient
+  // A DB trigger auto-provisions the public users row when the auth user
+  // is created, so `existingUser` is set on every invite — existence alone
+  // says nothing. The real gate is workspace membership: another
+  // workspace's account must never get a membership or link here (tenant
+  // isolation), a member of THIS workspace is a re-invite, and an account
+  // with no membership anywhere is fresh and gets fully provisioned.
+  const { data: memberships, error: memberLookupError } = await adminClient
     .from("workspace_members")
-    .select("workspace_id")
-    .eq("user_id", authUserId)
-    .eq("status", "active");
-  const inAnotherWorkspace = (otherMemberships ?? []).some(
+    .select("workspace_id, status")
+    .eq("user_id", authUserId);
+  // Fail closed: a failed lookup must not provision a cross-tenant invite.
+  if (memberLookupError) return err(memberLookupError.message);
+  // Any membership in another workspace — active or not — marks the
+  // account as belonging to that tenant. Only an active membership here
+  // makes this a re-invite; an inactive/pending row here is re-activated
+  // by the provisioning upsert below.
+  const inAnotherWorkspace = (memberships ?? []).some(
     (m) => m.workspace_id !== user.workspace_id
   );
+  const inThisWorkspace = (memberships ?? []).some(
+    (m) => m.workspace_id === user.workspace_id && m.status === "active"
+  );
 
-  if (existingUser || inAnotherWorkspace) {
-    // Re-invite only makes sense inside the caller's own workspace.
-    if (inAnotherWorkspace || !(await isUserInWorkspace(user, authUserId))) {
-      return err("A user with this email already exists");
-    }
-  } else {
+  if (inAnotherWorkspace) {
+    return err("A user with this email already exists");
+  }
+  const isReinvite = inThisWorkspace;
+
+  if (!isReinvite) {
     // Create user record (service client — the invite is a staff action,
     // not the new user writing their own row). Upsert guards the race where
     // a trigger or a concurrent invite already wrote the row.
@@ -111,6 +111,20 @@ export async function createUser(
 
     // Workspace membership is the role/workspace trust anchor.
     if (user.workspace_id) {
+      // Claim the account atomically: workspace_id may only move from
+      // NULL (or our own id) to us. If a concurrent invite in another
+      // workspace claimed it first, zero rows match and we fail instead
+      // of crossing the tenant boundary.
+      const { data: claimed, error: claimError } = await adminClient
+        .from("users")
+        .update({ workspace_id: user.workspace_id })
+        .eq("id", authUserId)
+        .or(`workspace_id.is.null,workspace_id.eq.${user.workspace_id}`)
+        .select("id");
+      if (claimError) return err(claimError.message);
+      if (!claimed?.length) {
+        return err("A user with this email already exists");
+      }
       await adminClient.from("workspace_members").upsert(
         {
           workspace_id: user.workspace_id,
@@ -121,19 +135,15 @@ export async function createUser(
         },
         { onConflict: "workspace_id,user_id" }
       );
-      await adminClient
-        .from("users")
-        .update({ workspace_id: user.workspace_id })
-        .eq("id", authUserId);
     }
   }
 
   await logActivity({
     actorId: user.id,
-    eventType: existingUser ? "user_reinvited" : "user_created",
+    eventType: isReinvite ? "user_reinvited" : "user_created",
     entityType: "user",
     entityId: authUserId,
-    description: existingUser
+    description: isReinvite
       ? `Resident "${parsed.data.email}" re-invited by ${user.full_name}`
       : `Resident "${parsed.data.email}" invited by ${user.full_name}`,
   });
