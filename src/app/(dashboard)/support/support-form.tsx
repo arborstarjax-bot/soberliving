@@ -16,6 +16,10 @@ const CATEGORIES = [
 export function SupportForm() {
   const [state, action, pending] = useActionState(submitBugReport, undefined);
   const [category, setCategory] = useState("bug");
+  // Controlled fields: an uncontrolled form resets when a failed action
+  // re-renders, which used to erase the whole unsent draft on any error.
+  const [subject, setSubject] = useState("");
+  const [details, setDetails] = useState("");
   const done = state !== undefined && !state.error && !pending;
 
   return (
@@ -66,6 +70,8 @@ export function SupportForm() {
               id="subject"
               name="subject"
               required
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
               placeholder={
                 category === "bug" ? "What's broken?" : "What's it about?"
               }
@@ -79,6 +85,8 @@ export function SupportForm() {
               name="details"
               required
               rows={6}
+              value={details}
+              onChange={(e) => setDetails(e.target.value)}
               placeholder={
                 category === "bug"
                   ? "What happened, what did you expect, and the steps to reproduce it."
@@ -96,8 +104,14 @@ export function SupportForm() {
             {pending ? "Sending…" : "Send to support"}
           </Button>
           <p className="text-xs text-center text-muted-foreground">
-            Emails go straight to the operator inbox. You can also write to
-            arborstarjax@gmail.com directly.
+            Emails go straight to the operator inbox. You can also{" "}
+            <a
+              href="mailto:arborstarjax@gmail.com?subject=Sober%20Living%20support"
+              className="underline underline-offset-2"
+            >
+              write to arborstarjax@gmail.com
+            </a>{" "}
+            directly.
           </p>
         </form>
       )}
