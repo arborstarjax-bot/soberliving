@@ -8,28 +8,24 @@ import { SignaturePad } from "@/components/signature-pad";
 import { signCommitment } from "./actions";
 import { formatDateOnly } from "@/lib/timezone";
 
-// Canonical addresses printed on the paper JSL commitment. The
-// three properties are baked into the contract itself (each one
-// gets an initial blank on page 1). When a resident signs, their
-// typed initials auto-fill ONLY the row whose address matches the
-// commitment's assigned property; the other two rows stay blank.
-// Order and exact punctuation mirror the paper form verbatim.
-const CANONICAL_ADDRESSES = [
-  "4368 Chelsy Harbour Drive, Jacksonville, FL 32224",
-  "2129 Indian Springs Drive, Jacksonville , FL 32246",
-  "2123 Indian Springs Drive, Jacksonville, 32246",
-] as const;
-
+// Property addresses printed on the commitment contract come from
+// the workspace's houses (each gets an initial blank on page 1).
+// When a resident signs, their typed initials auto-fill ONLY the
+// row whose address matches the commitment's assigned property;
+// other rows stay blank — like the paper form.
+//
 // Loose-match a commitment's stored `property_location` / house
-// address against the three canonical printed addresses. We compare
-// street number + street name only — commas, city, zip vary between
-// the paper form and what staff type into `houses.address`, but the
-// leading "4368 Chelsy" / "2129 Indian Springs" / "2123 Indian
-// Springs" is unique and stable.
-function matchCanonicalAddress(assigned: string | null | undefined): string | null {
+// address against the printed addresses. We compare street number
+// + street name only — commas, city, zip vary between the paper
+// form and what staff type into `houses.address`, but the leading
+// street fragment is unique and stable.
+function matchPrintedAddress(
+  assigned: string | null | undefined,
+  addresses: string[]
+): string | null {
   if (!assigned) return null;
   const norm = assigned.toLowerCase().replace(/\s+/g, " ").trim();
-  for (const addr of CANONICAL_ADDRESSES) {
+  for (const addr of addresses) {
     const head = addr.split(",")[0]?.toLowerCase() ?? "";
     if (head && norm.includes(head)) return addr;
   }
@@ -40,6 +36,11 @@ interface CommitmentSigningFormProps {
   commitmentId: string;
   residentName: string;
   houseName: string;
+  // Entity + counter-signer names printed on the contract, and the
+  // address rows offered for initialing — all workspace-driven.
+  entityName: string;
+  directorName: string;
+  propertyAddresses: string[];
   propertyLocation: string;
   rentAmount: number;
   adminFee: number;
@@ -83,6 +84,9 @@ export function CommitmentSigningForm({
   commitmentId,
   residentName,
   houseName,
+  entityName,
+  directorName,
+  propertyAddresses,
   propertyLocation,
   rentAmount,
   adminFee,
@@ -156,8 +160,10 @@ export function CommitmentSigningForm({
   // to? The initial auto-fills next to that row and leaves the other
   // two blank — mirroring how a resident initials the paper form.
   const selectedAddress = useMemo(
-    () => matchCanonicalAddress(propertyLocation) ?? matchCanonicalAddress(houseName),
-    [propertyLocation, houseName]
+    () =>
+      matchPrintedAddress(propertyLocation, propertyAddresses) ??
+      matchPrintedAddress(houseName, propertyAddresses),
+    [propertyLocation, houseName, propertyAddresses]
   );
 
   const router = useRouter();
@@ -268,22 +274,22 @@ export function CommitmentSigningForm({
 
     // ============ PAGE 1 ============
     // Title block — mirrors the scanned paper contract.
-    drawCenteredText("Jax Sober Living House", y, 18, fontItalic);
+    drawCenteredText(entityName, y, 18, fontItalic);
     y -= 28;
     drawCenteredText("HOUSE COMMITMENT AGREEMENT", y, 16, fontBold);
     y -= 40;
 
     drawParagraph(
-      "All policies and procedures outlined within this contract and any applicable subsequent amendments are in full force and effect during Resident's entire residency at Jax Sober Living House unless specifically defined within a subsection of this contract. Violation of any policy or procedure outlined within this contract and any applicable subsequent amendments will result in disciplinary actions including, but not limited to, fines, fees, House probation/restriction, and possible discharge."
+      `All policies and procedures outlined within this contract and any applicable subsequent amendments are in full force and effect during Resident's entire residency at ${entityName} unless specifically defined within a subsection of this contract. Violation of any policy or procedure outlined within this contract and any applicable subsequent amendments will result in disciplinary actions including, but not limited to, fines, fees, House probation/restriction, and possible discharge.`
     );
     drawParagraph(
       "Residents' portion of the premises shall include access to all common living areas, kitchen, laundry, and the like, and shared bedroom and bathroom. Monthly water, trash, electric, cable and internet utilities shall be included in sober living fee."
     );
     drawParagraph(
-      "Upon entering Jax Sober Living House resident will submit to urine analyst test and/or alcohol test."
+      `Upon entering ${entityName} resident will submit to urine analyst test and/or alcohol test.`
     );
     drawParagraph(
-      "Residents of the Jax Sober Living House program are purchasing a service from Jax Sober Living House that includes housing. Residents are not renting or leasing any particular apartment or room."
+      `Residents of the ${entityName} program are purchasing a service from ${entityName} that includes housing. Residents are not renting or leasing any particular apartment or room.`
     );
 
     // Resident-name blank + binding clause. Paper form leaves a
@@ -307,7 +313,20 @@ export function CommitmentSigningForm({
         color: rgb(0, 0, 0),
       });
       // Trailing binding language continues on the next line.
-      page.drawText("(Hereinafter referred to as \"Resident\") and James", {
+      const directorLine = `(Hereinafter referred to as "Resident") and ${directorName} (hereinafter referred to as "Executive Director") enter into this agreement as follows: Resident shall commit to a one hundred-eighty-one (181) days stay as indicated below: (Resident will initial below)`;
+      // Fit as much of the director line beside the name blank as
+      // will fit, then wrap the rest as a normal paragraph.
+      const availWidth = maxWidth - nameLineWidth - 4;
+      const words = directorLine.split(/\s+/);
+      let first = "";
+      while (
+        words.length > 0 &&
+        font.widthOfTextAtSize(first ? `${first} ${words[0]}` : words[0], size) <=
+          availWidth
+      ) {
+        first = first ? `${first} ${words.shift()}` : (words.shift() as string);
+      }
+      page.drawText(first, {
         x: marginX + nameLineWidth + 4,
         y,
         size,
@@ -315,11 +334,8 @@ export function CommitmentSigningForm({
         color: rgb(0, 0, 0),
       });
       y -= 16;
+      drawParagraph(words.join(" "), { spacingAfter: 14 });
     }
-    drawParagraph(
-      "Kerr (hereinafter referred to as \"Executive Director\") enter into this agreement as follows: Resident shall commit to a one hundred-eighty-one (181) days stay as indicated below: (Resident will initial below)",
-      { spacingAfter: 14 }
-    );
 
     // 181-day stay initial line. Blank underline on the left, then
     // "one hundred-eighty-one (181) day stay" to its right.
@@ -356,10 +372,10 @@ export function CommitmentSigningForm({
       { spacingAfter: 12 }
     );
 
-    // Three canonical addresses. Initials auto-fill only on the
+    // Printed property addresses. Initials auto-fill only on the
     // selected address row; others stay blank. Row spacing mirrors
     // the paper form's vertical rhythm.
-    for (const addr of CANONICAL_ADDRESSES) {
+    for (const addr of propertyAddresses) {
       const size = 11;
       const initBlankWidth = 80;
       page.drawLine({
@@ -425,7 +441,7 @@ export function CommitmentSigningForm({
     drawParagraph(
       `Sober Living Administrative Fee (nonrefundable) shall be $${adminFee.toFixed(
         2
-      )}, payable to James Kerr upon entering Jax Sober Living.`
+      )}, payable to ${directorName} upon entering ${entityName}.`
     );
 
     y -= 6;
@@ -579,6 +595,9 @@ export function CommitmentSigningForm({
     residentSignature,
     initialStamp,
     selectedAddress,
+    entityName,
+    directorName,
+    propertyAddresses,
   ]);
 
   function handleSubmit() {
@@ -679,7 +698,7 @@ export function CommitmentSigningForm({
       <Card>
         <CardContent className="space-y-5 px-8 py-10 font-serif text-[15px] leading-relaxed text-black">
           <div className="text-center">
-            <p className="italic text-2xl">Jax Sober Living House</p>
+            <p className="italic text-2xl">{entityName}</p>
             <p className="mt-4 text-xl font-bold uppercase tracking-wide">
               House Commitment Agreement
             </p>
@@ -689,7 +708,7 @@ export function CommitmentSigningForm({
             All policies and procedures outlined within this contract and any
             applicable subsequent amendments are in full force and effect
             during Resident&apos;s entire residency at{" "}
-            <span className="italic font-semibold">Jax Sober Living House</span>{" "}
+            <span className="italic font-semibold">{entityName}</span>{" "}
             unless specifically defined within a subsection of this contract.
             Violation of any policy or procedure outlined within this contract
             and any applicable subsequent amendments will result in
@@ -706,15 +725,15 @@ export function CommitmentSigningForm({
 
           <p>
             Upon entering{" "}
-            <span className="italic font-semibold">Jax Sober Living House</span>{" "}
+            <span className="italic font-semibold">{entityName}</span>{" "}
             resident will submit to urine analyst test and/or alcohol test.
           </p>
 
           <p>
             Residents of the{" "}
-            <span className="italic font-semibold">Jax Sober Living House</span>{" "}
+            <span className="italic font-semibold">{entityName}</span>{" "}
             program are purchasing a service from{" "}
-            <span className="italic font-semibold">Jax Sober Living House</span>{" "}
+            <span className="italic font-semibold">{entityName}</span>{" "}
             that includes housing. Residents are not renting or leasing any
             particular apartment or room.
           </p>
@@ -723,7 +742,7 @@ export function CommitmentSigningForm({
             <span className="inline-block border-b border-black px-2 min-w-[320px] font-semibold">
               {residentName}
             </span>{" "}
-            (Hereinafter referred to as &ldquo;Resident&rdquo;) and James Kerr
+            (Hereinafter referred to as &ldquo;Resident&rdquo;) and {directorName}
             (hereinafter referred to as &ldquo;Executive Director&rdquo;) enter
             into this agreement as follows: Resident shall commit to a one
             hundred-eighty-one (181) days stay as indicated below: (Resident
@@ -748,7 +767,7 @@ export function CommitmentSigningForm({
               when the resident types theirs in; other rows stay
               blank, exactly like the paper form. */}
           <div className="space-y-3 pl-2">
-            {CANONICAL_ADDRESSES.map((addr) => {
+            {propertyAddresses.map((addr) => {
               const selected = addr === selectedAddress;
               return (
                 <div key={addr} className="flex items-center gap-3">
@@ -816,7 +835,7 @@ export function CommitmentSigningForm({
           <p>
             Sober Living Administrative Fee (nonrefundable) shall be{" "}
             <span className="font-semibold">${adminFee.toFixed(2)}</span>,
-            payable to James Kerr upon entering Jax Sober Living.
+            payable to {directorName} upon entering {entityName}.
           </p>
 
           <div className="space-y-2 pt-2">
@@ -939,7 +958,7 @@ export function CommitmentSigningForm({
             />
             {!selectedAddress && (
               <p className="mt-2 text-xs text-amber-700">
-                Note: your assigned address didn&apos;t match any of the three
+                Note: your assigned address didn&apos;t match any of the
                 printed addresses on the contract. Please alert staff before
                 signing.
               </p>

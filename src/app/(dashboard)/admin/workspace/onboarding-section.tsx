@@ -101,6 +101,7 @@ export function OnboardingSection({
     { id: string; label: string; required?: boolean }[]
   >(settings?.intake_steps ?? []);
   const [rulesText, setRulesText] = useState(settings?.rules_text ?? "");
+  const [directorName, setDirectorName] = useState(settings?.director_name ?? "");
   const [requireRuleCheckoff, setRequireRuleCheckoff] = useState(
     settings?.require_rule_checkoff ?? false
   );
@@ -149,6 +150,7 @@ export function OnboardingSection({
       intake_steps: intakeSteps,
       rules_text: rulesText || null,
       require_rule_checkoff: requireRuleCheckoff,
+      director_name: directorName || null,
       check_in_schedules: schedules,
       resident_modules: residentModules,
       reminder_settings: reminders,
@@ -584,10 +586,25 @@ export function OnboardingSection({
               onCheckedChange={setRequireRuleCheckoff}
             />
           </div>
+
+          <div>
+            <Label htmlFor="director-name">Executive Director name</Label>
+            <p className="text-sm text-muted-foreground">
+              Printed on the commitment agreement as the counter-signing
+              &quot;Executive Director&quot;.
+            </p>
+            <input
+              id="director-name"
+              value={directorName}
+              onChange={(e) => setDirectorName(e.target.value)}
+              className="mt-2 flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm"
+              placeholder="e.g. James Kerr"
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <Button onClick={() => handleSave(["intake_mode", "intake_steps", "rules_text", "require_rule_checkoff"])} disabled={pending}>
+          <Button onClick={() => handleSave(["intake_mode", "intake_steps", "rules_text", "require_rule_checkoff", "director_name"])} disabled={pending}>
             {pending ? "Saving..." : "Save Changes"}
           </Button>
         </div>

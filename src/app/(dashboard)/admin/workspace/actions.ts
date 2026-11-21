@@ -50,6 +50,7 @@ export async function updateWorkspaceSettings(
     rules_text?: string | null;
     rules_document_id?: string | null;
     require_rule_checkoff?: boolean;
+    director_name?: string | null;
     check_in_schedules?: {
       id: string;
       label?: string;
@@ -124,6 +125,9 @@ export async function updateWorkspaceSettings(
         : {}),
       ...(settings.rules_text !== undefined
         ? { rules_text: settings.rules_text }
+        : {}),
+      ...(settings.director_name !== undefined
+        ? { director_name: settings.director_name }
         : {}),
       ...(settings.rules_document_id !== undefined
         ? { rules_document_id: settings.rules_document_id }
