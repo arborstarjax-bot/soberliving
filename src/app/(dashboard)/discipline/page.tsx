@@ -11,7 +11,6 @@ import { DemeritMatrix } from "./demerit-matrix";
 import { DisciplineTabs } from "./discipline-tabs";
 import { CreateWarningDialog } from "./create-warning-dialog";
 import { WarningsList } from "./warnings-list";
-import { CleanupBackfilledDemeritsButton } from "./cleanup-backfilled-demerits-button";
 import { CreateIncidentDialog } from "../incidents/create-incident-dialog";
 import { getHouseToday } from "@/lib/timezone";
 
@@ -286,7 +285,6 @@ export default async function DisciplinePage() {
           <div className="space-y-4">
             {isStaff && (
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <CleanupBackfilledDemeritsButton />
                 <CreateWarningDialog
                   houses={houses ?? []}
                   residents={residents ?? []}

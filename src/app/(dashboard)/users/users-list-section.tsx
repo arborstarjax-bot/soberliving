@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Users } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/server";
@@ -187,7 +189,7 @@ export async function UsersListSection({ searchParams, workspaceId }: UsersListS
           );
         })}
         {users.length === 0 && (
-          <p className="text-sm text-muted-foreground">No users found.</p>
+          <EmptyState icon={Users} title="No users found" />
         )}
       </div>
 
