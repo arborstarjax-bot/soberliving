@@ -4,11 +4,12 @@ import { useState, useTransition } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, ShieldAlert, Loader2 } from "lucide-react";
+import { AlertTriangle, ShieldAlert, Loader2, X } from "lucide-react";
 import {
   issueChoreWarning,
   issueChoreDemerit,
 } from "../discipline/warning-actions";
+import { dismissMissedChore } from "./_actions/signoffs";
 import { formatDateOnly } from "@/lib/timezone";
 
 interface MissedSignoff {
@@ -35,7 +36,7 @@ export function MissedChoresList({ signoffs, canAct = false }: Props) {
   // disabled state the moment row B was clicked.
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [errors, setErrors] = useState<Record<string, string | null>>({});
-  const [done, setDone] = useState<Record<string, "warning" | "demerit">>({});
+  const [done, setDone] = useState<Record<string, "warning" | "demerit" | "dismissed">>({});
 
   if (signoffs.length === 0) {
     return (
@@ -47,7 +48,7 @@ export function MissedChoresList({ signoffs, canAct = false }: Props) {
 
   function handle(
     id: string,
-    kind: "warning" | "demerit"
+    kind: "warning" | "demerit" | "dismissed"
   ) {
     setPendingIds((s) => {
       const next = new Set(s);
@@ -59,7 +60,9 @@ export function MissedChoresList({ signoffs, canAct = false }: Props) {
       const result =
         kind === "warning"
           ? await issueChoreWarning(id)
-          : await issueChoreDemerit(id);
+          : kind === "demerit"
+            ? await issueChoreDemerit(id)
+            : await dismissMissedChore(id);
       if ("error" in result && result.error) {
         setErrors((e) => ({ ...e, [id]: result.error as string }));
       } else {
@@ -101,7 +104,7 @@ export function MissedChoresList({ signoffs, canAct = false }: Props) {
                     variant={issued === "demerit" ? "destructive" : "secondary"}
                     className="text-xs"
                   >
-                    {issued === "demerit" ? "Demerit issued" : "Warning issued"}
+                    {issued === "demerit" ? "Demerit issued" : issued === "dismissed" ? "Dismissed" : "Warning issued"}
                   </Badge>
                 ) : canAct ? (
                   <>
@@ -130,6 +133,19 @@ export function MissedChoresList({ signoffs, canAct = false }: Props) {
                         <ShieldAlert className="mr-1 h-3.5 w-3.5" />
                       )}
                       Demerit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={isPending}
+                      onClick={() => handle(s.id, "dismissed")}
+                    >
+                      {isPending ? (
+                        <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <X className="mr-1 h-3.5 w-3.5" />
+                      )}
+                      No Action
                     </Button>
                   </>
                 ) : (
