@@ -21,6 +21,7 @@ export default function ResetPasswordPage() {
   const [pending, setPending] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   const [linkExpired, setLinkExpired] = useState(false);
+  const [expiredDetail, setExpiredDetail] = useState<string | null>(null);
   const initialized = useRef(false);
 
   // Lazily create the Supabase client to avoid build-time env var errors
@@ -40,6 +41,25 @@ export default function ResetPasswordPage() {
     initialized.current = true;
 
     async function handleTokens() {
+      // Supabase forwards verify failures to the redirect_to URL with
+      // error params, in the query or the hash depending on flow —
+      // e.g. ?error=access_denied&error_code=otp_expired. A prefetch
+      // by the user's mail app lands the real user here, so surface
+      // the actual error instead of falling through to a generic
+      // "expired" after every other check fails.
+      for (const source of [window.location.search, window.location.hash.substring(1)]) {
+        const errParams = new URLSearchParams(source);
+        if (errParams.get("error")) {
+          if (errParams.get("error_description")) {
+            setExpiredDetail(
+              decodeURIComponent(errParams.get("error_description")!.replace(/\+/g, " "))
+            );
+          }
+          setLinkExpired(true);
+          return;
+        }
+      }
+
       // Supabase recovery / invite links can arrive in three shapes
       // depending on how the Auth project is configured:
       //   1. Hash fragment with tokens (implicit flow, older default):
@@ -209,6 +229,9 @@ export default function ResetPasswordPage() {
             </form>
           ) : linkExpired ? (
             <div className="space-y-3 text-center">
+              {expiredDetail && (
+                <p className="text-sm text-destructive">{expiredDetail}</p>
+              )}
               <p className="text-sm text-muted-foreground">
                 Request a new link and try again.
               </p>
