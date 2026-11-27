@@ -1,0 +1,130 @@
+name: iOS TestFlight
+
+# Archives the Capacitor shell on a macOS runner and uploads it to TestFlight.
+# Signing is cloud-managed: xcodebuild -allowProvisioningUpdates creates the
+# Apple Distribution certificate + profile through the App Store Connect API key,
+# so no .p12 / provisioning profile is stored in GitHub.
+#
+# Secrets (Settings → Secrets and variables → Actions):
+#   APPLE_ASC_KEY_ID     App Store Connect API key id (Team key, Admin role)
+#   APPLE_ASC_ISSUER_ID  Issuer id shown on the Integrations page
+#   APPLE_ASC_API_KEY    full contents of the downloaded AuthKey_<id>.p8
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [devin/1776204574-sober-living-v1]
+    paths:
+      - "ios/**"
+      - "capacitor.config.ts"
+      - ".github/workflows/ios-testflight.yml"
+
+env:
+  TEAM_ID: 97LZ478C55
+  BUNDLE_ID: com.houseflow.app
+
+jobs:
+  testflight:
+    name: archive + upload
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: npm ci + cap sync + build number
+        env:
+          CI_BUILD_NUMBER: ${{ github.run_number }}
+        run: sh ios/App/ci_scripts/ci_post_clone.sh
+
+      - name: Install App Store Connect API key
+        env:
+          APPLE_ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          APPLE_ASC_API_KEY: ${{ secrets.APPLE_ASC_API_KEY }}
+        run: |
+          test -n "$APPLE_ASC_KEY_ID" || { echo "APPLE_ASC_KEY_ID secret missing"; exit 1; }
+          test -n "$APPLE_ASC_API_KEY" || { echo "APPLE_ASC_API_KEY secret missing"; exit 1; }
+          mkdir -p "$HOME/private_keys"
+          KEY="$(printf '%s' "$APPLE_ASC_API_KEY" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          case "$KEY" in
+            *"-----BEGIN PRIVATE KEY-----"*) ;;
+            *) KEY="-----BEGIN PRIVATE KEY-----
+          $(printf '%s' "$KEY" | tr -d ' \n' | fold -w 64)
+          -----END PRIVATE KEY-----" ;;
+          esac
+          printf '%s\n' "$KEY" > "$HOME/private_keys/AuthKey_${APPLE_ASC_KEY_ID}.p8"
+          openssl pkey -in "$HOME/private_keys/AuthKey_${APPLE_ASC_KEY_ID}.p8" -noout \
+            || { echo "APPLE_ASC_API_KEY is not a valid .p8 private key (paste the whole AuthKey_${APPLE_ASC_KEY_ID}.p8 file, BEGIN/END lines included)"; exit 1; }
+          chmod 600 "$HOME/private_keys/AuthKey_${APPLE_ASC_KEY_ID}.p8"
+          echo "ASC_KEY_PATH=$HOME/private_keys/AuthKey_${APPLE_ASC_KEY_ID}.p8" >> $GITHUB_ENV
+
+      - name: Archive
+        env:
+          APPLE_ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+        working-directory: ios/App
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/HouseFlow.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$APPLE_ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$APPLE_ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            2>&1 | tee "$RUNNER_TEMP/archive.log"
+
+      - name: Export + upload to TestFlight
+        env:
+          APPLE_ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+        working-directory: ios/App
+        run: |
+          set -o pipefail
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/HouseFlow.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$APPLE_ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$APPLE_ASC_ISSUER_ID" \
+            2>&1 | tee "$RUNNER_TEMP/export.log"
+          echo "Uploaded build ${{ github.run_number }} (version from MARKETING_VERSION) to TestFlight."
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-logs-${{ github.run_number }}
+          path: |
+            ${{ runner.temp }}/archive.log
+            ${{ runner.temp }}/export.log
+          if-no-files-found: ignore

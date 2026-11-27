@@ -1,0 +1,11 @@
+-- Set invite link (OTP) expiry to 24 hours (86400 seconds).
+-- This must be configured in your Supabase project dashboard:
+--   1. Go to Authentication → URL Configuration (or Auth Settings)
+--   2. Set "Invite token expiration" / "Mailer OTP Expiration" to 86400
+--
+-- For self-hosted Supabase, set the environment variable:
+--   GOTRUE_MAILER_OTP_EXP=86400
+--
+-- The generateLink() API does not accept a custom TTL —
+-- expiry is controlled at the project level via this setting.
+-- Default is typically 3600 (1 hour) or 86400 depending on your plan.
